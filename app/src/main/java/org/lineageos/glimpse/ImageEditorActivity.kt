@@ -362,8 +362,17 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
 
         fun createIntent(context: android.content.Context, uri: Uri, mimeType: String?) =
             Intent(context, ImageEditorActivity::class.java).apply {
-                data = uri
-                type = mimeType
+                // IMPORTANT: setData() and setType() each clear the other, so both
+                // the URI and the MIME type must be set together via setDataAndType.
+                // (Setting them separately left intent.data == null, which made the
+                // editor finish() immediately in onCreate.)
+                if (mimeType != null) {
+                    setDataAndType(uri, mimeType)
+                } else {
+                    data = uri
+                }
+                // Belt-and-suspenders: also carry the URI as an extra.
+                putExtra(EXTRA_MEDIA_URI, uri)
             }
     }
 }
