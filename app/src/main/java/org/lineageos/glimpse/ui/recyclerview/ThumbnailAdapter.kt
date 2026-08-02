@@ -207,10 +207,16 @@ class ThumbnailAdapter : ListAdapter<AlbumViewModel.AlbumContent, RecyclerView.V
     companion object {
         private const val BLUR_RADIUS = 15f
 
+        // Lazily initialized so the RenderEffect class is only resolved on API
+        // 31+, where setRenderEffect is actually called. An eager initializer
+        // here would run at class-load (<clinit>) time and throw
+        // NoClassDefFoundError on the API 30 minSdk, crashing the app.
         @RequiresApi(Build.VERSION_CODES.S)
-        private val blurRenderEffect = RenderEffect.createBlurEffect(
-            BLUR_RADIUS, BLUR_RADIUS,
-            Shader.TileMode.MIRROR
-        )
+        private val blurRenderEffect: RenderEffect by lazy {
+            RenderEffect.createBlurEffect(
+                BLUR_RADIUS, BLUR_RADIUS,
+                Shader.TileMode.MIRROR
+            )
+        }
     }
 }
