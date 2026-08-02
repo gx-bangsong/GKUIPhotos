@@ -12,10 +12,12 @@ import androidx.lifecycle.viewModelScope
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.preference.PreferenceManager
+import org.lineageos.glimpse.ext.videoPlaybackSpeed
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -69,6 +71,9 @@ class LocalPlayerViewModel(
         .build()
         .apply {
             repeatMode = ExoPlayer.REPEAT_MODE_ONE
+            // Apply the last-chosen playback speed with pitch preserved (变速不变调).
+            playbackParameters =
+                PlaybackParameters(sharedPreferences.videoPlaybackSpeed, 1.0f)
         }
 
     val isPlaying = exoPlayer.isPlayingFlow()
@@ -332,6 +337,21 @@ class LocalPlayerViewModel(
 
     val edgeTapNavigationEnabled: Boolean
         get() = sharedPreferences.edgeTapNavigationEnabled
+
+    /**
+     * Current playback speed (module 1). Pitch is always preserved at 1.0 so the
+     * audio is not detorted ("变速不变调").
+     */
+    val playbackSpeed: Float
+        get() = exoPlayer.playbackParameters.speed
+
+    /**
+     * Set the playback speed, persisting it across sessions. Pitch is kept at 1.0.
+     */
+    fun setPlaybackSpeed(speed: Float) {
+        exoPlayer.playbackParameters = PlaybackParameters(speed, 1.0f)
+        sharedPreferences.videoPlaybackSpeed = speed
+    }
 
     override fun onCleared() {
         exoPlayer.release()

@@ -8,6 +8,7 @@ package org.lineageos.glimpse.ext
 import android.content.SharedPreferences
 import android.net.Uri
 import androidx.core.content.edit
+import org.lineageos.glimpse.utils.EditSaveBehavior
 import java.security.MessageDigest
 
 // All files access dialog dismissed
@@ -98,3 +99,20 @@ private fun videoPlaybackPositionKey(uri: Uri): String {
     val hash = digest.joinToString(separator = "") { byte -> "%02x".format(byte) }
     return "$VIDEO_PLAYBACK_POSITION_PREFIX$hash"
 }
+
+// Default behaviour when saving an edited image (module 4)
+private const val EDIT_SAVE_BEHAVIOR_KEY = "edit_save_behavior"
+var SharedPreferences.editSaveBehavior: EditSaveBehavior
+    get() = EditSaveBehavior.fromKey(getString(EDIT_SAVE_BEHAVIOR_KEY, null))
+    set(value) = edit {
+        putString(EDIT_SAVE_BEHAVIOR_KEY, value.key)
+    }
+
+// Preferred video playback speed remembered across sessions (module 1)
+private const val VIDEO_PLAYBACK_SPEED_KEY = "video_playback_speed"
+private const val VIDEO_PLAYBACK_SPEED_DEFAULT = 1.0f
+var SharedPreferences.videoPlaybackSpeed: Float
+    get() = getFloat(VIDEO_PLAYBACK_SPEED_KEY, VIDEO_PLAYBACK_SPEED_DEFAULT)
+    set(value) = edit {
+        putFloat(VIDEO_PLAYBACK_SPEED_KEY, value)
+    }

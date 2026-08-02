@@ -1,0 +1,165 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+     SPDX-FileCopyrightText: The LineageOS Project
+     SPDX-License-Identifier: Apache-2.0
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="12dp"
+        android:text="@string/toolbox_title"
+        android:textAppearance="?attr/textAppearanceTitleMedium" />
+
+    <!-- 1. Compress -->
+    <LinearLayout
+        android:id="@+id/compressSection"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:drawablePadding="8dp"
+            android:gravity="center_vertical"
+            android:text="@string/toolbox_compress"
+            android:textAppearance="?attr/textAppearanceTitleSmall"
+            app:drawableStartCompat="@drawable/ic_compress" />
+
+        <RadioGroup
+            android:id="@+id/compressRadioGroup"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <RadioButton
+                android:id="@+id/compressHigh"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:checked="true"
+                android:text="@string/toolbox_compress_quality_high" />
+
+            <RadioButton
+                android:id="@+id/compressMedium"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/toolbox_compress_quality_medium" />
+
+            <RadioButton
+                android:id="@+id/compressLow"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/toolbox_compress_quality_low" />
+
+            <RadioButton
+                android:id="@+id/compressMaxSize"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/toolbox_compress_max_size" />
+        </RadioGroup>
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/compressRunButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/toolbox_run" />
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginVertical="12dp"
+        android:background="?attr/colorOutlineVariant" />
+
+    <!-- 2. Convert format -->
+    <LinearLayout
+        android:id="@+id/convertSection"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:drawablePadding="8dp"
+            android:gravity="center_vertical"
+            android:text="@string/toolbox_convert"
+            android:textAppearance="?attr/textAppearanceTitleSmall"
+            app:drawableStartCompat="@drawable/ic_convert" />
+
+        <com.google.android.material.chip.ChipGroup
+            android:id="@+id/convertChipGroup"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            app:singleLine="true"
+            app:singleSelection="true" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/convertRunButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/toolbox_run" />
+    </LinearLayout>
+
+    <!-- 3. Video to GIF -->
+    <LinearLayout
+        android:id="@+id/videoToGifSection"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginBottom="12dp"
+            android:background="?attr/colorOutlineVariant" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:drawablePadding="8dp"
+            android:gravity="center_vertical"
+            android:text="@string/toolbox_video_to_gif"
+            android:textAppearance="?attr/textAppearanceTitleSmall"
+            app:drawableStartCompat="@drawable/ic_video_to_gif" />
+
+        <TextView
+            android:id="@+id/gifDurationLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/toolbox_video_to_gif_duration" />
+
+        <SeekBar
+            android:id="@+id/gifDurationSeekBar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:max="15"
+            android:progress="5" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/videoToGifRunButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/toolbox_run" />
+    </LinearLayout>
+
+    <com.google.android.material.progressindicator.LinearProgressIndicator
+        android:id="@+id/toolboxProgressBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:indeterminate="true"
+        android:visibility="gone" />
+
+</LinearLayout>

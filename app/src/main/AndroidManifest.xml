@@ -49,6 +49,7 @@
             android:name=".ViewActivity"
             android:configChanges="orientation|screenLayout|screenSize|smallestScreenSize|keyboardHidden"
             android:exported="true"
+            android:supportsPictureInPicture="true"
             android:theme="@style/Theme.Glimpse.MediaViewer">
 
             <intent-filter>
@@ -130,6 +131,22 @@
             android:exported="false"
             android:label="@string/title_activity_settings"
             android:theme="@style/Theme.SettingsLib" />
+
+        <!-- Module 4 & 5: offline image editor (rotate / filter / crop / ID photo) -->
+        <activity
+            android:name=".ImageEditorActivity"
+            android:configChanges="orientation|screenLayout|screenSize|smallestScreenSize|keyboardHidden"
+            android:exported="false"
+            android:label="@string/editor_title"
+            android:theme="@style/Theme.Glimpse.MediaViewer" />
+
+        <!-- Module 7: full offline animated-GIF editor -->
+        <activity
+            android:name=".GifEditorActivity"
+            android:configChanges="orientation|screenLayout|screenSize|smallestScreenSize|keyboardHidden"
+            android:exported="false"
+            android:label="@string/gif_editor_title"
+            android:theme="@style/Theme.Glimpse.MediaViewer" />
 
     </application>
 

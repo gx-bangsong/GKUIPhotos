@@ -7,12 +7,16 @@ package org.lineageos.glimpse
 
 import android.app.KeyguardManager
 import android.app.KeyguardManager.KeyguardDismissCallback
+import android.app.PictureInPictureParams
 import android.content.Intent
 import android.content.res.Configuration
+import android.graphics.Rect
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
 import android.util.Log
+import android.util.Rational
 import android.view.View
 import android.widget.LinearLayout
 import android.widget.Toast
@@ -51,7 +55,9 @@ import org.lineageos.glimpse.models.Media
 import org.lineageos.glimpse.models.MediaType
 import org.lineageos.glimpse.models.MotionPhoto
 import org.lineageos.glimpse.models.RequestStatus
+import org.lineageos.glimpse.ui.dialogs.ImageToolboxBottomSheet
 import org.lineageos.glimpse.ui.dialogs.MediaInfoBottomSheetDialog
+import org.lineageos.glimpse.ui.dialogs.SharePrivacyBottomSheet
 import org.lineageos.glimpse.ui.recyclerview.MediaViewerAdapter
 import org.lineageos.glimpse.utils.MediaDialogsUtils
 import org.lineageos.glimpse.utils.PermissionsChecker
@@ -79,6 +85,7 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
     private val motionPhotoToggleButton by lazy { findViewById<MaterialButton>(R.id.motionPhotoToggleButton) }
     private val shareButton by lazy { findViewById<MaterialButton>(R.id.shareButton) }
     private val toolbar by lazy { findViewById<MaterialToolbar>(R.id.toolbar) }
+    private val toolboxButton by lazy { findViewById<MaterialButton>(R.id.toolboxButton) }
     private val useAsButton by lazy { toolbar.menu.findItem(R.id.useAs) }
     private val viewPager by lazy { findViewById<ViewPager2>(R.id.viewPager) }
 
@@ -255,12 +262,21 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
         shareButton.setOnClickListener {
             viewModel.displayedMedia.value?.let {
                 dismissKeyguardAndRun {
-                    startActivity(
-                        Intent.createChooser(
-                            buildShareIntent(it),
-                            null
+                    // Module 2: for images, offer EXIF stripping before sharing.
+                    if (it.mediaType == MediaType.IMAGE) {
+                        SharePrivacyBottomSheet(
+                            this@ViewActivity,
+                            this@ViewActivity,
+                            it,
+                        ).show()
+                    } else {
+                        startActivity(
+                            Intent.createChooser(
+                                buildShareIntent(it),
+                                null
+                            )
                         )
-                    )
+                    }
                 }
             }
         }
@@ -268,13 +284,29 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
         adjustButton.setOnClickListener {
             viewModel.displayedMedia.value?.let {
                 dismissKeyguardAndRun {
-                    startActivity(
-                        Intent.createChooser(
-                            buildEditIntent(it),
-                            null
+                    // Modules 4/5/7: route editing through Glimpse's own offline
+                    // editors — the full GIF editor for animated GIFs, the image
+                    // editor (rotate/filter/crop/ID-photo) for still images, and
+                    // the legacy external chooser for videos.
+                    when {
+                        it.mediaType == MediaType.IMAGE && it.mimeType.equals(
+                            "image/gif", ignoreCase = true
+                        ) -> startActivity(GifEditorActivity.createIntent(this@ViewActivity, it.uri))
+
+                        it.mediaType == MediaType.IMAGE -> startActivity(
+                            ImageEditorActivity.createIntent(this@ViewActivity, it.uri, it.mimeType)
                         )
-                    )
+
+                        else -> startActivity(Intent.createChooser(buildEditIntent(it), null))
+                    }
                 }
+            }
+        }
+
+        // Module 6: offline image/video toolbox.
+        toolboxButton.setOnClickListener {
+            viewModel.displayedMedia.value?.let {
+                ImageToolboxBottomSheet(this@ViewActivity, this@ViewActivity, it).show()
             }
         }
 
@@ -326,9 +358,86 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
     override fun onPause() {
         saveCurrentVideoPosition()
 
-        viewModel.pause()
+        // Module 1: when leaving while a video is playing (e.g. navigating home),
+        // let onUserLeaveHint() take us into PiP rather than pausing immediately.
+        if (!isInPipMode() && shouldEnterPip()) {
+            // Don't pause; PiP will keep the video playing.
+        } else {
+            viewModel.pause()
+        }
 
         super.onPause()
+    }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+
+        // Module 1: auto-enter Picture-in-Picture when the user backgrounds the
+        // activity while a video is actively playing.
+        if (shouldEnterPip()) {
+            enterPipIfNeeded()
+        }
+    }
+
+    override fun onPictureInPictureModeChanged(
+        isInPictureInPictureMode: Boolean,
+        newConfig: Configuration,
+    ) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+
+        // In PiP we hide the chrome (toolbar + bottom sheet) to maximise the
+        // video surface; restoring brings it back.
+        appBarLayout.fade(!isInPictureInPictureMode)
+        bottomSheetLinearLayout.fade(!isInPictureInPictureMode)
+    }
+
+    /**
+     * Module 1: whether the current state is eligible to enter PiP (a video is
+     * actively playing on a supported Android version).
+     */
+    private fun shouldEnterPip(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false
+        if (!packageManager.hasSystemFeature(
+                android.content.pm.PackageManager.FEATURE_PICTURE_IN_PICTURE
+            )
+        ) return false
+        val media = viewModel.displayedMedia.value ?: return false
+        return media.mediaType == MediaType.VIDEO && viewModel.isPlaying.value
+    }
+
+    private fun isInPipMode() =
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && isInPictureInPictureMode
+
+    private fun enterPipIfNeeded() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+
+        val builder = PictureInPictureParams.Builder()
+
+        // Use the video aspect ratio when known for a properly sized window.
+        val media = viewModel.displayedMedia.value
+        if (media != null && media.width > 0 && media.height > 0) {
+            val rational = Rational(media.width, media.height)
+            runCatching { builder.setAspectRatio(rational) }
+        }
+
+        // Source rect hint for a smooth zoom transition into the PiP window.
+        val playerView = viewPager.findViewById<View>(
+            resources.getIdentifier("playerView", "id", packageName)
+        )
+        if (playerView != null && playerView.isShown) {
+            val bounds = Rect()
+            playerView.getGlobalVisibleRect(bounds)
+            builder.setSourceRectHint(bounds)
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            builder.setAutoEnterEnabled(true)
+            builder.setSeamlessResizeEnabled(true)
+        }
+
+        runCatching {
+            enterPictureInPictureMode(builder.build())
+        }
     }
 
     override fun onDestroy() {
@@ -422,6 +531,7 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
                 viewModel.fullscreenMode.collectLatest { fullscreenMode ->
                     appBarLayout.fade(!fullscreenMode)
                     bottomSheetLinearLayout.fade(!fullscreenMode)
+                    toolboxButton.fade(!fullscreenMode)
 
                     window.setBarsVisibility(systemBars = !fullscreenMode)
 
@@ -455,6 +565,10 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
 
                     // Update info button
                     infoButton.isVisible = displayedMedia != null
+
+                    // Update toolbox capsule (module 6)
+                    toolboxButton.isVisible = displayedMedia != null &&
+                        !viewModel.readOnly.value
 
                     // Update delete button
                     val isTrashed = displayedMedia?.isTrashed ?: false
@@ -521,6 +635,9 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
 
                     // Update delete button
                     deleteButton.isVisible = !readOnly
+
+                    // Module 6: toolbox is available whenever editing is allowed.
+                    toolboxButton.isVisible = !readOnly && viewModel.displayedMedia.value != null
                 }
             }
         }

@@ -58,4 +58,19 @@
 
     </PreferenceCategory>
 
+    <PreferenceCategory
+        app:iconSpaceReserved="false"
+        app:title="@string/editing_header">
+
+        <ListPreference
+            app:defaultValue="ask"
+            app:entries="@array/edit_save_behavior_entries"
+            app:entryValues="@array/edit_save_behavior_values"
+            app:iconSpaceReserved="false"
+            app:key="edit_save_behavior"
+            app:summary="@string/edit_save_behavior_description"
+            app:title="@string/edit_save_behavior_title" />
+
+    </PreferenceCategory>
+
 </PreferenceScreen>

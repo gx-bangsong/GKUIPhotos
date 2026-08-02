@@ -140,6 +140,8 @@
     <!-- Preference titles -->
     <string name="general_header">General</string>
     <string name="video_header">Video</string>
+    <string name="editing_header">Editing</string>
+    <string name="tools_header">Tools</string>
 
     <!-- General preferences -->
     <string name="edge_tap_navigation_enable_title">Edge tap navigation</string>
@@ -154,4 +156,84 @@
     <string name="hide_native_seek_buttons_description">Hide rewind and fast-forward buttons from the video player controls</string>
     <string name="remember_video_playback_position_enabled_title">Remember playback position</string>
     <string name="remember_video_playback_position_enabled_description">Resume videos from the last stopped position</string>
+    <string name="playback_speed_title">Default playback speed</string>
+
+    <!-- Editing preferences (module 4) -->
+    <string name="edit_save_behavior_title">Image edit save behavior</string>
+    <string name="edit_save_behavior_description">Choose what happens when saving an edited image</string>
+    <string name="edit_save_behavior_ask">Ask every time</string>
+    <string name="edit_save_behavior_overwrite">Always overwrite original</string>
+    <string name="edit_save_behavior_new">Always save as new image</string>
+
+    <!-- Share privacy (module 2) -->
+    <string name="share_privacy_title">Share with privacy</string>
+    <string name="share_privacy_subtitle">Strip metadata from the copy that will be shared. The original file is never modified.</string>
+    <string name="share_privacy_strip_location">Strip location (GPS)</string>
+    <string name="share_privacy_strip_device_time">Strip device and capture time</string>
+    <string name="share_privacy_share_now">Share</string>
+    <string name="share_privacy_failed">Could not prepare a privacy-clean copy</string>
+
+    <!-- Source aggregation (module 3) -->
+    <string name="source_albums_header">Smart albums (app sources)</string>
+
+    <!-- Image editor (module 4 &amp; 5) -->
+    <string name="editor_title">Edit</string>
+    <string name="editor_save">Save</string>
+    <string name="editor_rotate">Rotate</string>
+    <string name="editor_filter">Filter</string>
+    <string name="editor_crop">Crop</string>
+    <string name="editor_id_photo">ID Photo</string>
+    <string name="editor_undo">Undo</string>
+    <string name="editor_redo">Redo</string>
+    <string name="editor_save_dialog_title">Save edited image</string>
+    <string name="editor_save_overwrite">Overwrite original</string>
+    <string name="editor_save_new">Save as new image</string>
+    <string name="editor_saving">Saving…</string>
+    <string name="editor_saved">Saved</string>
+    <string name="editor_save_failed">Could not save the image</string>
+    <string name="editor_filter_none">None</string>
+    <string name="editor_filter_grayscale">Grayscale</string>
+    <string name="editor_filter_sepia">Sepia</string>
+    <string name="editor_filter_invert">Invert</string>
+    <string name="editor_filter_warm">Warm</string>
+    <string name="editor_filter_cool">Cool</string>
+
+    <!-- ID Photo tool (module 5) -->
+    <string name="id_photo_title">ID photo</string>
+    <string name="id_photo_preset_one_inch">1 inch (25:35)</string>
+    <string name="id_photo_preset_two_inch">2 inch (35:49)</string>
+    <string name="id_photo_preset_passport">Passport / Visa</string>
+    <string name="id_photo_preset_square">Square (avatar)</string>
+    <string name="id_photo_guide_hint">Drag to position. Use the rule-of-thirds and face oval to align head and shoulders.</string>
+    <string name="id_photo_apply">Apply</string>
+
+    <!-- Image toolbox (module 6) -->
+    <string name="toolbox_title">Image toolbox</string>
+    <string name="toolbox_compress">Compress size</string>
+    <string name="toolbox_convert">Convert format</string>
+    <string name="toolbox_video_to_gif">Video to GIF</string>
+    <string name="toolbox_compress_quality">Quality</string>
+    <string name="toolbox_compress_quality_high">High (85%)</string>
+    <string name="toolbox_compress_quality_medium">Medium (70%)</string>
+    <string name="toolbox_compress_quality_low">Low (50%)</string>
+    <string name="toolbox_compress_max_size">Limit to 500 KB</string>
+    <string name="toolbox_convert_target">Target format</string>
+    <string name="toolbox_video_to_gif_duration">Duration (seconds)</string>
+    <string name="toolbox_processing">Processing…</string>
+    <string name="toolbox_done">Done. Saved to Pictures/Glimpse.</string>
+    <string name="toolbox_failed">Operation failed</string>
+    <string name="toolbox_run">Run</string>
+
+    <!-- GIF editor (module 7) -->
+    <string name="gif_editor_title">Edit GIF</string>
+    <string name="gif_editor_speed">Speed</string>
+    <string name="gif_editor_trim">Trim</string>
+    <string name="gif_editor_frames">Frames</string>
+    <string name="gif_editor_export">Export GIF</string>
+    <string name="gif_editor_exporting">Encoding GIF…</string>
+    <string name="gif_editor_exported">GIF exported</string>
+    <string name="gif_editor_export_failed">Could not encode the GIF</string>
+    <string name="gif_editor_not_a_gif">Not an animated GIF</string>
+    <string name="gif_editor_slower">Slower</string>
+    <string name="gif_editor_faster">Faster</string>
 </resources>

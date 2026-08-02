@@ -94,4 +94,21 @@
 
     </LinearLayout>
 
+    <!-- Module 6: floating capsule that opens the offline image/video toolbox. -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/toolboxButton"
+        style="@style/Theme.Glimpse.MediaViewer.ToolboxCapsule"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="124dp"
+        android:text="@string/toolbox_title"
+        android:visibility="gone"
+        app:backgroundTint="@android:color/black"
+        app:cornerRadius="24dp"
+        app:icon="@drawable/ic_toolbox"
+        app:iconTint="@android:color/white"
+        app:strokeColor="@android:color/white"
+        app:strokeWidth="1dp" />
+
 </FrameLayout>
