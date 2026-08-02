@@ -223,6 +223,9 @@
     <string name="toolbox_done">Done. Saved to Pictures/Glimpse.</string>
     <string name="toolbox_failed">Operation failed</string>
     <string name="toolbox_run">Run</string>
+    <string name="toolbox_compress_run">Compress</string>
+    <string name="toolbox_convert_run">Convert</string>
+    <string name="toolbox_video_to_gif_run">Create GIF</string>
 
     <!-- GIF editor (module 7) -->
     <string name="gif_editor_title">Edit GIF</string>

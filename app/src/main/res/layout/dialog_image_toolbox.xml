@@ -75,7 +75,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
-            android:text="@string/toolbox_run" />
+            android:text="@string/toolbox_compress_run" />
     </LinearLayout>
 
     <View
@@ -112,7 +112,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
-            android:text="@string/toolbox_run" />
+            android:text="@string/toolbox_convert_run" />
     </LinearLayout>
 
     <!-- 3. Video to GIF -->
@@ -156,7 +156,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
-            android:text="@string/toolbox_run" />
+            android:text="@string/toolbox_video_to_gif_run" />
     </LinearLayout>
 
     <com.google.android.material.progressindicator.LinearProgressIndicator
