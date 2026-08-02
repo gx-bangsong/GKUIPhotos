@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+     SPDX-FileCopyrightText: The LineageOS Project
+     SPDX-License-Identifier: Apache-2.0
+-->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- EXIF-stripped share copies (module 2) -->
+    <cache-path
+        name="shared_clean"
+        path="shared_clean/" />
+</paths>

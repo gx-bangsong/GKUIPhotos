@@ -9,6 +9,7 @@ import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
 import android.webkit.MimeTypeMap
+import androidx.core.content.FileProvider
 import androidx.exifinterface.media.ExifInterface
 import java.io.File
 import java.io.FileOutputStream
@@ -119,7 +120,13 @@ object ExifStripper {
             }
         }
 
-        return Uri.fromFile(outFile)
+        // Return a content:// URI via FileProvider. Sharing a file:// URI would
+        // throw FileUriExposedException on Android 7+ (API 24+).
+        return FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            outFile,
+        )
     }
 
     /**
