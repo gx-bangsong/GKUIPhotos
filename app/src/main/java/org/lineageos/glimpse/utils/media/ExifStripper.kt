@@ -77,7 +77,6 @@ object ExifStripper {
         ExifInterface.TAG_LENS_MAKE,
         ExifInterface.TAG_LENS_MODEL,
         ExifInterface.TAG_LENS_SERIAL_NUMBER,
-        ExifInterface.TAG_HOST_COMPUTER,
         ExifInterface.TAG_ARTIST,
         ExifInterface.TAG_COPYRIGHT,
         ExifInterface.TAG_USER_COMMENT,
