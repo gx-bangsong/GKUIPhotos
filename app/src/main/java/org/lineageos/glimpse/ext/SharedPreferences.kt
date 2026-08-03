@@ -116,3 +116,22 @@ var SharedPreferences.videoPlaybackSpeed: Float
     set(value) = edit {
         putFloat(VIDEO_PLAYBACK_SPEED_KEY, value)
     }
+
+// Long-press to fast-forward a video (press-and-hold speed). The value is the
+// speed applied while the video is held; releasing restores the previous speed.
+private const val LONG_PRESS_SPEED_ENABLED_KEY = "long_press_speed_enabled"
+private const val LONG_PRESS_SPEED_ENABLED_DEFAULT = true
+var SharedPreferences.longPressSpeedEnabled: Boolean
+    get() = getBoolean(LONG_PRESS_SPEED_ENABLED_KEY, LONG_PRESS_SPEED_ENABLED_DEFAULT)
+    set(value) = edit {
+        putBoolean(LONG_PRESS_SPEED_ENABLED_KEY, value)
+    }
+
+// Stored as a String because ListPreference persists entry values as strings.
+private const val LONG_PRESS_SPEED_KEY = "long_press_speed"
+private const val LONG_PRESS_SPEED_DEFAULT = 2.0f
+var SharedPreferences.longPressSpeed: Float
+    get() = getString(LONG_PRESS_SPEED_KEY, null)?.toFloatOrNull() ?: LONG_PRESS_SPEED_DEFAULT
+    set(value) = edit {
+        putString(LONG_PRESS_SPEED_KEY, value.toString())
+    }

@@ -21,5 +21,19 @@
         <item>always_overwrite</item>
         <item>always_save_as_new</item>
     </string-array>
+
+    <!-- Module 1 (revised): long-press fast-forward speed choices -->
+    <string-array name="long_press_speed_entries" translatable="false">
+        <item>1.5x</item>
+        <item>2.0x</item>
+        <item>2.5x</item>
+        <item>3.0x</item>
+    </string-array>
+    <string-array name="long_press_speed_values" translatable="false">
+        <item>1.5</item>
+        <item>2.0</item>
+        <item>2.5</item>
+        <item>3.0</item>
+    </string-array>
 </resources>
 

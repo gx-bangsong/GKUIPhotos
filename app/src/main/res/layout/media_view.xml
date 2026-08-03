@@ -28,28 +28,4 @@
         app:show_subtitle_button="true"
         app:show_timeout="0" />
 
-    <!-- Playback speed selector (module 1). Only visible for video items. -->
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/speedButton"
-        style="?attr/materialButtonOutlinedStyle"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="top|end"
-        android:layout_marginTop="64dp"
-        android:layout_marginEnd="16dp"
-        android:minWidth="0dp"
-        android:paddingStart="12dp"
-        android:paddingEnd="12dp"
-        android:text="1.0x"
-        android:textAppearance="?attr/textAppearanceLabelMedium"
-        android:visibility="gone"
-        app:backgroundTint="@android:color/black"
-        app:cornerRadius="20dp"
-        app:icon="@drawable/ic_speed"
-        app:iconGravity="textStart"
-        app:iconSize="16dp"
-        app:iconTint="@android:color/white"
-        app:strokeColor="@android:color/white"
-        app:strokeWidth="1dp" />
-
 </FrameLayout>

@@ -158,6 +158,12 @@
     <string name="remember_video_playback_position_enabled_description">Resume videos from the last stopped position</string>
     <string name="playback_speed_title">Default playback speed</string>
 
+    <!-- Long-press fast-forward (module 1, revised) -->
+    <string name="long_press_speed_enabled_title">Long-press to fast-forward</string>
+    <string name="long_press_speed_enabled_description">Press and hold the video to play it faster; release to resume normal speed</string>
+    <string name="long_press_speed_title">Long-press fast-forward speed</string>
+    <string name="long_press_speed_description">Playback speed applied while the video is held</string>
+
     <!-- Editing preferences (module 4) -->
     <string name="edit_save_behavior_title">Image edit save behavior</string>
     <string name="edit_save_behavior_description">Choose what happens when saving an edited image</string>

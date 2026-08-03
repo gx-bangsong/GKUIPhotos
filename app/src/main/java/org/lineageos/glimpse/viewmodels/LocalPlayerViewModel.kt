@@ -38,6 +38,8 @@ import org.lineageos.glimpse.ext.edgeTapNavigationEnabled
 import org.lineageos.glimpse.ext.getVideoPlaybackPosition
 import org.lineageos.glimpse.ext.hideNativeSeekButtons
 import org.lineageos.glimpse.ext.isPlayingFlow
+import org.lineageos.glimpse.ext.longPressSpeed
+import org.lineageos.glimpse.ext.longPressSpeedEnabled
 import org.lineageos.glimpse.ext.rememberVideoPlaybackPositionEnabled
 import org.lineageos.glimpse.ext.removeVideoPlaybackPosition
 import org.lineageos.glimpse.ext.setVideoPlaybackPosition
@@ -337,6 +339,16 @@ class LocalPlayerViewModel(
 
     val edgeTapNavigationEnabled: Boolean
         get() = sharedPreferences.edgeTapNavigationEnabled
+
+    /**
+     * Whether press-and-hold fast-forwards the video (module 1, revised). The
+     * speed value is configurable in Settings.
+     */
+    val longPressSpeedEnabled: Boolean
+        get() = sharedPreferences.longPressSpeedEnabled
+
+    val longPressSpeed: Float
+        get() = sharedPreferences.longPressSpeed
 
     /**
      * Current playback speed (module 1). Pitch is always preserved at 1.0 so the
