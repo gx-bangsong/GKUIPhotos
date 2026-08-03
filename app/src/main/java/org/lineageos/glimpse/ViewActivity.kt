@@ -241,6 +241,16 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
                     true
                 }
 
+                R.id.toolbox -> {
+                    // Overflow-menu entry point for the toolbox; for videos this is
+                    // the only entry, since the floating capsule is hidden for
+                    // videos so it can't cover the progress bar.
+                    viewModel.displayedMedia.value?.let {
+                        ImageToolboxBottomSheet(this@ViewActivity, this@ViewActivity, it).show()
+                    }
+                    true
+                }
+
                 else -> false
             }
         }
@@ -566,9 +576,12 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
                     // Update info button
                     infoButton.isVisible = displayedMedia != null
 
-                    // Update toolbox capsule (module 6)
+                    // Update toolbox capsule: shown only for images (for videos it
+                    // would overlap the player's progress bar; videos reach the
+                    // toolbox via the toolbar overflow menu instead).
                     toolboxButton.isVisible = displayedMedia != null &&
-                        !viewModel.readOnly.value
+                        !viewModel.readOnly.value &&
+                        displayedMedia.mediaType != MediaType.VIDEO
 
                     // Update delete button
                     val isTrashed = displayedMedia?.isTrashed ?: false
@@ -636,8 +649,12 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
                     // Update delete button
                     deleteButton.isVisible = !readOnly
 
-                    // Module 6: toolbox is available whenever editing is allowed.
-                    toolboxButton.isVisible = !readOnly && viewModel.displayedMedia.value != null
+                    // Module 6: toolbox capsule is available whenever editing is
+                    // allowed, but only for images (videos use the overflow menu).
+                    val media = viewModel.displayedMedia.value
+                    toolboxButton.isVisible = !readOnly &&
+                        media != null &&
+                        media.mediaType != MediaType.VIDEO
                 }
             }
         }
