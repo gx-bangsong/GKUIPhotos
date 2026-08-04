@@ -89,8 +89,8 @@
     <string name="title_activity_settings">设置</string>
     <string name="general_header">常规</string>
     <string name="video_header">视频</string>
-    <string name="edge_tap_navigation_enable_title">边缘单击导航</string>
-    <string name="edge_tap_navigation_enabled_description">单击屏幕左侧或右侧边缘即可在媒体之间导航</string>
+    <string name="edge_tap_navigation_enable_title">边缘点击导航</string>
+    <string name="edge_tap_navigation_enabled_description">点击屏幕左侧或右侧边缘即可在媒体之间切换</string>
     <string name="double_tap_to_seek_enabled_title">双击快进/快退</string>
     <string name="double_tap_to_seek_enabled_description">双击视频左侧可快退，右侧可快进</string>
     <string name="double_tap_to_seek_seconds_title">双击快进/快退的时长</string>
