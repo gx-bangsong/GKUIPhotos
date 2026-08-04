@@ -541,7 +541,7 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
                 viewModel.fullscreenMode.collectLatest { fullscreenMode ->
                     appBarLayout.fade(!fullscreenMode)
                     bottomSheetLinearLayout.fade(!fullscreenMode)
-                    toolboxButton.fade(!fullscreenMode)
+                    updateToolboxVisibility()
 
                     window.setBarsVisibility(systemBars = !fullscreenMode)
 
@@ -579,9 +579,7 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
                     // Update toolbox capsule: shown only for images (for videos it
                     // would overlap the player's progress bar; videos reach the
                     // toolbox via the toolbar overflow menu instead).
-                    toolboxButton.isVisible = displayedMedia != null &&
-                        !viewModel.readOnly.value &&
-                        displayedMedia.mediaType != MediaType.VIDEO
+                    updateToolboxVisibility()
 
                     // Update delete button
                     val isTrashed = displayedMedia?.isTrashed ?: false
@@ -651,10 +649,7 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
 
                     // Module 6: toolbox capsule is available whenever editing is
                     // allowed, but only for images (videos use the overflow menu).
-                    val media = viewModel.displayedMedia.value
-                    toolboxButton.isVisible = !readOnly &&
-                        media != null &&
-                        media.mediaType != MediaType.VIDEO
+                    updateToolboxVisibility()
                 }
             }
         }
@@ -711,6 +706,20 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
             appBarLayout.measuredHeight,
             bottomSheetLinearLayout.measuredHeight,
         )
+    }
+
+    /**
+     * Module 6: single source of truth for the floating toolbox capsule. It is
+     * shown only for images (a video would otherwise be covered by it over the
+     * progress bar), only when editing is allowed, and hidden in fullscreen.
+     * Videos reach the toolbox via the toolbar overflow menu.
+     */
+    private fun updateToolboxVisibility() {
+        val media = viewModel.displayedMedia.value
+        toolboxButton.isVisible = media != null &&
+            media.mediaType != MediaType.VIDEO &&
+            !viewModel.readOnly.value &&
+            !viewModel.fullscreenMode.value
     }
 
     private fun dismissKeyguardAndRun(runnable: () -> Unit) {
