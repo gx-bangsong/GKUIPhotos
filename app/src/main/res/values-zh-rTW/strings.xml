@@ -9,6 +9,7 @@
     <string name="reels_title">Reels</string>
     <string name="albums_title">相簿</string>
     <string name="categories_title">類別</string>
+    <string name="library_title">媒體庫</string>
     <string name="album_favorites">我的最愛</string>
     <string name="album_trash">垃圾桶</string>
     <string name="album_reels">Reels</string>
@@ -83,4 +84,114 @@
     <string name="set_wallpaper_lock_screen">鎖定畫面</string>
     <string name="set_wallpaper_both">桌面和鎖定畫面</string>
     <string name="warning_bin_time_period">檔案將會在 30 天後永久刪除。</string>
+
+    <!-- 動態照片 -->
+    <string name="motion_photo_show_video">顯示影片</string>
+    <string name="motion_photo_show_photo">顯示相片</string>
+
+    <!-- 設定 -->
+    <string name="title_activity_settings">設定</string>
+    <string name="general_header">一般</string>
+    <string name="video_header">影片</string>
+    <string name="editing_header">編輯</string>
+    <string name="tools_header">工具</string>
+    <string name="edge_tap_navigation_enable_title">邊緣輕點導覽</string>
+    <string name="edge_tap_navigation_enabled_description">輕點螢幕左側或右側邊緣即可在媒體間切換</string>
+    <string name="double_tap_to_seek_enabled_title">雙擊快轉/倒轉</string>
+    <string name="double_tap_to_seek_enabled_description">雙擊影片左側可倒轉，右側可快轉</string>
+    <string name="double_tap_to_seek_seconds_title">雙擊快轉/倒轉的時長</string>
+    <string name="double_tap_to_seek_seconds_description">每次雙擊快轉或倒轉的秒數</string>
+    <string name="hide_native_seek_buttons_title">隱藏原生快轉/倒轉按鈕</string>
+    <string name="hide_native_seek_buttons_description">在影片播放器控制列中隱藏倒轉和快轉按鈕</string>
+    <string name="remember_video_playback_position_enabled_title">記住播放位置</string>
+    <string name="remember_video_playback_position_enabled_description">從上次停止的位置繼續播放影片</string>
+    <string name="playback_speed_title">預設播放倍速</string>
+
+    <!-- 長按倍速播放 -->
+    <string name="long_press_speed_enabled_title">長按倍速播放</string>
+    <string name="long_press_speed_enabled_description">長按影片可倍速播放，放開後恢復原速</string>
+    <string name="long_press_speed_title">長按倍速播放的速度</string>
+    <string name="long_press_speed_description">長按影片時套用的播放倍速</string>
+
+    <!-- 編輯（模組 4/5） -->
+    <string name="editor_title">編輯</string>
+    <string name="editor_save">儲存</string>
+    <string name="editor_rotate">旋轉</string>
+    <string name="editor_filter">濾鏡</string>
+    <string name="editor_crop">裁切</string>
+    <string name="editor_id_photo">證件照</string>
+    <string name="editor_undo">復原</string>
+    <string name="editor_redo">重做</string>
+    <string name="editor_save_dialog_title">儲存編輯後的圖片</string>
+    <string name="editor_save_overwrite">覆寫原圖</string>
+    <string name="editor_save_new">另存為新圖片</string>
+    <string name="editor_saving">儲存中…</string>
+    <string name="editor_saved">已儲存</string>
+    <string name="editor_save_failed">無法儲存圖片</string>
+    <string name="editor_filter_none">無</string>
+    <string name="editor_filter_grayscale">灰階</string>
+    <string name="editor_filter_sepia">棕褐色</string>
+    <string name="editor_filter_invert">反相</string>
+    <string name="editor_filter_warm">暖色</string>
+    <string name="editor_filter_cool">冷色</string>
+
+    <!-- 證件照工具（模組 5） -->
+    <string name="id_photo_title">證件照</string>
+    <string name="id_photo_preset_one_inch">一寸 (25:35)</string>
+    <string name="id_photo_preset_two_inch">二寸 (35:49)</string>
+    <string name="id_photo_preset_passport">護照 / 簽證</string>
+    <string name="id_photo_preset_square">方形（大頭貼）</string>
+    <string name="id_photo_guide_hint">拖曳以定位。藉由九宮格與臉部輪廓輔助線對齊頭部和肩部。</string>
+    <string name="id_photo_apply">套用</string>
+
+    <!-- 圖像工具箱（模組 6） -->
+    <string name="toolbox_title">圖像工具箱</string>
+    <string name="toolbox_compress">壓縮大小</string>
+    <string name="toolbox_convert">格式轉換</string>
+    <string name="toolbox_video_to_gif">影片轉 GIF</string>
+    <string name="toolbox_compress_quality">畫質</string>
+    <string name="toolbox_compress_quality_high">高（85%）</string>
+    <string name="toolbox_compress_quality_medium">中（70%）</string>
+    <string name="toolbox_compress_quality_low">低（50%）</string>
+    <string name="toolbox_compress_max_size">限制在 500 KB 以內</string>
+    <string name="toolbox_convert_target">目標格式</string>
+    <string name="toolbox_video_to_gif_duration">時長（秒）</string>
+    <string name="toolbox_processing">處理中…</string>
+    <string name="toolbox_done">完成，已儲存到 Pictures/Glimpse。</string>
+    <string name="toolbox_failed">操作失敗</string>
+    <string name="toolbox_run">執行</string>
+    <string name="toolbox_compress_run">壓縮</string>
+    <string name="toolbox_convert_run">轉換</string>
+    <string name="toolbox_video_to_gif_run">產生 GIF</string>
+
+    <!-- 分享隱私（模組 2） -->
+    <string name="share_privacy_title">隱私分享</string>
+    <string name="share_privacy_subtitle">將從用於分享的副本中抹除中繼資料，不會修改原始檔案。</string>
+    <string name="share_privacy_strip_location">抹除位置資訊（GPS）</string>
+    <string name="share_privacy_strip_device_time">抹除裝置與拍攝時間</string>
+    <string name="share_privacy_share_now">分享</string>
+    <string name="share_privacy_failed">無法準備已清除隱私資訊的副本</string>
+
+    <!-- 來源聚合（模組 3） -->
+    <string name="source_albums_header">智慧相簿（應用程式來源）</string>
+
+    <!-- GIF 編輯器（模組 7） -->
+    <string name="gif_editor_title">編輯 GIF</string>
+    <string name="gif_editor_frames">逐幀</string>
+    <string name="gif_editor_speed">倍速</string>
+    <string name="gif_editor_trim">時長裁切</string>
+    <string name="gif_editor_slower">減速</string>
+    <string name="gif_editor_faster">加速</string>
+    <string name="gif_editor_export">匯出 GIF</string>
+    <string name="gif_editor_exporting">編碼 GIF 中…</string>
+    <string name="gif_editor_exported">GIF 已匯出</string>
+    <string name="gif_editor_export_failed">無法編碼 GIF</string>
+    <string name="gif_editor_not_a_gif">不是動態 GIF</string>
+
+    <!-- 編輯儲存方式（模組 4） -->
+    <string name="edit_save_behavior_title">圖片編輯的儲存方式</string>
+    <string name="edit_save_behavior_description">選擇儲存編輯後圖片時的預設行為</string>
+    <string name="edit_save_behavior_ask">每次詢問</string>
+    <string name="edit_save_behavior_overwrite">永遠覆寫原圖</string>
+    <string name="edit_save_behavior_new">永遠另存為新圖片</string>
 </resources>

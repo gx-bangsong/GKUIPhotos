@@ -91,12 +91,103 @@
     <string name="video_header">视频</string>
     <string name="edge_tap_navigation_enable_title">边缘单击导航</string>
     <string name="edge_tap_navigation_enabled_description">单击屏幕左侧或右侧边缘即可在媒体之间导航</string>
-    <string name="double_tap_to_seek_enabled_title">启用双击寻找</string>
-    <string name="double_tap_to_seek_enabled_description">双击视频左侧或右侧即可快进或快退</string>
-    <string name="double_tap_to_seek_seconds_title">双击即可跳过时长</string>
-    <string name="double_tap_to_seek_seconds_description">双击视频可跳过的秒数</string>
-    <string name="hide_native_seek_buttons_title">隐藏原生寻找按钮</string>
-    <string name="hide_native_seek_buttons_description">从视频播放器控件中隐藏倒带和快进按钮</string>
+    <string name="double_tap_to_seek_enabled_title">双击快进/快退</string>
+    <string name="double_tap_to_seek_enabled_description">双击视频左侧可快退，右侧可快进</string>
+    <string name="double_tap_to_seek_seconds_title">双击快进/快退的时长</string>
+    <string name="double_tap_to_seek_seconds_description">每次双击快进或快退的秒数</string>
+    <string name="hide_native_seek_buttons_title">隐藏原生快进/快退按钮</string>
+    <string name="hide_native_seek_buttons_description">在视频播放器控件中隐藏快退和快进按钮</string>
     <string name="remember_video_playback_position_enabled_title">记住播放位置</string>
     <string name="remember_video_playback_position_enabled_description">从上次停止的位置继续播放视频</string>
+    <string name="playback_speed_title">默认播放倍速</string>
+
+    <!-- 长按倍速播放 -->
+    <string name="long_press_speed_enabled_title">长按倍速播放</string>
+    <string name="long_press_speed_enabled_description">长按视频可倍速播放，松开后恢复原速</string>
+    <string name="long_press_speed_title">长按倍速播放的速度</string>
+    <string name="long_press_speed_description">长按视频时应用的播放倍速</string>
+
+    <!-- 编辑（模块 4/5） -->
+    <string name="editing_header">编辑</string>
+    <string name="tools_header">工具</string>
+    <string name="editor_title">编辑</string>
+    <string name="editor_save">保存</string>
+    <string name="editor_rotate">旋转</string>
+    <string name="editor_filter">滤镜</string>
+    <string name="editor_crop">裁剪</string>
+    <string name="editor_id_photo">证件照</string>
+    <string name="editor_undo">撤销</string>
+    <string name="editor_redo">重做</string>
+    <string name="editor_save_dialog_title">保存编辑后的图片</string>
+    <string name="editor_save_overwrite">覆盖原图</string>
+    <string name="editor_save_new">另存为新图片</string>
+    <string name="editor_saving">正在保存…</string>
+    <string name="editor_saved">已保存</string>
+    <string name="editor_save_failed">无法保存图片</string>
+    <string name="editor_filter_none">无</string>
+    <string name="editor_filter_grayscale">灰度</string>
+    <string name="editor_filter_sepia">棕褐色</string>
+    <string name="editor_filter_invert">反色</string>
+    <string name="editor_filter_warm">暖色</string>
+    <string name="editor_filter_cool">冷色</string>
+
+    <!-- 证件照工具（模块 5） -->
+    <string name="id_photo_title">证件照</string>
+    <string name="id_photo_preset_one_inch">一寸 (25:35)</string>
+    <string name="id_photo_preset_two_inch">二寸 (35:49)</string>
+    <string name="id_photo_preset_passport">护照 / 签证</string>
+    <string name="id_photo_preset_square">方形（头像）</string>
+    <string name="id_photo_guide_hint">拖动以定位。借助九宫格与人脸轮廓辅助线对齐头部和肩部。</string>
+    <string name="id_photo_apply">应用</string>
+
+    <!-- 图像工具箱（模块 6） -->
+    <string name="toolbox_title">图像工具箱</string>
+    <string name="toolbox_compress">压缩大小</string>
+    <string name="toolbox_convert">格式转换</string>
+    <string name="toolbox_video_to_gif">视频转 GIF</string>
+    <string name="toolbox_compress_quality">画质</string>
+    <string name="toolbox_compress_quality_high">高（85%）</string>
+    <string name="toolbox_compress_quality_medium">中（70%）</string>
+    <string name="toolbox_compress_quality_low">低（50%）</string>
+    <string name="toolbox_compress_max_size">限制在 500 KB 以内</string>
+    <string name="toolbox_convert_target">目标格式</string>
+    <string name="toolbox_video_to_gif_duration">时长（秒）</string>
+    <string name="toolbox_processing">正在处理…</string>
+    <string name="toolbox_done">完成，已保存到 Pictures/Glimpse。</string>
+    <string name="toolbox_failed">操作失败</string>
+    <string name="toolbox_run">执行</string>
+    <string name="toolbox_compress_run">压缩</string>
+    <string name="toolbox_convert_run">转换</string>
+    <string name="toolbox_video_to_gif_run">生成 GIF</string>
+
+    <!-- 分享隐私（模块 2） -->
+    <string name="share_privacy_title">隐私分享</string>
+    <string name="share_privacy_subtitle">将从用于分享的副本中抹除元数据，不会修改原文件。</string>
+    <string name="share_privacy_strip_location">抹除位置信息（GPS）</string>
+    <string name="share_privacy_strip_device_time">抹除设备与拍摄时间</string>
+    <string name="share_privacy_share_now">分享</string>
+    <string name="share_privacy_failed">无法准备已清除隐私信息的副本</string>
+
+    <!-- 来源聚合（模块 3） -->
+    <string name="source_albums_header">智能相册（应用来源）</string>
+
+    <!-- GIF 编辑器（模块 7） -->
+    <string name="gif_editor_title">编辑 GIF</string>
+    <string name="gif_editor_frames">逐帧</string>
+    <string name="gif_editor_speed">倍速</string>
+    <string name="gif_editor_trim">时长裁剪</string>
+    <string name="gif_editor_slower">减速</string>
+    <string name="gif_editor_faster">加速</string>
+    <string name="gif_editor_export">导出 GIF</string>
+    <string name="gif_editor_exporting">正在编码 GIF…</string>
+    <string name="gif_editor_exported">GIF 已导出</string>
+    <string name="gif_editor_export_failed">无法编码 GIF</string>
+    <string name="gif_editor_not_a_gif">不是动态 GIF</string>
+
+    <!-- 编辑保存方式（模块 4） -->
+    <string name="edit_save_behavior_title">图片编辑的保存方式</string>
+    <string name="edit_save_behavior_description">选择保存编辑后的图片时的默认行为</string>
+    <string name="edit_save_behavior_ask">每次询问</string>
+    <string name="edit_save_behavior_overwrite">始终覆盖原图</string>
+    <string name="edit_save_behavior_new">始终另存为新图片</string>
 </resources>
