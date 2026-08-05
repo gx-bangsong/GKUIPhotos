@@ -142,7 +142,17 @@ class ImageToolboxBottomSheet(
                 Toast.makeText(context, R.string.toolbox_done, Toast.LENGTH_LONG).show()
             }.onFailure {
                 progressBar.isVisible = false
-                Toast.makeText(context, R.string.toolbox_failed, Toast.LENGTH_LONG).show()
+                // Surface the real cause in logcat so failures are diagnosable
+                // (the user-facing toast stays generic).
+                android.util.Log.e(
+                    "GlimpseToolbox", "toolbox operation failed", it
+                )
+                Toast.makeText(
+                    context,
+                    context.getString(R.string.toolbox_failed) +
+                        ": " + (it.message ?: it.javaClass.simpleName),
+                    Toast.LENGTH_LONG,
+                ).show()
             }
         }
     }

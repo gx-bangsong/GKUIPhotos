@@ -33,6 +33,12 @@ object GifCodec {
         val delayMs: Int,
     )
 
+    /**
+     * Maximum number of pixels sampled (across all frames) to build the global
+     * palette. Bounded so multi-frame video GIFs don't blow up memory/time.
+     */
+    private const val PALETTE_SAMPLE_SIZE = 20000
+
     // ----------------------------------------------------------------------
     // Decoder
     // ----------------------------------------------------------------------
@@ -334,10 +340,29 @@ object GifCodec {
             IndexedFrame(px, frame.delayMs)
         }
 
-        // Build a single global palette by quantizing across all frames.
-        val palette = MedianCut.quantize(normalized.flatMap { it.pixels.toList() }, 256)
+        // Build the global palette from a BOUNDED sample of pixels. Materializing
+        // every pixel of every frame (flatMap + LinkedHashSet) explodes memory and
+        // time for multi-frame video GIFs and is a guaranteed OOM on phones.
+        val sample = ArrayList<Int>(PALETTE_SAMPLE_SIZE)
+        val perFrame = (PALETTE_SAMPLE_SIZE / normalized.size).coerceAtLeast(1)
+        for (frame in normalized) {
+            val px = frame.pixels
+            val stride = (px.size / perFrame).coerceAtLeast(1)
+            var j = 0
+            while (j < px.size && sample.size < PALETTE_SAMPLE_SIZE) {
+                sample.add(px[j])
+                j += stride
+            }
+            if (sample.size >= PALETTE_SAMPLE_SIZE) break
+        }
+        val palette = MedianCut.quantize(sample, 256)
         val indexMap = HashMap<Int, Int>(palette.colors.size)
         palette.colors.forEachIndexed { i, c -> indexMap[c] = i }
+
+        // Per-pixel nearest-color cache (shared across frames). Video frames share
+        // most of their colors, so this turns O(pixels*256) into ~O(unique colors).
+        val pixelToIndex = HashMap<Int, Int>(indexMap.size * 2)
+        pixelToIndex.putAll(indexMap)
 
         val header = byteArrayOf('G'.code.toByte(), 'I'.code.toByte(), 'F'.code.toByte(),
             '8'.code.toByte(), '9'.code.toByte(), 'a'.code.toByte())
@@ -387,7 +412,10 @@ object GifCodec {
             val minCodeSize = maxOf(2, palette.bits)
             out.write(minCodeSize)
             val indexed = ByteArray(frame.pixels.size) { i ->
-                (indexMap[frame.pixels[i]] ?: nearestColor(palette.colors, frame.pixels[i])).toByte()
+                val px = frame.pixels[i]
+                pixelToIndex.getOrPut(px) {
+                    indexMap[px] ?: nearestColor(palette.colors, px)
+                }.toByte()
             }
             val compressed = lzwEncode(indexed, minCodeSize)
             writeSubBlocks(out, compressed)
@@ -430,7 +458,10 @@ object GifCodec {
         val endCode = clearCode + 1
         var codeSize = minCodeSize + 1
         var dict = HashMap<List<Byte>, Int>(4096)
-        for (i in 0 until clearCode + 2) {
+        // Only the literal color entries belong in the initial dictionary; the
+        // clear/end codes must NOT be present (adding them collided with colors
+        // 0/1 because e.g. 256.toByte() == 0.toByte()).
+        for (i in 0 until clearCode) {
             dict[listOf(i.toByte())] = i
         }
         var nextCode = endCode + 1
@@ -477,7 +508,7 @@ object GifCodec {
                     writeCode(clearCode)
                     codeSize = minCodeSize + 1
                     dict = HashMap(4096)
-                    for (i in 0 until clearCode + 2) {
+                    for (i in 0 until clearCode) {
                         dict[listOf(i.toByte())] = i
                     }
                     nextCode = endCode + 1

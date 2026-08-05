@@ -140,6 +140,7 @@ object ImageToolbox {
         durationSeconds: Int = 5,
         fps: Int = 8,
         maxEdge: Int = 480,
+        maxFrames: Int = 36,
         onProgress: ((Float) -> Unit)? = null,
     ): ToolboxResult {
         val retriever = MediaMetadataRetriever()
@@ -155,7 +156,7 @@ object ImageToolbox {
 
             val frameDelayMs = (1000 / fps.coerceIn(1, 15)).toInt().coerceAtLeast(33)
             var tUs = 0L
-            while (tUs < windowMs * 1000L) {
+            while (tUs < windowMs * 1000L && frames.size < maxFrames) {
                 val bmp = retriever.getFrameAtTime(tUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
                 if (bmp != null) {
                     val scaled = scaleDown(bmp, maxEdge)
