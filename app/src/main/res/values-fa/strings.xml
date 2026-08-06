@@ -101,4 +101,8 @@
     <string name="double_tap_to_seek_enabled_description">برای رفتن به عقب یا جلو، دو بار روی سمت چپ یا راست ویدیو ضربه بزنید</string>
     <string name="double_tap_to_seek_seconds_title">برای نمایش مدت رد‌شدن، دو بار ضربه بزنید</string>
     <string name="double_tap_to_seek_seconds_description">ثانیه‌هایی که هنگام دوبار ضربه زدن روی ویدیو باید رد شوند</string>
+    <string name="hide_native_seek_buttons_title">مخفی کردن دکمه‌های جستجوی بومی</string>
+    <string name="hide_native_seek_buttons_description">دکمه‌های عقب و جلو بردن را از کنترل‌های پخش‌کننده ویدیو پنهان کنید</string>
+    <string name="remember_video_playback_position_enabled_title">موقعیت پخش را به خاطر بسپارید</string>
+    <string name="remember_video_playback_position_enabled_description">ادامه پخش ویدیوها از آخرین موقعیت متوقف شده</string>
 </resources>
