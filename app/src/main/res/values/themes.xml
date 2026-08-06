@@ -8,6 +8,12 @@
     <style name="Theme.Glimpse" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="android:windowLayoutInDisplayCutoutMode">always</item>
         <item name="windowActionModeOverlay">true</item>
+        <!-- Fix: previous purple status bar came from Material3 colorPrimary.
+             With enableEdgeToEdge() the bars should be transparent and draw
+             behind the content; the visible color then comes from the window
+             background (colorSurface = light gray / dark gray) instead of purple. -->
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>
 
     <!-- Top app bar option -->
@@ -25,6 +31,8 @@
     <!-- Media viewer -->
     <style name="Theme.Glimpse.MediaViewer" parent="Theme.Material3.Dark.NoActionBar">
         <item name="android:windowLayoutInDisplayCutoutMode">always</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>
 
     <!-- Media viewer bottom sheet -->
