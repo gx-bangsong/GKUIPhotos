@@ -137,6 +137,7 @@ object ImageToolbox {
     fun videoToGif(
         context: Context,
         sourceUri: Uri,
+        startSeconds: Int = 0,
         durationSeconds: Int = 5,
         fps: Int = 8,
         maxEdge: Int = 480,
@@ -165,15 +166,19 @@ object ImageToolbox {
             val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
                 ?.toLongOrNull() ?: 0L
             val total = durationMs.coerceAtLeast(1L)
-            val windowMs = (durationSeconds * 1000L).coerceAtMost(total)
+            // HCI: allow picking a start offset, not just from 0.
+            val startMs = (startSeconds * 1000L).coerceIn(0L, total - 1L)
+            val availableMs = (total - startMs).coerceAtLeast(1L)
+            val windowMs = (durationSeconds * 1000L).coerceAtMost(availableMs)
 
             val intervalUs = (1_000_000L / fps.coerceIn(1, 15)).coerceAtLeast(1L)
             val frames = ArrayList<GifCodec.GifFrame>()
 
             val frameDelayMs = (1000 / fps.coerceIn(1, 15)).toInt().coerceAtLeast(33)
-            var tUs = 0L
+            var tUs = startMs * 1000L
+            val endUs = (startMs + windowMs) * 1000L
             var consecutiveNulls = 0
-            while (tUs < windowMs * 1000L && frames.size < maxFrames) {
+            while (tUs < endUs && frames.size < maxFrames) {
                 var bmp: Bitmap? = null
                 try {
                     // Prefer CLOSEST (more likely to return a frame) and fall back
@@ -196,25 +201,25 @@ object ImageToolbox {
                     if (consecutiveNulls > 6) {
                         tUs += intervalUs * 2
                         consecutiveNulls = 0
-                        onProgress?.invoke((tUs.toFloat() / (windowMs * 1000f)).coerceIn(0f, 1f))
+                        onProgress?.invoke(((tUs - startMs * 1000L).toFloat() / (windowMs * 1000f)).coerceIn(0f, 1f))
                         continue
                     }
                 }
-                onProgress?.invoke((tUs.toFloat() / (windowMs * 1000f)).coerceIn(0f, 1f))
+                onProgress?.invoke(((tUs - startMs * 1000L).toFloat() / (windowMs * 1000f)).coerceIn(0f, 1f))
                 tUs += intervalUs
             }
             if (frames.isEmpty()) {
-                // Last-ditch single frame at 0, with both options.
+                // Last-ditch single frame at startMs, with both options.
                 try {
-                    val bmp = retriever.getFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST)
-                        ?: retriever.getFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                    val bmp = retriever.getFrameAtTime(startMs * 1000L, MediaMetadataRetriever.OPTION_CLOSEST)
+                        ?: retriever.getFrameAtTime(startMs * 1000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
                     if (bmp != null) {
                         val scaled = scaleDown(bmp, maxEdge)
                         if (scaled !== bmp) bmp.recycle()
                         frames.add(GifCodec.GifFrame(scaled, frameDelayMs))
                     }
                 } catch (e: Exception) {
-                    android.util.Log.w("ImageToolbox", "fallback frame at 0 failed", e)
+                    android.util.Log.w("ImageToolbox", "fallback frame at start failed", e)
                 }
             }
             if (frames.isEmpty()) throw IllegalStateException("No frames extracted — video may be DRM or unsupported: $sourceUri")

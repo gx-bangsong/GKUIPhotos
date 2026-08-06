@@ -115,7 +115,7 @@
             android:text="@string/toolbox_convert_run" />
     </LinearLayout>
 
-    <!-- 3. Video to GIF -->
+    <!-- 3. Video to GIF — HCI-redesigned: preview + range + fps + resolution -->
     <LinearLayout
         android:id="@+id/videoToGifSection"
         android:layout_width="match_parent"
@@ -139,24 +139,117 @@
             app:drawableStartCompat="@drawable/ic_video_to_gif" />
 
         <TextView
+            android:id="@+id/gifVideoDurationLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="视频总长：--"
+            android:textAppearance="?attr/textAppearanceBodySmall"
+            android:textColor="?attr/colorOnSurfaceVariant" />
+
+        <ImageView
+            android:id="@+id/gifPreviewImage"
+            android:layout_width="match_parent"
+            android:layout_height="120dp"
+            android:layout_marginTop="8dp"
+            android:background="@drawable/bg_thumbnail"
+            android:scaleType="centerCrop"
+            android:visibility="gone" />
+
+        <!-- 起始位置 -->
+        <TextView
+            android:id="@+id/gifStartLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="起始位置：0.0s"
+            android:textAppearance="?attr/textAppearanceLabelMedium" />
+
+        <SeekBar
+            android:id="@+id/gifStartSeekBar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:max="100"
+            android:progress="0" />
+
+        <!-- 截取时长 -->
+        <TextView
             android:id="@+id/gifDurationLabel"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="@string/toolbox_video_to_gif_duration" />
+            android:layout_marginTop="8dp"
+            android:text="截取时长：5s"
+            android:textAppearance="?attr/textAppearanceLabelMedium" />
 
         <SeekBar
             android:id="@+id/gifDurationSeekBar"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:max="15"
-            android:progress="5" />
+            android:max="10"
+            android:progress="4" />
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/videoToGifRunButton"
+        <!-- 帧率 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="帧率（流畅度 vs 体积）"
+            android:textAppearance="?attr/textAppearanceLabelMedium" />
+
+        <com.google.android.material.chip.ChipGroup
+            android:id="@+id/gifFpsChipGroup"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:text="@string/toolbox_video_to_gif_run" />
+            app:singleLine="true"
+            app:singleSelection="true" />
+
+        <!-- 分辨率 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="分辨率（清晰度 vs 体积）"
+            android:textAppearance="?attr/textAppearanceLabelMedium" />
+
+        <com.google.android.material.chip.ChipGroup
+            android:id="@+id/gifResChipGroup"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            app:singleLine="true"
+            app:singleSelection="true" />
+
+        <TextView
+            android:id="@+id/gifEstimateLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="预计：约 40 帧 · 约 2.1 MB"
+            android:textAppearance="?attr/textAppearanceBodySmall"
+            android:textColor="?attr/colorOnSurfaceVariant"
+            android:visibility="gone" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:orientation="horizontal">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/gifPreviewButton"
+                style="?attr/materialButtonOutlinedStyle"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginEnd="8dp"
+                android:text="预览首帧" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/videoToGifRunButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/toolbox_video_to_gif_run" />
+        </LinearLayout>
     </LinearLayout>
 
     <!-- 4. GIF editor entry (for animated GIFs) -->
