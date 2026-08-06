@@ -134,9 +134,20 @@ class MediaViewerAdapter(
 
         init {
             imageView.setOnClickListener {
+                // Don't toggle custom fullscreen while in system PiP or when the
+                // controller is handling the tap (play/pause etc.).
+                if (itemView.context is android.app.Activity &&
+                    (itemView.context as android.app.Activity).isInPictureInPictureMode
+                ) return@setOnClickListener
                 localPlayerViewModel.toggleFullscreenMode()
             }
             playerView.setOnClickListener {
+                if (itemView.context is android.app.Activity &&
+                    (itemView.context as android.app.Activity).isInPictureInPictureMode
+                ) return@setOnClickListener
+                // If the controller is visible the tap is likely on a control
+                // (play, seek, etc.) — let the controller handle it.
+                if (playerControlView.isVisible) return@setOnClickListener
                 localPlayerViewModel.toggleFullscreenMode()
             }
 

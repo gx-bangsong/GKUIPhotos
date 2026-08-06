@@ -117,12 +117,17 @@ object SourceAlbumAggregator {
         val resolver: ContentResolver = context.contentResolver
         val filesUri = MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL)
 
+        // On Android 10+ DATA is deprecated and often null due to scoped storage.
+        // Query RELATIVE_PATH + DISPLAY_NAME as modern fallbacks, keep DATA for
+        // legacy devices where it is still populated.
         val projection = arrayOf(
             MediaStore.Files.FileColumns._ID,
             MediaStore.Files.FileColumns.DATA,
             MediaStore.Files.FileColumns.MEDIA_TYPE,
             MediaStore.Files.FileColumns.DISPLAY_NAME,
             MediaStore.Files.FileColumns.DATE_MODIFIED,
+            MediaStore.Files.FileColumns.RELATIVE_PATH,
+            MediaStore.Files.FileColumns.BUCKET_DISPLAY_NAME,
         )
 
         val selection = buildString {
@@ -139,14 +144,21 @@ object SourceAlbumAggregator {
         val imagesUri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
         val videosUri = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
 
+        // Need column indices lazily — RELATIVE_PATH may be missing on very old API.
         resolver.query(filesUri, projection, selection, null, null)?.use { cursor ->
             val idIdx = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns._ID)
-            val dataIdx = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.DATA)
+            val dataIdx = cursor.getColumnIndex(MediaStore.Files.FileColumns.DATA)
             val typeIdx = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.MEDIA_TYPE)
+            val relPathIdx = cursor.getColumnIndex(MediaStore.Files.FileColumns.RELATIVE_PATH)
+            val displayNameIdx = cursor.getColumnIndex(MediaStore.Files.FileColumns.DISPLAY_NAME)
+            val bucketNameIdx = cursor.getColumnIndex(MediaStore.Files.FileColumns.BUCKET_DISPLAY_NAME)
 
             while (cursor.moveToNext()) {
                 val id = cursor.getLong(idIdx)
-                val data = cursor.getString(dataIdx) ?: continue
+                val data = if (dataIdx != -1) cursor.getString(dataIdx) else null
+                val relPath = if (relPathIdx != -1) cursor.getString(relPathIdx) else null
+                val displayName = if (displayNameIdx != -1) cursor.getString(displayNameIdx) else null
+                val bucketName = if (bucketNameIdx != -1) cursor.getString(bucketNameIdx) else null
                 val type = cursor.getInt(typeIdx)
                 val contentUri = if (type == MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO) {
                     Uri.withAppendedPath(videosUri, id.toString())
@@ -154,13 +166,18 @@ object SourceAlbumAggregator {
                     Uri.withAppendedPath(imagesUri, id.toString())
                 }
 
+                // Build a searchable haystack from all available path-like fields.
+                val haystack = listOfNotNull(data, relPath, displayName, bucketName)
+                    .joinToString(separator = "/")
+                if (haystack.isEmpty()) continue
+
                 val matched = KNOWN_SOURCES.firstOrNull { source ->
-                    source.pathKeywords.any { kw -> data.contains(kw, ignoreCase = true) }
+                    source.pathKeywords.any { kw -> haystack.contains(kw, ignoreCase = true) }
                 }
                 if (matched != null) {
-                    byPath.getOrPut(matched.key) { mutableListOf() }.add(contentUri to data)
+                    byPath.getOrPut(matched.key) { mutableListOf() }.add(contentUri to haystack)
                 } else if (type == MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE) {
-                    unmatched.add(contentUri to data)
+                    unmatched.add(contentUri to haystack)
                 }
             }
         }

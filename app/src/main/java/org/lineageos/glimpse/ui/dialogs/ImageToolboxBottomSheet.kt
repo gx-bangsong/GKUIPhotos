@@ -39,10 +39,15 @@ class ImageToolboxBottomSheet(
 ) : BottomSheetDialog(context) {
 
     private val isVideo = media.mediaType == MediaType.VIDEO
+    private val isGif = media.mediaType == MediaType.IMAGE && (
+        media.mimeType.contains("gif", ignoreCase = true) ||
+            (media.displayName?.endsWith(".gif", ignoreCase = true) == true)
+        )
 
     private val compressSection by lazy { findViewById<android.view.View>(R.id.compressSection)!! }
     private val convertSection by lazy { findViewById<android.view.View>(R.id.convertSection)!! }
     private val videoToGifSection by lazy { findViewById<android.view.View>(R.id.videoToGifSection)!! }
+    private val gifEditorSection by lazy { findViewById<android.view.View>(R.id.gifEditorSection)!! }
     private val compressRadioGroup by lazy { findViewById<RadioGroup>(R.id.compressRadioGroup)!! }
     private val convertChipGroup by lazy { findViewById<ChipGroup>(R.id.convertChipGroup)!! }
     private val gifDurationSeekBar by lazy { findViewById<SeekBar>(R.id.gifDurationSeekBar)!! }
@@ -53,10 +58,29 @@ class ImageToolboxBottomSheet(
     init {
         setContentView(R.layout.dialog_image_toolbox)
 
-        // Only images expose compress + convert; only videos expose video→GIF.
-        compressSection.isVisible = !isVideo
-        convertSection.isVisible = !isVideo
-        videoToGifSection.isVisible = isVideo
+        // Images expose compress + convert; videos expose video→GIF; GIFs expose the
+        // dedicated GIF editor entry so the module is discoverable even before
+        // the user hits the Edit button.
+        when {
+            isGif -> {
+                compressSection.isVisible = false
+                convertSection.isVisible = false
+                videoToGifSection.isVisible = false
+                gifEditorSection.isVisible = true
+            }
+            isVideo -> {
+                compressSection.isVisible = false
+                convertSection.isVisible = false
+                videoToGifSection.isVisible = true
+                gifEditorSection.isVisible = false
+            }
+            else -> {
+                compressSection.isVisible = true
+                convertSection.isVisible = true
+                videoToGifSection.isVisible = false
+                gifEditorSection.isVisible = false
+            }
+        }
 
         setupConvertChips()
 
@@ -68,6 +92,10 @@ class ImageToolboxBottomSheet(
         }
         findViewById<MaterialButton>(R.id.videoToGifRunButton)!!.setOnClickListener {
             runVideoToGif()
+        }
+        findViewById<MaterialButton>(R.id.gifEditorOpenButton)?.setOnClickListener {
+            dismiss()
+            context.startActivity(org.lineageos.glimpse.GifEditorActivity.createIntent(context, media.uri))
         }
     }
 

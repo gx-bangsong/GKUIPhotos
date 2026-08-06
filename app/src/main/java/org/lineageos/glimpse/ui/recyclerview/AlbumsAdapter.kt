@@ -10,6 +10,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.TextView
+import androidx.core.view.isVisible
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.ListAdapter
@@ -43,9 +44,9 @@ class AlbumsAdapter(
 
     fun submit(albums: List<Album>, sourceAlbums: List<SourceAlbum>) {
         val newRows = buildList {
-            if (sourceAlbums.isNotEmpty()) {
-                add(Row.SourceSection(sourceAlbums))
-            }
+            // Always show the smart-album section so the feature is discoverable
+            // even when no media matches yet; the ViewHolder shows a placeholder.
+            add(Row.SourceSection(sourceAlbums))
             albums.forEach { add(Row.AlbumRow(it)) }
         }
         // Lightweight full refresh; albums lists are small.
@@ -93,6 +94,7 @@ class AlbumsAdapter(
 
     inner class SourceSectionViewHolder(view: View) : RecyclerView.ViewHolder(view) {
         private val recyclerView = view.findViewById<RecyclerView>(R.id.sourceAlbumsRecyclerView)
+        private val emptyView = view.findViewById<View>(R.id.sourceEmptyView)
         private val adapter = SourceCarouselAdapter(onSourceAlbumClick)
 
         init {
@@ -103,7 +105,10 @@ class AlbumsAdapter(
         }
 
         fun bind(sourceAlbums: List<SourceAlbum>) {
-            adapter.submitList(sourceAlbums)
+            val isEmpty = sourceAlbums.isEmpty()
+            recyclerView.isVisible = !isEmpty
+            emptyView.isVisible = isEmpty
+            if (!isEmpty) adapter.submitList(sourceAlbums)
         }
     }
 

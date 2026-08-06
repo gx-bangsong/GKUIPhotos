@@ -18,6 +18,7 @@ import android.provider.MediaStore
 import android.util.Log
 import android.util.Rational
 import android.view.View
+import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
@@ -29,6 +30,7 @@ import androidx.core.util.Consumer
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.isVisible
+import androidx.core.view.updateLayoutParams
 import androidx.core.view.updatePadding
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
@@ -298,10 +300,12 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
                     // editors — the full GIF editor for animated GIFs, the image
                     // editor (rotate/filter/crop/ID-photo) for still images, and
                     // the legacy external chooser for videos.
+                    val isGif = it.mediaType == MediaType.IMAGE && (
+                        it.mimeType.contains("gif", ignoreCase = true) ||
+                            (it.displayName?.endsWith(".gif", ignoreCase = true) == true)
+                        )
                     when {
-                        it.mediaType == MediaType.IMAGE && it.mimeType.equals(
-                            "image/gif", ignoreCase = true
-                        ) -> startActivity(GifEditorActivity.createIntent(this@ViewActivity, it.uri))
+                        isGif -> startActivity(GifEditorActivity.createIntent(this@ViewActivity, it.uri))
 
                         it.mediaType == MediaType.IMAGE -> startActivity(
                             ImageEditorActivity.createIntent(this@ViewActivity, it.uri, it.mimeType)
@@ -395,10 +399,24 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
     ) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
 
-        // In PiP we hide the chrome (toolbar + bottom sheet) to maximise the
-        // video surface; restoring brings it back.
+        // In PiP we hide the chrome (toolbar + bottom sheet + toolbox) to maximise the
+        // video surface and avoid the toolbox overlapping the player controls;
+        // restoring brings it back. Also exit fullscreen chrome so controls don't
+        // stay hidden after PiP.
         appBarLayout.fade(!isInPictureInPictureMode)
         bottomSheetLinearLayout.fade(!isInPictureInPictureMode)
+        toolboxButton.fade(!isInPictureInPictureMode)
+        if (isInPictureInPictureMode) {
+            // Don't keep the custom fullscreen mode active inside the tiny PiP window
+            // — the system chrome is already minimal and the play/pause button would
+            // otherwise be hidden behind our fullscreen fade.
+            if (viewModel.fullscreenMode.value) {
+                viewModel.toggleFullscreenMode()
+            }
+        } else {
+            updateToolboxVisibility()
+            updateSheetsHeight()
+        }
     }
 
     /**
@@ -576,6 +594,23 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
                     // Update info button
                     infoButton.isVisible = displayedMedia != null
 
+                    // Update edit button: show "Edit GIF" for GIFs so the dedicated
+                    // GIF editor (module 7) is discoverable; still routes through
+                    // the same adjustButton.
+                    displayedMedia?.let {
+                        val isGif = it.mediaType == MediaType.IMAGE && (
+                            it.mimeType.contains("gif", ignoreCase = true) ||
+                                (it.displayName?.endsWith(".gif", ignoreCase = true) == true)
+                            )
+                        if (isGif) {
+                            adjustButton.setText(R.string.gif_editor_title)
+                            adjustButton.setIconResource(R.drawable.ic_video_to_gif)
+                        } else {
+                            adjustButton.setText(R.string.file_action_edit)
+                            adjustButton.setIconResource(R.drawable.ic_edit)
+                        }
+                    }
+
                     // Update toolbox capsule: shown only for images (for videos it
                     // would overlap the player's progress bar; videos reach the
                     // toolbox via the toolbar overflow menu instead).
@@ -641,14 +676,23 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
                     // Update favorite button
                     favoriteButton.isVisible = !readOnly
 
-                    // Update adjust button
-                    adjustButton.isVisible = !readOnly
+                    // Update adjust button — for GIFs keep editing available even
+                    // when readOnly (VIEW intents) so the offline GIF editor is
+                    // discoverable; it will "Save as new" in that case.
+                    val media = viewModel.displayedMedia.value
+                    val isGif = media?.mediaType == MediaType.IMAGE && (
+                        media.mimeType.contains("gif", ignoreCase = true) ||
+                            (media.displayName?.endsWith(".gif", ignoreCase = true) == true)
+                        )
+                    adjustButton.isVisible = !readOnly || isGif
 
                     // Update delete button
                     deleteButton.isVisible = !readOnly
 
                     // Module 6: toolbox capsule is available whenever editing is
                     // allowed, but only for images (videos use the overflow menu).
+                    // Keep it available for GIFs even in readOnly so the GIF editor
+                    // entry point isn't lost.
                     updateToolboxVisibility()
                 }
             }
@@ -702,23 +746,44 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
             View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED
         )
 
-        viewModel.setSheetsHeight(
-            appBarLayout.measuredHeight,
-            bottomSheetLinearLayout.measuredHeight,
-        )
+        val top = appBarLayout.measuredHeight
+        val bottom = bottomSheetLinearLayout.measuredHeight
+        viewModel.setSheetsHeight(top, bottom)
+
+        // Keep the floating toolbox capsule just above the bottom sheet so it
+        // never overlaps the PlayerView's controls (which are inset by the same
+        // bottom height) and never collides with the fullscreen toggle area.
+        toolboxButton.updateLayoutParams<ViewGroup.MarginLayoutParams> {
+            bottomMargin = bottom + 16.dpToPx(this@ViewActivity)
+        }
     }
+
+    private fun Int.dpToPx(context: android.content.Context): Int =
+        (this * context.resources.displayMetrics.density).toInt()
 
     /**
      * Module 6: single source of truth for the floating toolbox capsule. It is
      * shown only for images (a video would otherwise be covered by it over the
-     * progress bar), only when editing is allowed, and hidden in fullscreen.
+     * progress bar), only when editing is allowed, hidden in fullscreen and in
+     * PiP (where the window is tiny and the play button would be covered).
      * Videos reach the toolbox via the toolbar overflow menu.
      */
     private fun updateToolboxVisibility() {
+        if (isInPipMode()) {
+            toolboxButton.isVisible = false
+            return
+        }
         val media = viewModel.displayedMedia.value
+        val isGif = media?.mediaType == MediaType.IMAGE && (
+            media.mimeType.contains("gif", ignoreCase = true) ||
+                (media.displayName?.endsWith(".gif", ignoreCase = true) == true)
+            )
+        // For GIFs keep the toolbox reachable even when readOnly so the GIF
+        // editor entry point isn't lost in VIEW intents.
+        val canEdit = !viewModel.readOnly.value || isGif
         toolboxButton.isVisible = media != null &&
             media.mediaType != MediaType.VIDEO &&
-            !viewModel.readOnly.value &&
+            canEdit &&
             !viewModel.fullscreenMode.value
     }
 

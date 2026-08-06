@@ -159,6 +159,44 @@
             android:text="@string/toolbox_video_to_gif_run" />
     </LinearLayout>
 
+    <!-- 4. GIF editor entry (for animated GIFs) -->
+    <LinearLayout
+        android:id="@+id/gifEditorSection"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginBottom="12dp"
+            android:background="?attr/colorOutlineVariant" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:drawablePadding="8dp"
+            android:gravity="center_vertical"
+            android:text="@string/gif_editor_title"
+            android:textAppearance="?attr/textAppearanceTitleSmall"
+            app:drawableStartCompat="@drawable/ic_video_to_gif" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            android:text="逐帧预览、变速、裁剪、旋转与滤镜，离线重编码"
+            android:textAppearance="?attr/textAppearanceBodySmall"
+            android:textColor="?attr/colorOnSurfaceVariant" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/gifEditorOpenButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/gif_editor_title" />
+    </LinearLayout>
+
     <com.google.android.material.progressindicator.LinearProgressIndicator
         android:id="@+id/toolboxProgressBar"
         android:layout_width="match_parent"

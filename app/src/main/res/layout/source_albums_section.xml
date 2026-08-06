@@ -30,4 +30,17 @@
         android:paddingEnd="4dp"
         android:scrollbars="none" />
 
+    <TextView
+        android:id="@+id/sourceEmptyView"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="12dp"
+        android:text="暂无匹配的应用来源 — 将照片/视频保存到美团众包、蜂鸟、顺丰、达达、淘宝、微信等目录后自动聚合"
+        android:textAppearance="?attr/textAppearanceBodySmall"
+        android:textColor="?attr/colorOnSurfaceVariant"
+        android:visibility="gone" />
+
 </LinearLayout>
