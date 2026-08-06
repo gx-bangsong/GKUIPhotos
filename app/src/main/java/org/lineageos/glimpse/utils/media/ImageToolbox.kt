@@ -143,9 +143,25 @@ object ImageToolbox {
         maxFrames: Int = 36,
         onProgress: ((Float) -> Unit)? = null,
     ): ToolboxResult {
+        val resolver = context.contentResolver
         val retriever = MediaMetadataRetriever()
-        retriever.setDataSource(context, sourceUri)
+        // Use file descriptor when possible — more reliable for content:// on
+        // scoped storage and avoids the "Invalid ID 0x0000000f" path that
+        // MediaMetadataRetriever hits when it tries to resolve the URI via
+        // MediaStore directly.
+        var fd: android.content.res.AssetFileDescriptor? = null
         try {
+            try {
+                fd = resolver.openAssetFileDescriptor(sourceUri, "r")
+                if (fd != null) {
+                    retriever.setDataSource(fd.fileDescriptor)
+                } else {
+                    retriever.setDataSource(context, sourceUri)
+                }
+            } catch (e: Exception) {
+                // Fallback to the Uri path — some firmware only supports this.
+                try { retriever.setDataSource(context, sourceUri) } catch (_: Exception) { throw e }
+            }
             val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
                 ?.toLongOrNull() ?: 0L
             val total = durationMs.coerceAtLeast(1L)
@@ -156,23 +172,52 @@ object ImageToolbox {
 
             val frameDelayMs = (1000 / fps.coerceIn(1, 15)).toInt().coerceAtLeast(33)
             var tUs = 0L
+            var consecutiveNulls = 0
             while (tUs < windowMs * 1000L && frames.size < maxFrames) {
-                val bmp = retriever.getFrameAtTime(tUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                var bmp: Bitmap? = null
+                try {
+                    // Prefer CLOSEST (more likely to return a frame) and fall back
+                    // to CLOSEST_SYNC if the firmware returns null.
+                    bmp = retriever.getFrameAtTime(tUs, MediaMetadataRetriever.OPTION_CLOSEST)
+                        ?: retriever.getFrameAtTime(tUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                } catch (e: Exception) {
+                    android.util.Log.w("ImageToolbox", "getFrameAtTime failed at $tUs us", e)
+                }
                 if (bmp != null) {
                     val scaled = scaleDown(bmp, maxEdge)
                     if (scaled !== bmp) bmp.recycle()
                     frames.add(GifCodec.GifFrame(scaled, frameDelayMs))
+                    consecutiveNulls = 0
+                } else {
+                    consecutiveNulls++
+                    // If we get many nulls in a row the track is likely not
+                    // decodable at those timestamps — break to avoid infinite
+                    // tight loop that looks like "stuck".
+                    if (consecutiveNulls > 6) {
+                        tUs += intervalUs * 2
+                        consecutiveNulls = 0
+                        onProgress?.invoke((tUs.toFloat() / (windowMs * 1000f)).coerceIn(0f, 1f))
+                        continue
+                    }
                 }
                 onProgress?.invoke((tUs.toFloat() / (windowMs * 1000f)).coerceIn(0f, 1f))
                 tUs += intervalUs
             }
             if (frames.isEmpty()) {
-                retriever.getFrameAtTime(0)?.let { bmp ->
-                    val scaled = scaleDown(bmp, maxEdge)
-                    if (scaled !== bmp) bmp.recycle()
-                    frames.add(GifCodec.GifFrame(scaled, frameDelayMs))
+                // Last-ditch single frame at 0, with both options.
+                try {
+                    val bmp = retriever.getFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST)
+                        ?: retriever.getFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                    if (bmp != null) {
+                        val scaled = scaleDown(bmp, maxEdge)
+                        if (scaled !== bmp) bmp.recycle()
+                        frames.add(GifCodec.GifFrame(scaled, frameDelayMs))
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.w("ImageToolbox", "fallback frame at 0 failed", e)
                 }
             }
+            if (frames.isEmpty()) throw IllegalStateException("No frames extracted — video may be DRM or unsupported: $sourceUri")
 
             val out = ByteArrayOutputStream()
             GifCodec.encode(frames, out, loopCount = 0)
@@ -193,6 +238,7 @@ object ImageToolbox {
                 resultBytes = data.size.toLong(),
             )
         } finally {
+            try { fd?.close() } catch (_: Exception) {}
             retriever.release()
         }
     }
