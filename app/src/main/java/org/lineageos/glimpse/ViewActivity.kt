@@ -597,6 +597,11 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
                     // Update edit button: show "Edit GIF" for GIFs so the dedicated
                     // GIF editor (module 7) is discoverable; still routes through
                     // the same adjustButton.
+                    // Keep the icon visually unified with the other three bottom
+                    // buttons (all use 24dp filled Material icons via drawableTop).
+                    // Only the text changes to avoid the previous ic_video_to_gif
+                    // mismatch that made the edit icon look heavier/thinner than
+                    // share/star/delete.
                     displayedMedia?.let {
                         val isGif = it.mediaType == MediaType.IMAGE && (
                             it.mimeType.contains("gif", ignoreCase = true) ||
@@ -604,11 +609,13 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
                             )
                         if (isGif) {
                             adjustButton.setText(R.string.gif_editor_title)
-                            adjustButton.setIconResource(R.drawable.ic_video_to_gif)
                         } else {
                             adjustButton.setText(R.string.file_action_edit)
-                            adjustButton.setIconResource(R.drawable.ic_edit)
                         }
+                        // Ensure the top drawable stays the consistent ic_edit
+                        // (setCompoundDrawables, not setIconResource which would
+                        // add a start-icon and break the BottomSheet.Button style).
+                        adjustButton.setCompoundDrawablesWithIntrinsicBounds(0, R.drawable.ic_edit, 0, 0)
                     }
 
                     // Update toolbox capsule: shown only for images (for videos it
