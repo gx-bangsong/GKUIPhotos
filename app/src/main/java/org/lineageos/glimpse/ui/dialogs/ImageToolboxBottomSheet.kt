@@ -295,7 +295,14 @@ class ImageToolboxBottomSheet(
                     val longest = maxOf(it.width, it.height)
                     if (longest > maxEdge) {
                         val scale = maxEdge.toFloat() / longest
-                        Bitmap.createScaledBitmap((it.width*scale).toInt(), (it.height*scale).toInt(), true).also { _ -> it.recycle() }
+                        val scaled = Bitmap.createScaledBitmap(
+                            it,
+                            (it.width * scale).toInt().coerceAtLeast(1),
+                            (it.height * scale).toInt().coerceAtLeast(1),
+                            true
+                        )
+                        it.recycle()
+                        scaled
                     } else it
                 }
             } catch (_: Exception) {
