@@ -56,6 +56,38 @@
             app:summary="@string/remember_video_playback_position_enabled_description"
             app:title="@string/remember_video_playback_position_enabled_title" />
 
+        <SwitchPreferenceCompat
+            app:defaultValue="true"
+            app:iconSpaceReserved="false"
+            app:key="long_press_speed_enabled"
+            app:summary="@string/long_press_speed_enabled_description"
+            app:title="@string/long_press_speed_enabled_title" />
+
+        <ListPreference
+            app:defaultValue="2.0"
+            app:dependency="long_press_speed_enabled"
+            app:entries="@array/long_press_speed_entries"
+            app:entryValues="@array/long_press_speed_values"
+            app:iconSpaceReserved="false"
+            app:key="long_press_speed"
+            app:summary="@string/long_press_speed_description"
+            app:title="@string/long_press_speed_title" />
+
+    </PreferenceCategory>
+
+    <PreferenceCategory
+        app:iconSpaceReserved="false"
+        app:title="@string/editing_header">
+
+        <ListPreference
+            app:defaultValue="ask"
+            app:entries="@array/edit_save_behavior_entries"
+            app:entryValues="@array/edit_save_behavior_values"
+            app:iconSpaceReserved="false"
+            app:key="edit_save_behavior"
+            app:summary="@string/edit_save_behavior_description"
+            app:title="@string/edit_save_behavior_title" />
+
     </PreferenceCategory>
 
 </PreferenceScreen>

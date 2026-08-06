@@ -5,14 +5,13 @@
 
 package org.lineageos.glimpse.fragments
 
+import android.content.ClipData
+import android.content.Intent
 import android.content.res.Configuration
 import android.os.Bundle
 import android.util.Log
-import android.view.LayoutInflater
 import android.view.View
-import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.TextView
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.isVisible
@@ -24,22 +23,20 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.RecyclerView
-import com.bumptech.glide.request.RequestOptions
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import org.lineageos.glimpse.R
+import org.lineageos.glimpse.ViewActivity
 import org.lineageos.glimpse.ext.getViewProperty
-import org.lineageos.glimpse.ext.loadThumbnail
 import org.lineageos.glimpse.ext.updatePadding
 import org.lineageos.glimpse.models.Album
 import org.lineageos.glimpse.models.RequestStatus
-import org.lineageos.glimpse.models.Thumbnail
 import org.lineageos.glimpse.ui.recyclerview.AlbumThumbnailLayoutManager
-import org.lineageos.glimpse.ui.recyclerview.SimpleListAdapter
-import org.lineageos.glimpse.ui.recyclerview.UniqueItemDiffCallback
+import org.lineageos.glimpse.ui.recyclerview.AlbumsAdapter
 import org.lineageos.glimpse.utils.PermissionsChecker
 import org.lineageos.glimpse.utils.PermissionsUtils
+import org.lineageos.glimpse.utils.media.SourceAlbum
 import org.lineageos.glimpse.viewmodels.AlbumsViewModel
 import org.lineageos.glimpse.viewmodels.IntentsViewModel
 
@@ -57,59 +54,48 @@ class AlbumsFragment : Fragment(R.layout.fragment_albums) {
 
     // RecyclerView
     private val adapter by lazy {
-        object : SimpleListAdapter<Album, View>(
-            UniqueItemDiffCallback(),
-            { parent ->
-                LayoutInflater.from(parent.context).inflate(
-                    R.layout.album_thumbnail_view, parent, false
-                )
-            }
-        ) {
-            // Views
-            private val ViewHolder.descriptionTextView
-                get() = view.findViewById<TextView>(R.id.descriptionTextView)!!
-            private val ViewHolder.itemsCountTextView
-                get() = view.findViewById<TextView>(R.id.itemsCountTextView)!!
-            private val ViewHolder.thumbnailImageView
-                get() = view.findViewById<ImageView>(R.id.thumbnailImageView)!!
+        AlbumsAdapter(
+            onAlbumClick = { album ->
+                when (intentsViewModel.isPicking.value) {
+                    true -> findNavController().navigate(
+                        R.id.action_albumsFragment_to_fragment_album,
+                        AlbumFragment.createBundle(albumUri = album.uri)
+                    )
 
-            override fun ViewHolder.onPrepareView() {
-                view.setOnClickListener {
-                    item?.let {
-                        when (intentsViewModel.isPicking.value) {
-                            true -> findNavController().navigate(
-                                R.id.action_albumsFragment_to_fragment_album,
-                                AlbumFragment.createBundle(albumUri = it.uri)
-                            )
-
-                            false -> findNavController().navigate(
-                                R.id.action_mainFragment_to_fragment_album,
-                                AlbumFragment.createBundle(albumUri = it.uri)
-                            )
-                        }
-                    }
-                }
-            }
-
-            override fun ViewHolder.onBindView(item: Album) {
-                descriptionTextView.text = item.name
-                item.mediaCount?.let { mediaCount ->
-                    itemsCountTextView.text = view.resources.getQuantityString(
-                        R.plurals.album_thumbnail_items, mediaCount, mediaCount
+                    false -> findNavController().navigate(
+                        R.id.action_mainFragment_to_fragment_album,
+                        AlbumFragment.createBundle(albumUri = album.uri)
                     )
                 }
+            },
+            onSourceAlbumClick = { sourceAlbum ->
+                openSourceAlbum(sourceAlbum)
+            },
+        )
+    }
 
-                thumbnailImageView.loadThumbnail(
-                    item.thumbnail,
-                    options = RequestOptions()
-                        .override(
-                            Thumbnail.MAX_THUMBNAIL_SIZE,
-                            Thumbnail.MAX_THUMBNAIL_SIZE
-                        )
-                        .centerCrop()
-                )
-            }
+    // Latest observed snapshots (module 3 merges them into one adapter).
+    private var currentAlbums: List<Album> = emptyList()
+    private var currentSourceAlbums: List<SourceAlbum> = emptyList()
+
+    /**
+     * Module 3: open a virtual source album in the viewer. The matched MediaStore
+     * URIs are passed via clip data so the existing ViewActivity multi-media
+     * path renders them as a swipeable list.
+     */
+    private fun openSourceAlbum(sourceAlbum: SourceAlbum) {
+        val context = requireContext()
+        val uris = sourceAlbum.uris
+        if (uris.isEmpty()) return
+        val intent = Intent(context, ViewActivity::class.java).apply {
+            action = Intent.ACTION_VIEW
+            type = "image/*"
+            val clip = ClipData.newUri(context.contentResolver, sourceAlbum.displayName, uris.first())
+            uris.drop(1).forEach { clip.addItem(ClipData.Item(it)) }
+            clipData = clip
+            flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
         }
+        startActivity(intent)
     }
 
     // Permissions
@@ -135,8 +121,7 @@ class AlbumsFragment : Fragment(R.layout.fragment_albums) {
 
         val context = requireContext()
 
-        recyclerView.layoutManager = AlbumThumbnailLayoutManager(context)
-        recyclerView.adapter = adapter
+        applyLayoutManager()
 
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -157,7 +142,18 @@ class AlbumsFragment : Fragment(R.layout.fragment_albums) {
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
 
-        recyclerView.layoutManager = AlbumThumbnailLayoutManager(requireContext())
+        applyLayoutManager()
+    }
+
+    /**
+     * (Re)create the grid layout manager and make the full-width source-carousel
+     * row span every column.
+     */
+    private fun applyLayoutManager() {
+        val lm = AlbumThumbnailLayoutManager(requireContext())
+        recyclerView.layoutManager = lm
+        recyclerView.adapter = adapter
+        adapter.configureSpan(lm)
     }
 
     private suspend fun loadData() {
@@ -189,9 +185,10 @@ class AlbumsFragment : Fragment(R.layout.fragment_albums) {
                         }
 
                         is RequestStatus.Success -> {
-                            adapter.submitList(it.data)
+                            currentAlbums = it.data
+                            adapter.submit(currentAlbums, currentSourceAlbums)
 
-                            val isEmpty = it.data.isEmpty()
+                            val isEmpty = it.data.isEmpty() && currentSourceAlbums.isEmpty()
                             recyclerView.isVisible = !isEmpty
                             noMediaLinearLayout.isVisible = isEmpty
                         }
@@ -199,10 +196,21 @@ class AlbumsFragment : Fragment(R.layout.fragment_albums) {
                         is RequestStatus.Error -> {
                             Log.e(LOG_TAG, "Failed to load albums, error: ${it.error}")
 
+                            currentAlbums = emptyList()
+                            adapter.submit(currentAlbums, currentSourceAlbums)
+
                             recyclerView.isVisible = false
-                            noMediaLinearLayout.isVisible = true
+                            noMediaLinearLayout.isVisible = currentSourceAlbums.isEmpty()
                         }
                     }
+                }
+            }
+
+            // Module 3: virtual aggregated source albums
+            launch {
+                albumsViewModel.sourceAlbums.collectLatest { sourceAlbums ->
+                    currentSourceAlbums = sourceAlbums
+                    adapter.submit(currentAlbums, currentSourceAlbums)
                 }
             }
         }

@@ -154,12 +154,19 @@ class MediaViewerAdapter(
                 isVideoPlayer && localPlayerViewModel.doubleTapToSeekEnabled
 
             mediaGestureListener.seekTimeSeconds = localPlayerViewModel.doubleTapToSeekSeconds
-            mediaGestureListener.player = when (
-                isVideoPlayer && localPlayerViewModel.doubleTapToSeekEnabled
-            ) {
+
+            // The player is needed for both double-tap seek and the press-and-hold
+            // fast-forward, so attach it for any video player regardless of whether
+            // double-tap seek itself is enabled.
+            mediaGestureListener.player = when (isVideoPlayer) {
                 true -> localPlayerViewModel.exoPlayer
                 false -> null
             }
+
+            // Press-and-hold fast-forward (customizable in Settings).
+            mediaGestureListener.longPressSpeedEnabled =
+                isVideoPlayer && localPlayerViewModel.longPressSpeedEnabled
+            mediaGestureListener.longPressSpeed = localPlayerViewModel.longPressSpeed
         }
 
         @OptIn(androidx.media3.common.util.UnstableApi::class)

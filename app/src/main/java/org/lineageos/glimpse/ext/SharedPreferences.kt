@@ -8,6 +8,7 @@ package org.lineageos.glimpse.ext
 import android.content.SharedPreferences
 import android.net.Uri
 import androidx.core.content.edit
+import org.lineageos.glimpse.utils.EditSaveBehavior
 import java.security.MessageDigest
 
 // All files access dialog dismissed
@@ -98,3 +99,39 @@ private fun videoPlaybackPositionKey(uri: Uri): String {
     val hash = digest.joinToString(separator = "") { byte -> "%02x".format(byte) }
     return "$VIDEO_PLAYBACK_POSITION_PREFIX$hash"
 }
+
+// Default behaviour when saving an edited image (module 4)
+private const val EDIT_SAVE_BEHAVIOR_KEY = "edit_save_behavior"
+var SharedPreferences.editSaveBehavior: EditSaveBehavior
+    get() = EditSaveBehavior.fromKey(getString(EDIT_SAVE_BEHAVIOR_KEY, null))
+    set(value) = edit {
+        putString(EDIT_SAVE_BEHAVIOR_KEY, value.key)
+    }
+
+// Preferred video playback speed remembered across sessions (module 1)
+private const val VIDEO_PLAYBACK_SPEED_KEY = "video_playback_speed"
+private const val VIDEO_PLAYBACK_SPEED_DEFAULT = 1.0f
+var SharedPreferences.videoPlaybackSpeed: Float
+    get() = getFloat(VIDEO_PLAYBACK_SPEED_KEY, VIDEO_PLAYBACK_SPEED_DEFAULT)
+    set(value) = edit {
+        putFloat(VIDEO_PLAYBACK_SPEED_KEY, value)
+    }
+
+// Long-press to fast-forward a video (press-and-hold speed). The value is the
+// speed applied while the video is held; releasing restores the previous speed.
+private const val LONG_PRESS_SPEED_ENABLED_KEY = "long_press_speed_enabled"
+private const val LONG_PRESS_SPEED_ENABLED_DEFAULT = true
+var SharedPreferences.longPressSpeedEnabled: Boolean
+    get() = getBoolean(LONG_PRESS_SPEED_ENABLED_KEY, LONG_PRESS_SPEED_ENABLED_DEFAULT)
+    set(value) = edit {
+        putBoolean(LONG_PRESS_SPEED_ENABLED_KEY, value)
+    }
+
+// Stored as a String because ListPreference persists entry values as strings.
+private const val LONG_PRESS_SPEED_KEY = "long_press_speed"
+private const val LONG_PRESS_SPEED_DEFAULT = 2.0f
+var SharedPreferences.longPressSpeed: Float
+    get() = getString(LONG_PRESS_SPEED_KEY, null)?.toFloatOrNull() ?: LONG_PRESS_SPEED_DEFAULT
+    set(value) = edit {
+        putString(LONG_PRESS_SPEED_KEY, value.toString())
+    }

@@ -174,7 +174,7 @@ class ThumbnailAdapter : ListAdapter<AlbumViewModel.AlbumContent, RecyclerView.V
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 thumbnailImageView.setRenderEffect(
                     when (isSelected) {
-                        true -> blurRenderEffect
+                        true -> createBlurRenderEffect()
                         false -> null
                     }
                 )
@@ -207,8 +207,15 @@ class ThumbnailAdapter : ListAdapter<AlbumViewModel.AlbumContent, RecyclerView.V
     companion object {
         private const val BLUR_RADIUS = 15f
 
+        // Exposed as a function (not an eager companion val) so the RenderEffect
+        // class is only referenced when this is actually called, which happens
+        // solely on API 31+ behind the SDK_INT >= S guard in bind(). An eager
+        // initializer would run at <clinit> time and throw NoClassDefFoundError
+        // on the API 30 minSdk. Method bodies are lazily verified by ART, so
+        // referencing RenderEffect here is safe on API 30 as long as this is
+        // never invoked there.
         @RequiresApi(Build.VERSION_CODES.S)
-        private val blurRenderEffect = RenderEffect.createBlurEffect(
+        private fun createBlurRenderEffect() = RenderEffect.createBlurEffect(
             BLUR_RADIUS, BLUR_RADIUS,
             Shader.TileMode.MIRROR
         )

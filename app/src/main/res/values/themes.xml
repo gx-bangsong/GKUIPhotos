@@ -46,6 +46,15 @@
         <item name="rippleColor">?attr/colorControlHighlight</item>
     </style>
 
+    <!-- Module 6: floating toolbox capsule -->
+    <style name="Theme.Glimpse.MediaViewer.ToolboxCapsule" parent="Widget.Material3.Button.OutlinedButton.Icon">
+        <item name="android:textColor">@android:color/white</item>
+        <item name="android:textAppearance">?attr/textAppearanceLabelLarge</item>
+        <item name="android:paddingStart">16dp</item>
+        <item name="android:paddingEnd">16dp</item>
+        <item name="android:elevation">4dp</item>
+    </style>
+
     <!-- Media info bottom sheet dialog -->
     <style name="Theme.Glimpse.MediaInfoBottomSheetDialog" />
 
