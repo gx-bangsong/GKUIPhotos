@@ -210,6 +210,13 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
         // Enable edge-to-edge
         enableEdgeToEdge()
 
+        // Fix: from PiP return then back should go to MainActivity, not exit to launcher.
+        // If ViewActivity is task root (MainActivity was destroyed or PiP moved task),
+        // navigate to MainActivity explicitly.
+        onBackPressedDispatcher.addCallback(this) {
+            handleBackNavigation()
+        }
+
         // Register PiP action receiver
         runCatching {
             val filter = IntentFilter().apply {
@@ -290,7 +297,7 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
         }
 
         toolbar.setNavigationOnClickListener {
-            finish()
+            handleBackNavigation()
         }
 
         favoriteButton.setOnClickListener {
@@ -896,6 +903,18 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
                 }
             }
         )
+    }
+
+    private fun handleBackNavigation() {
+        if (isTaskRoot) {
+            // Task root after PiP return: launch MainActivity instead of exiting to launcher
+            runCatching {
+                startActivity(Intent(this, MainActivity::class.java).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                })
+            }
+        }
+        finish()
     }
 
     companion object {
