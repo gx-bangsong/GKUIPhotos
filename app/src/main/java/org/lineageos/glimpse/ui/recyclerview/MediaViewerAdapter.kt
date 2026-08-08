@@ -148,29 +148,30 @@ class MediaViewerAdapter(
         }
 
         private val pipModeObserver = { pipActive: Boolean ->
-            // 修复：非 PiP 下长按倍速被破坏的问题 — 退出 PiP 后必须恢复手势监听的 player
+            // 修复：非 PiP 下长按倍速被破坏 — 退出 PiP 后必须恢复手势
             val isVideo = media?.mediaType == MediaType.VIDEO || motionPhoto != null
-            if (isVideo) {
-                if (pipActive) {
-                    playerView.setUseController(false)
-                    playerControlView.setPlayer(null)
-                    playerControlView.hideImmediately()
-                    playerControlView.visibility = View.GONE
-                    playerControlView.fade(false)
-                    updateMediaGestureListener(isCurrentlyDisplayedView && isVideo)
-                } else {
-                    playerView.setUseController(true)
-                    if (isCurrentlyDisplayedView) {
-                        playerControlView.setPlayer(localPlayerViewModel.exoPlayer)
-                        if (!localPlayerViewModel.fullscreenMode.value) {
-                            playerControlView.visibility = View.VISIBLE
-                            playerControlView.show()
-                            playerControlView.fade(true)
-                        }
+            if (pipActive) {
+                playerView.setUseController(false)
+                playerControlView.setPlayer(null)
+                playerControlView.hideImmediately()
+                playerControlView.visibility = View.GONE
+                playerControlView.fade(false)
+                // PiP 下禁用所有手势，避免与系统 PiP 冲突
+                updateMediaGestureListener(false)
+            } else {
+                playerView.setUseController(true)
+                if (isCurrentlyDisplayedView) {
+                    playerControlView.setPlayer(localPlayerViewModel.exoPlayer)
+                    if (!localPlayerViewModel.fullscreenMode.value) {
+                        playerControlView.visibility = View.VISIBLE
+                        playerControlView.show()
+                        playerControlView.fade(true)
                     }
-                    hideFullscreenButton()
-                    // 恢复：确保长按倍速、双击快进、边缘导航在退出 PiP 后恢复
-                    updateMediaGestureListener(isCurrentlyDisplayedView && isVideo)
+                }
+                hideFullscreenButton()
+                // 恢复：长按倍速必须在非 PiP 视频页可用
+                if (isVideo) {
+                    updateMediaGestureListener(true)
                 }
             }
         }
@@ -205,7 +206,10 @@ class MediaViewerAdapter(
             playerControlView.setOnClickListener { /* consume */ }
 
             imageView.setOnTouchListener(mediaGestureListener)
-            (contentFrame ?: playerView).setOnTouchListener(mediaGestureListener)
+            // 非 PiP 下长按倍速：手势监听要同时挂在 contentFrame 和 playerView
+            // 避免因为 contentFrame 存在而导致 playerView 没有手势
+            contentFrame?.setOnTouchListener(mediaGestureListener)
+            playerView.setOnTouchListener(mediaGestureListener)
         }
 
         @OptIn(androidx.media3.common.util.UnstableApi::class)
