@@ -6,14 +6,19 @@
 package org.lineageos.glimpse
 
 import android.app.KeyguardManager
-import android.app.KeyguardManager.KeyguardDismissCallback
 import android.app.PictureInPictureParams
+import android.app.RemoteAction
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.res.Configuration
 import android.graphics.Rect
+import android.graphics.drawable.Icon
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.app.PendingIntent
 import android.provider.MediaStore
 import android.util.Log
 import android.util.Rational
@@ -95,6 +100,20 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
     private val keyguardManager by lazy { getSystemService(KeyguardManager::class.java) }
 
     private var lastVideoUriPlayed: Uri? = null
+
+    // PiP native playback controls
+    private val pipActionReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            when (intent?.action) {
+                ACTION_PIP_PLAY -> viewModel.play()
+                ACTION_PIP_PAUSE -> viewModel.pause()
+            }
+            // Refresh actions after state change
+            if (isInPipMode()) {
+                updatePipParams(viewModel.isPlaying.value)
+            }
+        }
+    }
 
     // Adapter
     private val mediaViewerAdapter by lazy {
@@ -191,6 +210,20 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
 
         // Enable edge-to-edge
         enableEdgeToEdge()
+
+        // Register PiP action receiver
+        runCatching {
+            val filter = IntentFilter().apply {
+                addAction(ACTION_PIP_PLAY)
+                addAction(ACTION_PIP_PAUSE)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(pipActionReceiver, filter, RECEIVER_NOT_EXPORTED)
+            } else {
+                @Suppress("UnspecifiedRegisterReceiverFlag")
+                registerReceiver(pipActionReceiver, filter)
+            }
+        }
 
         // We only want to show this activity on top of the keyguard if we're being launched with
         // the ACTION_REVIEW_SECURE intent and the system is currently locked.
@@ -373,7 +406,6 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
 
     override fun onResume() {
         super.onResume()
-
         viewModel.play()
     }
 
@@ -407,16 +439,19 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
     ) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
 
-        // Track PiP state in ViewModel so MediaViewerAdapter can hide the
-        // controller (play button vs fullscreen button would otherwise overlap
-        // in the tiny window) and so fullscreen toggling is ignored.
         viewModel.setPictureInPictureMode(isInPictureInPictureMode)
 
-        // In PiP we hide all chrome (toolbar + bottom sheet + toolbox) to
-        // maximise the video surface; restoring brings it back.
+        // In PiP we hide the chrome (toolbar + bottom sheet) to maximise the
+        // video surface; restoring brings it back. Toolbox is handled by
+        // updateToolboxVisibility() single source to avoid covering progress bar.
         appBarLayout.fade(!isInPictureInPictureMode)
         bottomSheetLinearLayout.fade(!isInPictureInPictureMode)
-        toolboxButton.fade(!isInPictureInPictureMode)
+        updateToolboxVisibility()
+
+        if (isInPictureInPictureMode) {
+            // Ensure native PiP actions (play/pause) are shown
+            updatePipParams(viewModel.isPlaying.value)
+        }
     }
 
     /**
@@ -435,6 +470,86 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
 
     private fun isInPipMode() =
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && isInPictureInPictureMode
+
+    private fun buildPipActions(isPlaying: Boolean): List<RemoteAction> {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return emptyList()
+
+        val actions = mutableListOf<RemoteAction>()
+        return try {
+            if (isPlaying) {
+                val pauseIntent = Intent(ACTION_PIP_PAUSE).setPackage(packageName)
+                val pausePending = PendingIntent.getBroadcast(
+                    this, 1, pauseIntent,
+                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+                )
+                val icon = Icon.createWithResource(this, android.R.drawable.ic_media_pause)
+                actions.add(
+                    RemoteAction(
+                        icon,
+                        "Pause",
+                        "Pause video",
+                        pausePending
+                    )
+                )
+            } else {
+                val playIntent = Intent(ACTION_PIP_PLAY).setPackage(packageName)
+                val playPending = PendingIntent.getBroadcast(
+                    this, 2, playIntent,
+                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+                )
+                val icon = Icon.createWithResource(this, android.R.drawable.ic_media_play)
+                actions.add(
+                    RemoteAction(
+                        icon,
+                        "Play",
+                        "Play video",
+                        playPending
+                    )
+                )
+            }
+            actions
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun updatePipParams(isPlaying: Boolean = viewModel.isPlaying.value) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+
+        try {
+            val builder = PictureInPictureParams.Builder()
+
+            val media = viewModel.displayedMedia.value
+            if (media != null && media.width > 0 && media.height > 0) {
+                val rational = Rational(media.width, media.height)
+                runCatching { builder.setAspectRatio(rational) }
+            }
+
+            val playerView = viewPager.findViewById<View>(
+                resources.getIdentifier("playerView", "id", packageName)
+            )
+            if (playerView != null && playerView.isShown) {
+                val bounds = Rect()
+                playerView.getGlobalVisibleRect(bounds)
+                builder.setSourceRectHint(bounds)
+            }
+
+            // Native PiP playback controls
+            val actions = buildPipActions(isPlaying)
+            if (actions.isNotEmpty()) {
+                builder.setActions(actions)
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                builder.setAutoEnterEnabled(true)
+                builder.setSeamlessResizeEnabled(true)
+            }
+
+            setPictureInPictureParams(builder.build())
+        } catch (_: Exception) {
+            // Best effort
+        }
+    }
 
     private fun enterPipIfNeeded() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
@@ -458,6 +573,12 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
             builder.setSourceRectHint(bounds)
         }
 
+        // Native controls
+        val actions = buildPipActions(viewModel.isPlaying.value)
+        if (actions.isNotEmpty()) {
+            builder.setActions(actions)
+        }
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             builder.setAutoEnterEnabled(true)
             builder.setSeamlessResizeEnabled(true)
@@ -470,17 +591,14 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
 
     override fun onDestroy() {
         saveCurrentVideoPosition()
-
         removeOnNewIntentListener(intentListener)
-
         viewPager.unregisterOnPageChangeCallback(onPageChangeCallback)
-
+        runCatching { unregisterReceiver(pipActionReceiver) }
         super.onDestroy()
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-
         updateSheetsHeight()
     }
 
@@ -552,54 +670,48 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
             launch {
                 viewModel.isPlaying.collectLatest { isPlaying ->
                     viewPager.keepScreenOn = isPlaying
+                    if (isInPipMode()) {
+                        updatePipParams(isPlaying)
+                    }
                 }
             }
 
             launch {
                 viewModel.fullscreenMode.collectLatest { fullscreenMode ->
-                    // While in PiP the chrome must stay hidden regardless of
-                    // fullscreenMode, otherwise toggling would cause flicker.
                     val inPip = viewModel.isInPictureInPictureMode.value
                     if (!inPip) {
                         appBarLayout.fade(!fullscreenMode)
                         bottomSheetLinearLayout.fade(!fullscreenMode)
                     }
                     updateToolboxVisibility()
-
                     window.setBarsVisibility(systemBars = !fullscreenMode && !inPip)
-
-                    // If the sheets are being made visible again, update the values
                     if (!fullscreenMode && !inPip) {
                         updateSheetsHeight()
                     }
                 }
             }
 
-            // Keep chrome hidden while PiP is active and restore it on exit
-            // (fullscreen observer alone would already force false, but we
-            // explicitly handle PiP exit here).
             launch {
                 viewModel.isInPictureInPictureMode.collectLatest { inPip ->
                     if (inPip) {
                         appBarLayout.fade(false)
                         bottomSheetLinearLayout.fade(false)
-                        toolboxButton.fade(false)
+                        updatePipParams(viewModel.isPlaying.value)
                     } else {
                         val fullscreen = viewModel.fullscreenMode.value
                         appBarLayout.fade(!fullscreen)
                         bottomSheetLinearLayout.fade(!fullscreen)
-                        updateToolboxVisibility()
                         window.setBarsVisibility(systemBars = !fullscreen)
                         if (!fullscreen) {
                             updateSheetsHeight()
                         }
                     }
+                    updateToolboxVisibility()
                 }
             }
 
             launch {
                 viewModel.displayedMedia.collectLatest { displayedMedia ->
-                    // Update date and time text
                     displayedMedia?.also {
                         toolbar.title = dateFormatter.format(it.dateModified)
                         toolbar.subtitle = timeFormatter.format(it.dateModified)
@@ -608,22 +720,15 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
                         toolbar.subtitle = ""
                     }
 
-                    // Update favorite button
                     val isFavorite = displayedMedia?.isFavorite ?: false
                     favoriteButton.isSelected = isFavorite
                     favoriteButton.setText(if (isFavorite) R.string.favorite_remove_short else R.string.favorite_add_short)
                     favoriteButton.contentDescription = getString(if (isFavorite)
                         R.string.file_action_remove_from_favorites else R.string.file_action_add_to_favorites)
 
-                    // Update info button
                     infoButton.isVisible = displayedMedia != null
-
-                    // Update toolbox capsule: shown only for images (for videos it
-                    // would overlap the player's progress bar; videos reach the
-                    // toolbox via the toolbar overflow menu instead).
                     updateToolboxVisibility()
 
-                    // Update delete button
                     val isTrashed = displayedMedia?.isTrashed ?: false
                     deleteButton.text = when (isTrashed) {
                         true -> getString(R.string.file_action_restore_from_trash)
@@ -640,14 +745,12 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
                         0
                     )
 
-                    // Reset motion photo toggle button
                     viewModel.toggleMotionPhotoEnabled(false)
                 }
             }
 
             launch {
                 viewModel.displayedMediaToMotionPhoto.collectLatest { (displayedMedia, motionPhoto) ->
-                    // Update ExoPlayer
                     displayedMedia?.let {
                         updateExoPlayer(it, motionPhoto)
                     }
@@ -661,7 +764,6 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
                         }
                     )
 
-                    // Trigger a sheets height update
                     updateSheetsHeight()
                 }
             }
@@ -674,24 +776,15 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
 
             launch {
                 viewModel.secure.collectLatest { secure ->
-                    // Update use as button
                     useAsButton.isVisible = !secure
                 }
             }
 
             launch {
                 viewModel.readOnly.collectLatest { readOnly ->
-                    // Update favorite button
                     favoriteButton.isVisible = !readOnly
-
-                    // Update adjust button
                     adjustButton.isVisible = !readOnly
-
-                    // Update delete button
                     deleteButton.isVisible = !readOnly
-
-                    // Module 6: toolbox capsule is available whenever editing is
-                    // allowed, but only for images (videos use the overflow menu).
                     updateToolboxVisibility()
                 }
             }
@@ -712,8 +805,6 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
         } else {
             saveCurrentVideoPosition()
             motionPhoto?.also(viewModel::playMotionPhoto) ?: viewModel.stop()
-
-            // Make sure we will forcefully reload and restart the video
             lastVideoUriPlayed = null
         }
     }
@@ -781,10 +872,13 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
      * shown only for images (a video would otherwise be covered by it over the
      * progress bar), only when editing is allowed, and hidden in fullscreen
      * and in PiP (to avoid overlapping the video surface when window is tiny).
-     * Videos reach the toolbox via the toolbar overflow menu.
+     * Videos reach the toolbox via the toolbar overflow menu (ic_toolbox),
+     * which shows video->GIF conversion among other tools.
      */
     private fun updateToolboxVisibility() {
         val media = viewModel.displayedMedia.value
+        // Keep the latest multi-select/editor layout's shared action container,
+        // while retaining PiP visibility rules from the video viewer changes.
         findViewById<View>(R.id.toolboxActions).isVisible = media != null &&
             media.mediaType != MediaType.VIDEO &&
             !viewModel.readOnly.value &&
@@ -815,18 +909,14 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
         private val dateFormatter = SimpleDateFormat.getDateInstance()
         private val timeFormatter = SimpleDateFormat.getTimeInstance()
 
+        const val ACTION_PIP_PLAY = "org.lineageos.glimpse.action.PIP_PLAY"
+        const val ACTION_PIP_PAUSE = "org.lineageos.glimpse.action.PIP_PAUSE"
+
         val EXTRA_ALBUM_TYPE = "${ViewActivity::class.qualifiedName}.album_type"
         val EXTRA_ALBUM_URI = "${ViewActivity::class.qualifiedName}.album_uri"
         val EXTRA_MEDIA_TYPE = "${ViewActivity::class.qualifiedName}.media_type"
         val EXTRA_MIME_TYPE = "${ViewActivity::class.qualifiedName}.mime_type"
 
-        /**
-         * Create a [Bundle] to use as the extras for this activity.
-         * @param albumType The [AlbumType] to display, null to use [albumUri]
-         * @param albumUri The [Album] to display's bucket ID, if null, reels will be shown
-         * @param fileType The [MediaType] to filter for
-         * @param mimeType The MIME type to filter for
-         */
         fun createBundle(
             albumType: AlbumType? = null,
             albumUri: Uri? = null,
