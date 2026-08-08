@@ -245,4 +245,40 @@
     <string name="gif_editor_not_a_gif">Not an animated GIF</string>
     <string name="gif_editor_slower">Slower</string>
     <string name="gif_editor_faster">Faster</string>
+
+    <!-- Smart albums (OPPO style) -->
+    <string name="smart_album_header">Smart albums</string>
+    <string name="smart_album_enabled_title">Enable smart albums</string>
+    <string name="smart_album_enabled_desc">Auto-recognize photos from delivery/social apps and generate dedicated albums, like OPPO\'s delivery album</string>
+    <string name="smart_album_manage_title">Manage app rules</string>
+    <string name="smart_album_manage_desc">Add, edit, enable/disable rules for any app</string>
+    <string name="smart_album_import_title">Import rules</string>
+    <string name="smart_album_import_desc">Import rules from JSON file</string>
+    <string name="smart_album_export_title">Export rules</string>
+    <string name="smart_album_export_desc">Export current rules to JSON</string>
+    <string name="smart_album_reset_title">Reset to built-in</string>
+    <string name="smart_album_reset_desc">Restore default delivery/social app rules</string>
+    <string name="smart_album_exif_limit_title">EXIF scan limit</string>
+    <string name="smart_album_exif_limit_desc">Max images to scan for EXIF Software tag (10-200)</string>
+
+    <string name="smart_album_rules_title">App rules</string>
+    <string name="smart_album_add_rule">Add rule</string>
+    <string name="smart_album_edit_rule">Edit rule</string>
+    <string name="smart_album_rule_name">Album name</string>
+    <string name="smart_album_rule_key">Key (slug)</string>
+    <string name="smart_album_rule_path_keywords">Path keywords (comma separated)</string>
+    <string name="smart_album_rule_sw_keywords">Software keywords (EXIF, comma)</string>
+    <string name="smart_album_rule_path_hint">e.g. Meituan, com.tencent.mm, DCIM/Camera</string>
+    <string name="smart_album_rule_sw_hint">e.g. Meituan, WeChat, com.taobao</string>
+    <string name="smart_album_save">Save</string>
+    <string name="smart_album_delete">Delete</string>
+    <string name="smart_album_delete_confirm">Delete this rule?</string>
+    <string name="smart_album_builtin_cannot_delete">Built-in rules cannot be deleted, only disabled</string>
+    <string name="smart_album_import_success">Imported %d rules</string>
+    <string name="smart_album_import_failed">Import failed: %s</string>
+    <string name="smart_album_export_success">Exported to %s</string>
+    <string name="smart_album_empty">No rules. Add apps like Didi, JD, PDD, etc.</string>
+    <string name="smart_album_import_mode_title">Import mode</string>
+    <string name="smart_album_import_mode_merge">Merge (key conflict overwrites)</string>
+    <string name="smart_album_import_mode_overwrite">Overwrite all</string>
 </resources>

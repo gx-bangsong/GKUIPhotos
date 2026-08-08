@@ -115,7 +115,7 @@
             android:text="@string/toolbox_convert_run" />
     </LinearLayout>
 
-    <!-- 3. Video to GIF -->
+    <!-- 3. Video to GIF — NEW HCI: modern Material3 with preview, sliders and chips -->
     <LinearLayout
         android:id="@+id/videoToGifSection"
         android:layout_width="match_parent"
@@ -138,25 +138,135 @@
             android:textAppearance="?attr/textAppearanceTitleSmall"
             app:drawableStartCompat="@drawable/ic_video_to_gif" />
 
+        <!-- Preview + info card -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            app:cardCornerRadius="12dp"
+            app:strokeWidth="0dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:padding="12dp">
+
+                <ImageView
+                    android:id="@+id/videoGifPreview"
+                    android:layout_width="64dp"
+                    android:layout_height="64dp"
+                    android:scaleType="centerCrop"
+                    android:contentDescription="@string/toolbox_video_to_gif"
+                    android:background="?attr/colorSurfaceVariant" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="12dp"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/videoGifInfo"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textAppearance="?attr/textAppearanceBodySmall"
+                        android:text="Video → GIF • Offline" />
+
+                    <TextView
+                        android:id="@+id/videoGifEstimate"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:textAppearance="?attr/textAppearanceLabelSmall"
+                        android:textColor="?attr/colorOnSurfaceVariant"
+                        android:text="~5s • 8fps • 480p" />
+                </LinearLayout>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Duration slider -->
         <TextView
-            android:id="@+id/gifDurationLabel"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="@string/toolbox_video_to_gif_duration" />
+            android:layout_marginTop="16dp"
+            android:text="@string/toolbox_video_to_gif_duration"
+            android:textAppearance="?attr/textAppearanceLabelMedium" />
 
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <com.google.android.material.slider.Slider
+                android:id="@+id/gifDurationSlider"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:valueFrom="1"
+                android:valueTo="15"
+                android:value="5"
+                android:stepSize="1"
+                app:labelBehavior="withinBounds" />
+
+            <TextView
+                android:id="@+id/gifDurationValue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:minWidth="32dp"
+                android:text="5s"
+                android:textAppearance="?attr/textAppearanceLabelLarge" />
+        </LinearLayout>
+
+        <!-- FPS chips -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="FPS"
+            android:textAppearance="?attr/textAppearanceLabelMedium" />
+
+        <com.google.android.material.chip.ChipGroup
+            android:id="@+id/fpsChipGroup"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            app:singleSelection="true"
+            app:selectionRequired="true" />
+
+        <!-- Quality / Resolution chips -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="Quality"
+            android:textAppearance="?attr/textAppearanceLabelMedium" />
+
+        <com.google.android.material.chip.ChipGroup
+            android:id="@+id/qualityChipGroup"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            app:singleSelection="true"
+            app:selectionRequired="true" />
+
+        <!-- Legacy SeekBar kept hidden for backward compat, but new UI uses Slider -->
         <SeekBar
             android:id="@+id/gifDurationSeekBar"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:max="15"
-            android:progress="5" />
+            android:progress="5"
+            android:visibility="gone" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/videoToGifRunButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:text="@string/toolbox_video_to_gif_run" />
+            android:layout_marginTop="16dp"
+            android:text="@string/toolbox_video_to_gif_run"
+            app:icon="@drawable/ic_video_to_gif" />
     </LinearLayout>
 
     <com.google.android.material.progressindicator.LinearProgressIndicator

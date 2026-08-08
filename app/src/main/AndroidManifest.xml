@@ -49,6 +49,7 @@
             android:name=".ViewActivity"
             android:configChanges="orientation|screenLayout|screenSize|smallestScreenSize|keyboardHidden"
             android:exported="true"
+            android:parentActivityName=".MainActivity"
             android:supportsPictureInPicture="true"
             android:theme="@style/Theme.Glimpse.MediaViewer">
 
@@ -131,6 +132,13 @@
             android:exported="false"
             android:label="@string/title_activity_settings"
             android:theme="@style/Theme.SettingsLib" />
+
+        <activity
+            android:name=".SmartAlbumRulesActivity"
+            android:configChanges="orientation|screenLayout|screenSize|smallestScreenSize|keyboardHidden"
+            android:exported="false"
+            android:label="@string/smart_album_rules_title"
+            android:theme="@style/Theme.Glimpse" />
 
         <!-- Module 4 & 5: offline image editor (rotate / filter / crop / ID photo) -->
         <activity
