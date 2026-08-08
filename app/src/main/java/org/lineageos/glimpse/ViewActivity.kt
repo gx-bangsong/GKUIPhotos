@@ -865,20 +865,23 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
             appBarLayout.measuredHeight,
             bottomSheetLinearLayout.measuredHeight,
         )
+        // After sheets height changes, reposition toolbox to avoid covering
+        // progress bar for videos.
+        updateToolboxPosition()
     }
 
     /**
-     * Module 6: single source of truth for the floating toolbox capsule. It is
-     * shown only for images (a video would otherwise be covered by it over the
-     * progress bar), only when editing is allowed, and hidden in fullscreen
-     * and in PiP (to avoid overlapping the video surface when window is tiny).
-     * Videos reach the toolbox via the toolbar overflow menu (ic_toolbox),
-     * which shows video->GIF conversion among other tools.
+     * Module 6: single source of truth for the floating toolbox capsule.
+     * NEW HCI: the capsule is visible for BOTH images and videos, providing
+     * quick access to compress/convert/video->GIF. It is hidden only in
+     * fullscreen and PiP to maximise surface, and positioned above the
+     * player progress bar for videos to avoid covering it.
+     * The overflow menu (toolbar) remains as a secondary entry point.
      */
     private fun updateToolboxVisibility() {
         val media = viewModel.displayedMedia.value
-        // Keep the latest multi-select/editor layout's shared action container,
-        // while retaining PiP visibility rules from the video viewer changes.
+        // Keep the latest multi-select/editor action container and its layout;
+        // retain the PiP-specific visibility guard from the video changes.
         findViewById<View>(R.id.toolboxActions).isVisible = media != null &&
             media.mediaType != MediaType.VIDEO &&
             !viewModel.readOnly.value &&
