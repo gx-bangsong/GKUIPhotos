@@ -90,4 +90,52 @@
 
     </PreferenceCategory>
 
+    <PreferenceCategory
+        app:iconSpaceReserved="false"
+        app:title="@string/smart_album_header">
+
+        <SwitchPreferenceCompat
+            app:defaultValue="true"
+            app:iconSpaceReserved="false"
+            app:key="smart_album_enabled"
+            app:summary="@string/smart_album_enabled_desc"
+            app:title="@string/smart_album_enabled_title" />
+
+        <Preference
+            app:iconSpaceReserved="false"
+            app:key="smart_album_manage_rules"
+            app:summary="@string/smart_album_manage_desc"
+            app:title="@string/smart_album_manage_title" />
+
+        <Preference
+            app:iconSpaceReserved="false"
+            app:key="smart_album_import"
+            app:summary="@string/smart_album_import_desc"
+            app:title="@string/smart_album_import_title" />
+
+        <Preference
+            app:iconSpaceReserved="false"
+            app:key="smart_album_export"
+            app:summary="@string/smart_album_export_desc"
+            app:title="@string/smart_album_export_title" />
+
+        <Preference
+            app:iconSpaceReserved="false"
+            app:key="smart_album_reset"
+            app:summary="@string/smart_album_reset_desc"
+            app:title="@string/smart_album_reset_title" />
+
+        <SeekBarPreference
+            android:max="200"
+            app:defaultValue="60"
+            app:iconSpaceReserved="false"
+            app:key="smart_album_exif_scan_limit"
+            app:min="10"
+            app:seekBarIncrement="10"
+            app:showSeekBarValue="true"
+            app:summary="@string/smart_album_exif_limit_desc"
+            app:title="@string/smart_album_exif_limit_title" />
+
+    </PreferenceCategory>
+
 </PreferenceScreen>

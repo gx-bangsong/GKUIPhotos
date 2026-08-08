@@ -12,6 +12,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOn
@@ -22,6 +23,7 @@ import org.lineageos.glimpse.models.MediaType
 import org.lineageos.glimpse.models.RequestStatus
 import org.lineageos.glimpse.utils.media.SourceAlbum
 import org.lineageos.glimpse.utils.media.SourceAlbumAggregator
+import org.lineageos.glimpse.utils.media.SourceAlbumRulesRepository
 
 class AlbumsViewModel(application: Application) : GlimpseViewModel(application) {
     data class AlbumsRequest(
@@ -31,6 +33,8 @@ class AlbumsViewModel(application: Application) : GlimpseViewModel(application) 
 
     private val _albumsRequest = MutableStateFlow<AlbumsRequest?>(null)
     val albumsRequest = _albumsRequest.asStateFlow()
+
+    private val rulesRepository = SourceAlbumRulesRepository.getInstance(applicationContext)
 
     @OptIn(ExperimentalCoroutinesApi::class)
     val albums = albumsRequest
@@ -49,19 +53,28 @@ class AlbumsViewModel(application: Application) : GlimpseViewModel(application) 
         )
 
     /**
-     * Module 3: virtual aggregated "smart albums" sourced from known
-     * crowd-sourcing / social apps. Aggregation is a purely-offline scan of the
-     * MediaStore (path matching) with a bounded EXIF fallback; no files are
-     * copied or moved.
+     * Module 3: OPPO 式智能相册，自动识别外卖/打车/社交等应用拍摄的照片并生成专属图集。
+     * 现已支持通过设置添加自定义规则，并可导入导出。
      */
     @OptIn(ExperimentalCoroutinesApi::class)
-    val sourceAlbums = albumsRequest
-        .filterNotNull()
-        .mapLatest {
-            runCatching {
-                SourceAlbumAggregator.aggregate(applicationContext)
-            }.getOrDefault(emptyList())
-        }
+    val sourceAlbums = combine(
+        albumsRequest.filterNotNull(),
+        rulesRepository.rulesFlow
+    ) { _, rules ->
+        rules
+    }.mapLatest { rules ->
+        runCatching {
+            if (!rulesRepository.isSmartAlbumEnabled()) {
+                emptyList()
+            } else {
+                SourceAlbumAggregator.aggregateWithRules(
+                    applicationContext,
+                    rules,
+                    maxExifScans = rulesRepository.getExifScanLimit()
+                )
+            }
+        }.getOrDefault(emptyList())
+    }
         .flowOn(Dispatchers.IO)
         .stateIn(
             viewModelScope,
