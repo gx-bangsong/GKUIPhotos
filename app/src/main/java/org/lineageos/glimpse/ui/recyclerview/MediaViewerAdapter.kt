@@ -206,10 +206,11 @@ class MediaViewerAdapter(
             playerControlView.setOnClickListener { /* consume */ }
 
             imageView.setOnTouchListener(mediaGestureListener)
-            // 非 PiP 下长按倍速：手势监听要同时挂在 contentFrame 和 playerView
-            // 避免因为 contentFrame 存在而导致 playerView 没有手势
+            // 非 PiP 下长按倍速：手势监听要同时挂在 contentFrame、playerView 和控制层
+            // 控制层本身可点击以消费点击防止误触全屏，但仍需把触摸事件交给手势监听以支持长按倍速
             contentFrame?.setOnTouchListener(mediaGestureListener)
             playerView.setOnTouchListener(mediaGestureListener)
+            playerControlView.setOnTouchListener(mediaGestureListener)
         }
 
         @OptIn(androidx.media3.common.util.UnstableApi::class)
