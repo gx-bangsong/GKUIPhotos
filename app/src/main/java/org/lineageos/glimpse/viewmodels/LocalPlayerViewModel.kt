@@ -242,6 +242,14 @@ class LocalPlayerViewModel(
     private val _fullscreenMode = MutableStateFlow(false)
     val fullscreenMode = _fullscreenMode.asStateFlow()
 
+    /**
+     * Whether ViewActivity is currently in Picture-in-Picture. When true we must
+     * not allow fullscreen toggling and we hide the controller to avoid the
+     * play / fullscreen button overlap in the tiny window.
+     */
+    private val _isInPictureInPictureMode = MutableStateFlow(false)
+    val isInPictureInPictureMode = _isInPictureInPictureMode.asStateFlow()
+
     val mediasWithInitialPosition = combine(
         medias,
         mediaPosition,
@@ -390,9 +398,23 @@ class LocalPlayerViewModel(
     }
 
     /**
-     * Toggle fullscreen mode.
+     * Set PiP state from ViewActivity.onPictureInPictureModeChanged.
+     */
+    fun setPictureInPictureMode(enabled: Boolean) {
+        _isInPictureInPictureMode.value = enabled
+        if (enabled) {
+            // Leave fullscreen UI when entering PiP; PiP window itself is the
+            // “fullscreen” surface and the chrome should be hidden.
+            _fullscreenMode.value = false
+        }
+    }
+
+    /**
+     * Toggle fullscreen mode. Ignored while in PiP to avoid the play /
+     * fullscreen button conflict in the miniature window.
      */
     fun toggleFullscreenMode() {
+        if (_isInPictureInPictureMode.value) return
         _fullscreenMode.value = _fullscreenMode.value.not()
     }
 
