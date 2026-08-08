@@ -830,26 +830,54 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
             appBarLayout.measuredHeight,
             bottomSheetLinearLayout.measuredHeight,
         )
+        // After sheets height changes, reposition toolbox to avoid covering
+        // progress bar for videos.
+        updateToolboxPosition()
     }
 
     /**
-     * Module 6: single source of truth for the floating toolbox capsule. It is
-     * shown only for images (a video would otherwise be covered by it over the
-     * progress bar), only when editing is allowed, and hidden in fullscreen
-     * and in PiP (to avoid overlapping the video surface when window is tiny).
-     * Videos reach the toolbox via the toolbar overflow menu (ic_toolbox),
-     * which shows video->GIF conversion among other tools.
+     * Module 6: single source of truth for the floating toolbox capsule.
+     * NEW HCI: the capsule is visible for BOTH images and videos, providing
+     * quick access to compress/convert/video->GIF. It is hidden only in
+     * fullscreen and PiP to maximise surface, and positioned above the
+     * player progress bar for videos to avoid covering it.
+     * The overflow menu (toolbar) remains as a secondary entry point.
      */
     private fun updateToolboxVisibility() {
         val media = viewModel.displayedMedia.value
         val shouldShow = media != null &&
-            media.mediaType != MediaType.VIDEO &&
             !viewModel.readOnly.value &&
             !viewModel.fullscreenMode.value &&
             !viewModel.isInPictureInPictureMode.value
-        // Use isVisible directly instead of fade() to avoid race where fade()
-        // would force it visible even for videos and cover the progress bar.
         toolboxButton.isVisible = shouldShow
+        if (shouldShow) {
+            updateToolboxPosition()
+        }
+    }
+
+    private fun updateToolboxPosition() {
+        val media = viewModel.displayedMedia.value
+        val bottomHeight = viewModel.sheetsHeight.value.second
+        val density = resources.displayMetrics.density
+
+        // For images: original 124dp works (above bottom sheet).
+        // For videos: need to be above the Exo controller + progress bar,
+        // so add extra offset.
+        val extraMarginDp = when (media?.mediaType) {
+            MediaType.VIDEO -> 180 // above progress bar + controller
+            else -> 124
+        }
+        // If bottom sheet height is already measured, ensure we stay above it
+        // but not excessively high. Use max of calculated and bottomHeight+ extra.
+        val targetMarginPx = (extraMarginDp * density).toInt()
+
+        (toolboxButton.layoutParams as? ViewGroup.MarginLayoutParams)?.let { lp ->
+            // Keep existing left/right, only adjust bottom
+            if (lp.bottomMargin != targetMarginPx) {
+                lp.bottomMargin = targetMarginPx
+                toolboxButton.layoutParams = lp
+            }
+        }
     }
 
     private fun dismissKeyguardAndRun(runnable: () -> Unit) {
