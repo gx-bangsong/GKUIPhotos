@@ -148,13 +148,16 @@ class MediaViewerAdapter(
         }
 
         private val pipModeObserver = { pipActive: Boolean ->
-            if (media?.mediaType == MediaType.VIDEO) {
+            // 修复：非 PiP 下长按倍速被破坏的问题 — 退出 PiP 后必须恢复手势监听的 player
+            val isVideo = media?.mediaType == MediaType.VIDEO || motionPhoto != null
+            if (isVideo) {
                 if (pipActive) {
                     playerView.setUseController(false)
                     playerControlView.setPlayer(null)
                     playerControlView.hideImmediately()
                     playerControlView.visibility = View.GONE
                     playerControlView.fade(false)
+                    updateMediaGestureListener(isCurrentlyDisplayedView && isVideo)
                 } else {
                     playerView.setUseController(true)
                     if (isCurrentlyDisplayedView) {
@@ -166,6 +169,8 @@ class MediaViewerAdapter(
                         }
                     }
                     hideFullscreenButton()
+                    // 恢复：确保长按倍速、双击快进、边缘导航在退出 PiP 后恢复
+                    updateMediaGestureListener(isCurrentlyDisplayedView && isVideo)
                 }
             }
         }

@@ -63,6 +63,7 @@ object SourceAlbumAggregator {
         val softwareKeywords: List<String>,
     )
 
+    // 保留旧常量供迁移和兼容
     val KNOWN_SOURCES: List<Source> = listOf(
         Source(
             key = "meituan",
@@ -103,16 +104,39 @@ object SourceAlbumAggregator {
     )
 
     /**
-     * Scan the MediaStore once and return every virtual [SourceAlbum] that has
-     * at least one match. Image/video items are scanned. The scan is a single
-     * MediaStore query plus a lazily-applied EXIF fallback.
-     *
-     * @param maxExifScans Limits how many images are read for EXIF tag matching,
-     * to bound the cost of strategy B.
+     * OPPO 式智能相册扩展：支持自定义 AppRule
+     */
+    fun aggregateWithRules(
+        context: Context,
+        rules: List<org.lineageos.glimpse.models.AppRule>,
+        maxExifScans: Int = 60,
+    ): List<SourceAlbum> {
+        // 转换为内部 Source 模型
+        val sources = rules.filter { it.enabled }.map {
+            Source(
+                key = it.key,
+                displayName = it.displayName,
+                pathKeywords = it.pathKeywords,
+                softwareKeywords = it.softwareKeywords
+            )
+        }
+        return aggregateInternal(context, sources, maxExifScans)
+    }
+
+    /**
+     * 旧入口，兼容调用，使用内置规则
      */
     fun aggregate(
         context: Context,
         maxExifScans: Int = 60,
+    ): List<SourceAlbum> {
+        return aggregateInternal(context, KNOWN_SOURCES, maxExifScans)
+    }
+
+    private fun aggregateInternal(
+        context: Context,
+        sources: List<Source>,
+        maxExifScans: Int,
     ): List<SourceAlbum> {
         val resolver: ContentResolver = context.contentResolver
         val filesUri = MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL)
@@ -154,7 +178,7 @@ object SourceAlbumAggregator {
                     Uri.withAppendedPath(imagesUri, id.toString())
                 }
 
-                val matched = KNOWN_SOURCES.firstOrNull { source ->
+                val matched = sources.firstOrNull { source ->
                     source.pathKeywords.any { kw -> data.contains(kw, ignoreCase = true) }
                 }
                 if (matched != null) {
@@ -174,7 +198,7 @@ object SourceAlbumAggregator {
                 resolver.openInputStream(uri)?.use { input ->
                     val exif = ExifInterface(input)
                     val software = exif.getAttribute(ExifInterface.TAG_SOFTWARE) ?: return@use
-                    val matched = KNOWN_SOURCES.firstOrNull { source ->
+                    val matched = sources.firstOrNull { source ->
                         source.softwareKeywords.any { kw -> software.contains(kw, ignoreCase = true) }
                     }
                     if (matched != null) {
@@ -186,7 +210,7 @@ object SourceAlbumAggregator {
         }
 
         val result = ArrayList<SourceAlbum>()
-        for (source in KNOWN_SOURCES) {
+        for (source in sources) {
             val pathHits = byPath[source.key] ?: emptyList()
             val exifHits = matchedByExif[source.key] ?: emptyList()
             val all = (pathHits + exifHits).distinctBy { it.first }
