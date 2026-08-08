@@ -395,10 +395,16 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
     ) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
 
-        // In PiP we hide the chrome (toolbar + bottom sheet) to maximise the
-        // video surface; restoring brings it back.
+        // Track PiP state in ViewModel so MediaViewerAdapter can hide the
+        // controller (play button vs fullscreen button would otherwise overlap
+        // in the tiny window) and so fullscreen toggling is ignored.
+        viewModel.setPictureInPictureMode(isInPictureInPictureMode)
+
+        // In PiP we hide all chrome (toolbar + bottom sheet + toolbox) to
+        // maximise the video surface; restoring brings it back.
         appBarLayout.fade(!isInPictureInPictureMode)
         bottomSheetLinearLayout.fade(!isInPictureInPictureMode)
+        toolboxButton.fade(!isInPictureInPictureMode)
     }
 
     /**
@@ -539,15 +545,42 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
 
             launch {
                 viewModel.fullscreenMode.collectLatest { fullscreenMode ->
-                    appBarLayout.fade(!fullscreenMode)
-                    bottomSheetLinearLayout.fade(!fullscreenMode)
+                    // While in PiP the chrome must stay hidden regardless of
+                    // fullscreenMode, otherwise toggling would cause flicker.
+                    val inPip = viewModel.isInPictureInPictureMode.value
+                    if (!inPip) {
+                        appBarLayout.fade(!fullscreenMode)
+                        bottomSheetLinearLayout.fade(!fullscreenMode)
+                    }
                     updateToolboxVisibility()
 
-                    window.setBarsVisibility(systemBars = !fullscreenMode)
+                    window.setBarsVisibility(systemBars = !fullscreenMode && !inPip)
 
                     // If the sheets are being made visible again, update the values
-                    if (!fullscreenMode) {
+                    if (!fullscreenMode && !inPip) {
                         updateSheetsHeight()
+                    }
+                }
+            }
+
+            // Keep chrome hidden while PiP is active and restore it on exit
+            // (fullscreen observer alone would already force false, but we
+            // explicitly handle PiP exit here).
+            launch {
+                viewModel.isInPictureInPictureMode.collectLatest { inPip ->
+                    if (inPip) {
+                        appBarLayout.fade(false)
+                        bottomSheetLinearLayout.fade(false)
+                        toolboxButton.fade(false)
+                    } else {
+                        val fullscreen = viewModel.fullscreenMode.value
+                        appBarLayout.fade(!fullscreen)
+                        bottomSheetLinearLayout.fade(!fullscreen)
+                        updateToolboxVisibility()
+                        window.setBarsVisibility(systemBars = !fullscreen)
+                        if (!fullscreen) {
+                            updateSheetsHeight()
+                        }
                     }
                 }
             }
@@ -711,7 +744,8 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
     /**
      * Module 6: single source of truth for the floating toolbox capsule. It is
      * shown only for images (a video would otherwise be covered by it over the
-     * progress bar), only when editing is allowed, and hidden in fullscreen.
+     * progress bar), only when editing is allowed, and hidden in fullscreen
+     * and in PiP (to avoid overlapping the video surface when window is tiny).
      * Videos reach the toolbox via the toolbar overflow menu.
      */
     private fun updateToolboxVisibility() {
@@ -719,7 +753,8 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
         toolboxButton.isVisible = media != null &&
             media.mediaType != MediaType.VIDEO &&
             !viewModel.readOnly.value &&
-            !viewModel.fullscreenMode.value
+            !viewModel.fullscreenMode.value &&
+            !viewModel.isInPictureInPictureMode.value
     }
 
     private fun dismissKeyguardAndRun(runnable: () -> Unit) {
