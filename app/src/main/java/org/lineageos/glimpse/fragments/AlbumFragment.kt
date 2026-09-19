@@ -62,6 +62,7 @@ import org.lineageos.glimpse.models.AlbumType
 import org.lineageos.glimpse.models.Media
 import org.lineageos.glimpse.models.MediaType
 import org.lineageos.glimpse.models.RequestStatus
+import org.lineageos.glimpse.ui.dialogs.ImageToolboxBottomSheet
 import org.lineageos.glimpse.ui.recyclerview.ThumbnailAdapter
 import org.lineageos.glimpse.ui.recyclerview.ThumbnailItemDetailsLookup
 import org.lineageos.glimpse.ui.recyclerview.ThumbnailLayoutManager
@@ -168,6 +169,27 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
 
                     R.id.share -> {
                         requireActivity().startActivity(buildShareIntent(*selection))
+
+                        true
+                    }
+
+                    R.id.toolbox -> {
+                        val imageMedias = selection.filter { it.mediaType == MediaType.IMAGE }
+                        if (imageMedias.isEmpty()) {
+                            Toast.makeText(
+                                requireContext(),
+                                R.string.toolbox_no_images_selected,
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        } else {
+                            ImageToolboxBottomSheet(
+                                requireContext(),
+                                viewLifecycleOwner,
+                                imageMedias,
+                            ) {
+                                selectionTracker?.clearSelection()
+                            }.show()
+                        }
 
                         true
                     }
@@ -380,6 +402,11 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
                 }
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        thumbnailAdapter.notifyDateHeadersChanged()
     }
 
     override fun onDestroyView() {

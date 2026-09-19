@@ -190,4 +190,14 @@
     <string name="edit_save_behavior_ask">每次询问</string>
     <string name="edit_save_behavior_overwrite">始终覆盖原图</string>
     <string name="edit_save_behavior_new">始终另存为新图片</string>
+
+    <!-- 多图工具箱与按日期快速选择 -->
+    <string name="quick_select_date_title">按日期快速选择</string>
+    <string name="quick_select_date_description">在日期标题旁显示勾选按钮以快速全选当天的照片</string>
+    <string name="quick_select_date">全选该日期的照片</string>
+    <string name="toolbox_title_multi">图像工具箱（%d 项）</string>
+    <string name="toolbox_done_multi">完成，已处理 %d 项并保存到 Pictures/Glimpse。</string>
+    <string name="toolbox_no_images_selected">未选择照片</string>
+    <string name="toolbox_edit_section">批量编辑</string>
+    <string name="toolbox_edit_run">应用编辑</string>
 </resources>

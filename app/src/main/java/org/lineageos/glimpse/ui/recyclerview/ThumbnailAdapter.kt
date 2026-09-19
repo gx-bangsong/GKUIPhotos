@@ -8,6 +8,8 @@ package org.lineageos.glimpse.ui.recyclerview
 import android.graphics.RenderEffect
 import android.graphics.Shader
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.text.format.DateUtils
 import android.view.LayoutInflater
 import android.view.View
@@ -18,6 +20,7 @@ import androidx.annotation.RequiresApi
 import androidx.core.view.isVisible
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.Observer
+import androidx.preference.PreferenceManager
 import androidx.recyclerview.selection.ItemDetailsLookup
 import androidx.recyclerview.selection.ItemKeyProvider
 import androidx.recyclerview.selection.SelectionTracker
@@ -26,6 +29,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.request.RequestOptions
 import org.lineageos.glimpse.R
 import org.lineageos.glimpse.ext.load
+import org.lineageos.glimpse.ext.quickSelectDateEnabled
 import org.lineageos.glimpse.models.Media
 import org.lineageos.glimpse.models.MediaType
 import org.lineageos.glimpse.models.Thumbnail
@@ -41,7 +45,27 @@ class ThumbnailAdapter : ListAdapter<AlbumViewModel.AlbumContent, RecyclerView.V
     // We store a reverse lookup list for performance reasons
     private var mediaToIndex: Map<Media, Int>? = null
 
+    private val dateHeaderSelectionObserver =
+        object : SelectionTracker.SelectionObserver<Media>() {
+            override fun onSelectionChanged() {
+                notifyDateHeadersChanged()
+            }
+
+            override fun onSelectionRefresh() {
+                notifyDateHeadersChanged()
+            }
+
+            override fun onSelectionRestored() {
+                notifyDateHeadersChanged()
+            }
+        }
+
     var selectionTracker: SelectionTracker<Media>? = null
+        set(value) {
+            field?.removeObserver(dateHeaderSelectionObserver)
+            field = value
+            value?.addObserver(dateHeaderSelectionObserver)
+        }
 
     val itemKeyProvider = object : ItemKeyProvider<Media>(SCOPE_CACHED) {
         override fun getKey(position: Int) = getItem(position).let {
@@ -85,6 +109,18 @@ class ThumbnailAdapter : ListAdapter<AlbumViewModel.AlbumContent, RecyclerView.V
         }
     }
 
+    override fun onBindViewHolder(
+        holder: RecyclerView.ViewHolder,
+        position: Int,
+        payloads: MutableList<Any>
+    ) {
+        if (payloads.contains(PAYLOAD_DATE_CHECK) && holder is DateHeaderViewHolder) {
+            holder.updateCheckState()
+        } else {
+            super.onBindViewHolder(holder, position, payloads)
+        }
+    }
+
     override fun onCurrentListChanged(
         previousList: MutableList<AlbumViewModel.AlbumContent>,
         currentList: MutableList<AlbumViewModel.AlbumContent>
@@ -120,6 +156,31 @@ class ThumbnailAdapter : ListAdapter<AlbumViewModel.AlbumContent, RecyclerView.V
 
     fun setOnItemSelected(onItemSelected: ((media: Media) -> Unit)?) {
         this.onItemSelected = onItemSelected ?: {}
+    }
+
+    fun getMediaForDateHeader(headerPosition: Int): List<Media> {
+        if (headerPosition < 0 || headerPosition >= currentList.size) return emptyList()
+        val headerItem = currentList.getOrNull(headerPosition)
+        if (headerItem !is AlbumViewModel.AlbumContent.DateHeader) return emptyList()
+
+        val medias = mutableListOf<Media>()
+        for (i in (headerPosition + 1) until currentList.size) {
+            when (val item = currentList[i]) {
+                is AlbumViewModel.AlbumContent.MediaItem -> medias.add(item.media)
+                is AlbumViewModel.AlbumContent.DateHeader -> break
+            }
+        }
+        return medias
+    }
+
+    fun notifyDateHeadersChanged() {
+        Handler(Looper.getMainLooper()).post {
+            for (i in currentList.indices) {
+                if (i < currentList.size && currentList[i] is AlbumViewModel.AlbumContent.DateHeader) {
+                    notifyItemChanged(i, PAYLOAD_DATE_CHECK)
+                }
+            }
+        }
     }
 
     inner class ThumbnailViewHolder(view: View) : RecyclerView.ViewHolder(view) {
@@ -191,9 +252,10 @@ class ThumbnailAdapter : ListAdapter<AlbumViewModel.AlbumContent, RecyclerView.V
         }
     }
 
-    class DateHeaderViewHolder(view: View) : RecyclerView.ViewHolder(view) {
+    inner class DateHeaderViewHolder(view: View) : RecyclerView.ViewHolder(view) {
         // Views
-        private val textView = view as TextView
+        private val textView = view.findViewById<TextView>(R.id.dateTextView)
+        private val checkImageView = view.findViewById<ImageView>(R.id.dateCheckImageView)
 
         fun bind(date: Date) {
             textView.text = DateUtils.getRelativeTimeSpanString(
@@ -201,11 +263,46 @@ class ThumbnailAdapter : ListAdapter<AlbumViewModel.AlbumContent, RecyclerView.V
                 System.currentTimeMillis(),
                 DateUtils.DAY_IN_MILLIS
             )
+            updateCheckState()
+
+            checkImageView.setOnClickListener {
+                val pos = bindingAdapterPosition.takeIf { it != RecyclerView.NO_POSITION }
+                    ?: return@setOnClickListener
+                val dayMedias = getMediaForDateHeader(pos)
+                if (dayMedias.isEmpty()) return@setOnClickListener
+
+                val allSelected = dayMedias.all { selectionTracker?.isSelected(it) == true }
+                dayMedias.forEach { media ->
+                    if (allSelected) {
+                        selectionTracker?.deselect(media)
+                    } else {
+                        selectionTracker?.select(media)
+                    }
+                }
+            }
+        }
+
+        fun updateCheckState() {
+            val isEnabled = PreferenceManager.getDefaultSharedPreferences(itemView.context)
+                .quickSelectDateEnabled
+            checkImageView.isVisible = isEnabled
+            if (isEnabled) {
+                val pos = bindingAdapterPosition.takeIf { it != RecyclerView.NO_POSITION }
+                val dayMedias = if (pos != null) getMediaForDateHeader(pos) else emptyList()
+                val allSelected = dayMedias.isNotEmpty() && dayMedias.all {
+                    selectionTracker?.isSelected(it) == true
+                }
+                checkImageView.setImageResource(
+                    if (allSelected) R.drawable.ic_check_circle
+                    else R.drawable.ic_check_circle_outline
+                )
+            }
         }
     }
 
     companion object {
         private const val BLUR_RADIUS = 15f
+        const val PAYLOAD_DATE_CHECK = "payload_date_check"
 
         // Exposed as a function (not an eager companion val) so the RenderEffect
         // class is only referenced when this is actually called, which happens

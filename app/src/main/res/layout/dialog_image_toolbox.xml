@@ -16,6 +16,7 @@
     android:padding="16dp">
 
     <TextView
+        android:id="@+id/toolboxTitleTextView"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginBottom="12dp"
@@ -78,18 +79,19 @@
             android:text="@string/toolbox_compress_run" />
     </LinearLayout>
 
-    <View
-        android:layout_width="match_parent"
-        android:layout_height="1dp"
-        android:layout_marginVertical="12dp"
-        android:background="?attr/colorOutlineVariant" />
-
     <!-- 2. Convert format -->
     <LinearLayout
         android:id="@+id/convertSection"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical">
+
+        <View
+            android:id="@+id/convertDivider"
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginVertical="12dp"
+            android:background="?attr/colorOutlineVariant" />
 
         <TextView
             android:layout_width="wrap_content"
@@ -104,6 +106,7 @@
             android:id="@+id/convertChipGroup"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            app:selectionRequired="true"
             app:singleLine="true"
             app:singleSelection="true" />
 
@@ -115,7 +118,74 @@
             android:text="@string/toolbox_convert_run" />
     </LinearLayout>
 
-    <!-- 3. Video to GIF -->
+    <!-- 3. Edit (Rotate & Filter) -->
+    <LinearLayout
+        android:id="@+id/editSection"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <View
+            android:id="@+id/editDivider"
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginVertical="12dp"
+            android:background="?attr/colorOutlineVariant" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:drawablePadding="8dp"
+            android:gravity="center_vertical"
+            android:text="@string/toolbox_edit_section"
+            android:textAppearance="?attr/textAppearanceTitleSmall"
+            app:drawableStartCompat="@drawable/ic_edit" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/editor_rotate"
+            android:textAppearance="?attr/textAppearanceBodyMedium" />
+
+        <com.google.android.material.chip.ChipGroup
+            android:id="@+id/rotateChipGroup"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            app:selectionRequired="true"
+            app:singleLine="true"
+            app:singleSelection="true" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/editor_filter"
+            android:textAppearance="?attr/textAppearanceBodyMedium" />
+
+        <HorizontalScrollView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:scrollbars="none">
+
+            <com.google.android.material.chip.ChipGroup
+                android:id="@+id/filterChipGroup"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                app:selectionRequired="true"
+                app:singleLine="true"
+                app:singleSelection="true" />
+        </HorizontalScrollView>
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/editRunButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/toolbox_edit_run" />
+    </LinearLayout>
+
+    <!-- 4. Video to GIF -->
     <LinearLayout
         android:id="@+id/videoToGifSection"
         android:layout_width="match_parent"
@@ -124,9 +194,10 @@
         android:visibility="gone">
 
         <View
+            android:id="@+id/videoToGifDivider"
             android:layout_width="match_parent"
             android:layout_height="1dp"
-            android:layout_marginBottom="12dp"
+            android:layout_marginVertical="12dp"
             android:background="?attr/colorOutlineVariant" />
 
         <TextView

@@ -245,4 +245,14 @@
     <string name="gif_editor_not_a_gif">Not an animated GIF</string>
     <string name="gif_editor_slower">Slower</string>
     <string name="gif_editor_faster">Faster</string>
+
+    <!-- Multi-image toolbox & date quick-select -->
+    <string name="quick_select_date_title">Quick select by date</string>
+    <string name="quick_select_date_description">Show a check button beside the date header to quickly select all photos from that day</string>
+    <string name="quick_select_date">Select all photos from this date</string>
+    <string name="toolbox_title_multi">Image toolbox (%d items)</string>
+    <string name="toolbox_done_multi">Done. %d items processed and saved to Pictures/Glimpse.</string>
+    <string name="toolbox_no_images_selected">No photos selected</string>
+    <string name="toolbox_edit_section">Batch edit</string>
+    <string name="toolbox_edit_run">Apply edit</string>
 </resources>

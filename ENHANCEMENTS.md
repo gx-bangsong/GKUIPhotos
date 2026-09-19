@@ -140,6 +140,33 @@ Files: `GifEditorActivity.kt`, `utils/media/GifCodec.kt` (self-contained LZW dec
 
 ---
 
+## 8. Multi-editing photos & multi-image toolbox (reusing the image toolbox)
+
+Extends the offline image toolbox to support batch editing and multiple photo selection:
+- **Batch compress**: Compresses multiple selected photos concurrently/sequentially using chosen quality or size budget.
+- **Batch convert**: Converts multiple selected photos into JPEG, PNG, or WEBP.
+- **Batch photo edit**: Applies rotation (0°, +90°, +180°, +270°) and filters (Grayscale, Sepia, Invert, Warm, Cool) across all selected photos in one go.
+- **Selection Action Bar entry**: When photos are selected in `AlbumFragment`, a toolbox icon button (`ic_toolbox`) opens `ImageToolboxBottomSheet` initialized with all selected photos.
+
+Files: `utils/media/ImageToolbox.kt`, `ui/dialogs/ImageToolboxBottomSheet.kt`,
+`res/layout/dialog_image_toolbox.xml`, `res/menu/fragment_album_action_bar.xml`,
+`fragments/AlbumFragment.kt`.
+
+---
+
+## 9. Date quick-select checkmark option
+
+An option to show a checkmark button beside the date header in the photo list to quickly select/deselect all photos of that day:
+- **Global toggle**: Configurable in Settings (`SettingsActivity` / `root_preferences.xml` → `quick_select_date_enabled`), persisted via `SharedPreferences.quickSelectDateEnabled`.
+- **Interactive date header check**: `date_header_view.xml` renders a check button beside the date title. Tapping it calculates all photos belonging to that date and selects or deselects them via `SelectionTracker`, automatically activating selection action mode.
+- **Dynamic state synchronization**: Observers keep the date header checkmark in sync with the selection state of its child photos with payload-based updates.
+
+Files: `res/layout/date_header_view.xml`, `ui/recyclerview/ThumbnailAdapter.kt`,
+`fragments/AlbumFragment.kt`, `res/xml/root_preferences.xml`,
+`ext/SharedPreferences.kt`, `res/values/strings.xml`, `res/values-zh-rCN/strings.xml`.
+
+---
+
 ## Self-contained GIF codec (`GifCodec.kt`)
 
 Pure-Kotlin, dependency-free GIF89a decoder + encoder (LZW + median-cut color
@@ -191,3 +218,5 @@ aggregation is one MediaStore query + a bounded EXIF scan.
 | Image toolbox | Floating capsule in viewer → bottom sheet |
 | GIF editor | Edit button (animated GIFs) → `GifEditorActivity` |
 | Edit-save setting | Settings → Editing |
+| Multi-image toolbox | Multi-select photos → Action bar toolbox icon |
+| Date quick-select | Toggle in Settings → General; check icon beside date header |

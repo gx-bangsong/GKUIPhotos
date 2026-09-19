@@ -10,10 +10,15 @@ import android.content.ContentValues
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.ColorMatrixColorFilter
+import android.graphics.Matrix
+import android.graphics.Paint
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Environment
 import android.provider.MediaStore
+import android.util.Log
 import java.io.ByteArrayOutputStream
 import java.io.OutputStream
 
@@ -123,7 +128,127 @@ object ImageToolbox {
     }
 
     // ----------------------------------------------------------------------
-    // 3. Video -> GIF
+    // 3. Edit image (rotate & filter)
+    // ----------------------------------------------------------------------
+
+    fun edit(
+        context: Context,
+        sourceUri: Uri,
+        rotation: Int = 0,
+        filter: ImageFilter = ImageFilter.NONE,
+    ): ToolboxResult {
+        val resolver: ContentResolver = context.contentResolver
+        val (bitmap, originalBytes, sourceName) = decode(sourceUri, resolver)
+
+        try {
+            val rotated = if (rotation % 360 != 0) {
+                val matrix = Matrix().apply { postRotate(rotation.toFloat()) }
+                val rb = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+                if (rb !== bitmap) bitmap.recycle()
+                rb
+            } else {
+                bitmap
+            }
+
+            val filtered = if (filter != ImageFilter.NONE) {
+                val fb = Bitmap.createBitmap(rotated.width, rotated.height, Bitmap.Config.ARGB_8888)
+                val canvas = Canvas(fb)
+                val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
+                    colorFilter = ColorMatrixColorFilter(filter.colorMatrix())
+                }
+                canvas.drawBitmap(rotated, 0f, 0f, paint)
+                if (fb !== rotated) rotated.recycle()
+                fb
+            } else {
+                rotated
+            }
+
+            try {
+                val (data, _) = encodeOnce(filtered, Bitmap.CompressFormat.JPEG, 90)
+                val outName = buildName(sourceName, "edited", "jpg")
+                val uri = writeBitmapToMediaStore(
+                    context, data, outName, "image/jpeg",
+                    relativePath = "${Environment.DIRECTORY_PICTURES}/Glimpse",
+                )
+                return ToolboxResult(
+                    uri = uri,
+                    displayName = outName,
+                    originalBytes = originalBytes,
+                    resultBytes = data.size.toLong(),
+                )
+            } finally {
+                filtered.recycle()
+            }
+        } catch (e: Exception) {
+            if (!bitmap.isRecycled) bitmap.recycle()
+            throw e
+        }
+    }
+
+    // ----------------------------------------------------------------------
+    // 4. Batch operations
+    // ----------------------------------------------------------------------
+
+    fun batchCompress(
+        context: Context,
+        uris: List<Uri>,
+        options: CompressOptions,
+        onProgress: ((current: Int, total: Int) -> Unit)? = null,
+    ): List<ToolboxResult> {
+        val results = mutableListOf<ToolboxResult>()
+        uris.forEachIndexed { index, uri ->
+            runCatching {
+                compress(context, uri, options)
+            }.onSuccess { results.add(it) }
+                .onFailure {
+                    Log.e("ImageToolbox", "Failed to compress $uri", it)
+                }
+            onProgress?.invoke(index + 1, uris.size)
+        }
+        return results
+    }
+
+    fun batchConvert(
+        context: Context,
+        uris: List<Uri>,
+        target: ImageTargetFormat,
+        onProgress: ((current: Int, total: Int) -> Unit)? = null,
+    ): List<ToolboxResult> {
+        val results = mutableListOf<ToolboxResult>()
+        uris.forEachIndexed { index, uri ->
+            runCatching {
+                convert(context, uri, target)
+            }.onSuccess { results.add(it) }
+                .onFailure {
+                    Log.e("ImageToolbox", "Failed to convert $uri", it)
+                }
+            onProgress?.invoke(index + 1, uris.size)
+        }
+        return results
+    }
+
+    fun batchEdit(
+        context: Context,
+        uris: List<Uri>,
+        rotation: Int,
+        filter: ImageFilter,
+        onProgress: ((current: Int, total: Int) -> Unit)? = null,
+    ): List<ToolboxResult> {
+        val results = mutableListOf<ToolboxResult>()
+        uris.forEachIndexed { index, uri ->
+            runCatching {
+                edit(context, uri, rotation, filter)
+            }.onSuccess { results.add(it) }
+                .onFailure {
+                    Log.e("ImageToolbox", "Failed to edit $uri", it)
+                }
+            onProgress?.invoke(index + 1, uris.size)
+        }
+        return results
+    }
+
+    // ----------------------------------------------------------------------
+    // 5. Video -> GIF
     // ----------------------------------------------------------------------
 
     /**
@@ -203,7 +328,18 @@ object ImageToolbox {
 
     private fun decode(sourceUri: Uri, resolver: ContentResolver): Triple<Bitmap, Long?, String> {
         val originalBytes = resolver.openAssetFileDescriptor(sourceUri, "r")?.use { it.length }
-        val opts = BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.ARGB_8888 }
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        resolver.openInputStream(sourceUri)?.use {
+            BitmapFactory.decodeStream(it, null, bounds)
+        }
+        val maxEdge = 4096
+        var sample = 1
+        val longest = maxOf(bounds.outWidth, bounds.outHeight)
+        while (longest / sample > maxEdge) sample *= 2
+        val opts = BitmapFactory.Options().apply {
+            inPreferredConfig = Bitmap.Config.ARGB_8888
+            inSampleSize = sample
+        }
         val bitmap = resolver.openInputStream(sourceUri).use { input ->
             BitmapFactory.decodeStream(input, null, opts)
         } ?: throw IllegalStateException("Failed to decode $sourceUri")
