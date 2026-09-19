@@ -62,7 +62,6 @@ class ThumbnailAdapter : ListAdapter<AlbumViewModel.AlbumContent, RecyclerView.V
 
     var selectionTracker: SelectionTracker<Media>? = null
         set(value) {
-            field?.removeObserver(dateHeaderSelectionObserver)
             field = value
             value?.addObserver(dateHeaderSelectionObserver)
         }
