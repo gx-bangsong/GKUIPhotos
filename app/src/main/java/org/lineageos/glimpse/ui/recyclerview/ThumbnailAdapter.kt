@@ -42,8 +42,23 @@ class ThumbnailAdapter : ListAdapter<AlbumViewModel.AlbumContent, RecyclerView.V
 ) {
     private val inSelectionMode = MutableLiveData(false)
 
-    // We store a reverse lookup list for performance reasons
+    // Reverse lookup list for media items
     private var mediaToIndex: Map<Media, Int>? = null
+
+    // Precomputed map from Date to the list of Media belonging to that date header
+    private var dateToMedias: Map<Date, List<Media>> = emptyMap()
+
+    private var recyclerView: RecyclerView? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var pendingDateHeaderUpdate = false
+
+    var isQuickSelectEnabled: Boolean = true
+        set(value) {
+            if (field != value) {
+                field = value
+                notifyDateHeadersChanged()
+            }
+        }
 
     private val dateHeaderSelectionObserver =
         object : SelectionTracker.SelectionObserver<Media>() {
@@ -75,6 +90,19 @@ class ThumbnailAdapter : ListAdapter<AlbumViewModel.AlbumContent, RecyclerView.V
     }
 
     private var onItemSelected: (media: Media) -> Unit = {}
+
+    override fun onAttachedToRecyclerView(recyclerView: RecyclerView) {
+        super.onAttachedToRecyclerView(recyclerView)
+        this.recyclerView = recyclerView
+        isQuickSelectEnabled = PreferenceManager.getDefaultSharedPreferences(
+            recyclerView.context
+        ).quickSelectDateEnabled
+    }
+
+    override fun onDetachedFromRecyclerView(recyclerView: RecyclerView) {
+        this.recyclerView = null
+        super.onDetachedFromRecyclerView(recyclerView)
+    }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int) =
         LayoutInflater.from(parent.context).let { layoutInflater ->
@@ -127,12 +155,25 @@ class ThumbnailAdapter : ListAdapter<AlbumViewModel.AlbumContent, RecyclerView.V
         super.onCurrentListChanged(previousList, currentList)
 
         val dataTypeToIndex = mutableMapOf<Media, Int>()
+        val dateMap = mutableMapOf<Date, MutableList<Media>>()
+        var currentDate: Date? = null
+
         for (i in currentList.indices) {
-            AlbumViewModel.AlbumContent.MediaItem::class.safeCast(currentList[i])?.let {
-                dataTypeToIndex[it.media] = i
+            when (val item = currentList[i]) {
+                is AlbumViewModel.AlbumContent.DateHeader -> {
+                    currentDate = item.date
+                    dateMap[currentDate] = mutableListOf()
+                }
+
+                is AlbumViewModel.AlbumContent.MediaItem -> {
+                    dataTypeToIndex[item.media] = i
+                    currentDate?.let { dateMap[it]?.add(item.media) }
+                }
             }
         }
+
         this.mediaToIndex = dataTypeToIndex.toMap()
+        this.dateToMedias = dateMap
     }
 
     override fun onViewAttachedToWindow(holder: RecyclerView.ViewHolder) {
@@ -157,27 +198,24 @@ class ThumbnailAdapter : ListAdapter<AlbumViewModel.AlbumContent, RecyclerView.V
         this.onItemSelected = onItemSelected ?: {}
     }
 
-    fun getMediaForDateHeader(headerPosition: Int): List<Media> {
-        if (headerPosition < 0 || headerPosition >= currentList.size) return emptyList()
-        val headerItem = currentList.getOrNull(headerPosition)
-        if (headerItem !is AlbumViewModel.AlbumContent.DateHeader) return emptyList()
-
-        val medias = mutableListOf<Media>()
-        for (i in (headerPosition + 1) until currentList.size) {
-            when (val item = currentList[i]) {
-                is AlbumViewModel.AlbumContent.MediaItem -> medias.add(item.media)
-                is AlbumViewModel.AlbumContent.DateHeader -> break
-            }
-        }
-        return medias
-    }
+    fun getMediaForDate(date: Date): List<Media> = dateToMedias[date] ?: emptyList()
 
     fun notifyDateHeadersChanged() {
-        Handler(Looper.getMainLooper()).post {
-            for (i in currentList.indices) {
-                if (i < currentList.size && currentList[i] is AlbumViewModel.AlbumContent.DateHeader) {
-                    notifyItemChanged(i, PAYLOAD_DATE_CHECK)
-                }
+        if (pendingDateHeaderUpdate) return
+        pendingDateHeaderUpdate = true
+        mainHandler.post {
+            pendingDateHeaderUpdate = false
+            updateVisibleDateHeaders()
+        }
+    }
+
+    private fun updateVisibleDateHeaders() {
+        val rv = recyclerView ?: return
+        for (i in 0 until rv.childCount) {
+            val child = rv.getChildAt(i) ?: continue
+            val vh = rv.getChildViewHolder(child)
+            if (vh is DateHeaderViewHolder) {
+                vh.updateCheckState()
             }
         }
     }
@@ -256,7 +294,10 @@ class ThumbnailAdapter : ListAdapter<AlbumViewModel.AlbumContent, RecyclerView.V
         private val textView = view.findViewById<TextView>(R.id.dateTextView)
         private val checkImageView = view.findViewById<ImageView>(R.id.dateCheckImageView)
 
+        private var currentDate: Date? = null
+
         fun bind(date: Date) {
+            this.currentDate = date
             textView.text = DateUtils.getRelativeTimeSpanString(
                 date.time,
                 System.currentTimeMillis(),
@@ -265,29 +306,29 @@ class ThumbnailAdapter : ListAdapter<AlbumViewModel.AlbumContent, RecyclerView.V
             updateCheckState()
 
             checkImageView.setOnClickListener {
-                val pos = bindingAdapterPosition.takeIf { it != RecyclerView.NO_POSITION }
-                    ?: return@setOnClickListener
-                val dayMedias = getMediaForDateHeader(pos)
+                val date = currentDate ?: return@setOnClickListener
+                val dayMedias = dateToMedias[date] ?: return@setOnClickListener
                 if (dayMedias.isEmpty()) return@setOnClickListener
 
                 val allSelected = dayMedias.all { selectionTracker?.isSelected(it) == true }
-                dayMedias.forEach { media ->
-                    if (allSelected) {
-                        selectionTracker?.deselect(media)
-                    } else {
-                        selectionTracker?.select(media)
-                    }
-                }
+                val newSelectedState = !allSelected
+
+                // Instant optimistic UI feedback
+                checkImageView.setImageResource(
+                    if (newSelectedState) R.drawable.ic_check_circle
+                    else R.drawable.ic_check_circle_outline
+                )
+
+                // Single atomic batch selection update
+                selectionTracker?.setItemsSelected(dayMedias, newSelectedState)
             }
         }
 
         fun updateCheckState() {
-            val isEnabled = PreferenceManager.getDefaultSharedPreferences(itemView.context)
-                .quickSelectDateEnabled
-            checkImageView.isVisible = isEnabled
-            if (isEnabled) {
-                val pos = bindingAdapterPosition.takeIf { it != RecyclerView.NO_POSITION }
-                val dayMedias = if (pos != null) getMediaForDateHeader(pos) else emptyList()
+            checkImageView.isVisible = isQuickSelectEnabled
+            if (isQuickSelectEnabled) {
+                val date = currentDate
+                val dayMedias = if (date != null) dateToMedias[date] ?: emptyList() else emptyList()
                 val allSelected = dayMedias.isNotEmpty() && dayMedias.all {
                     selectionTracker?.isSelected(it) == true
                 }

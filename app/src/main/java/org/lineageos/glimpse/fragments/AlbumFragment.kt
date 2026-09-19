@@ -37,6 +37,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.fragment.findNavController
 import androidx.navigation.ui.setupWithNavController
+import androidx.preference.PreferenceManager
 import androidx.recyclerview.selection.SelectionPredicates
 import androidx.recyclerview.selection.SelectionTracker
 import androidx.recyclerview.selection.StorageStrategy
@@ -57,6 +58,7 @@ import org.lineageos.glimpse.ext.getParcelable
 import org.lineageos.glimpse.ext.getSerializable
 import org.lineageos.glimpse.ext.getViewProperty
 import org.lineageos.glimpse.ext.kill
+import org.lineageos.glimpse.ext.quickSelectDateEnabled
 import org.lineageos.glimpse.models.Album
 import org.lineageos.glimpse.models.AlbumType
 import org.lineageos.glimpse.models.Media
@@ -406,7 +408,8 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
 
     override fun onResume() {
         super.onResume()
-        thumbnailAdapter.notifyDateHeadersChanged()
+        thumbnailAdapter.isQuickSelectEnabled =
+            PreferenceManager.getDefaultSharedPreferences(requireContext()).quickSelectDateEnabled
     }
 
     override fun onDestroyView() {
