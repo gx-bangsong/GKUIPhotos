@@ -11,6 +11,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.Matrix
 import android.graphics.Paint
@@ -453,6 +454,60 @@ object ImageToolbox {
     // ----------------------------------------------------------------------
     // Helpers
     // ----------------------------------------------------------------------
+
+    /**
+     * Applies a repeating diagonal semi-transparent privacy watermark across the bitmap,
+     * styled like Xiaomi's privacy watermark to protect sensitive IDs and documents.
+     */
+    fun applyWatermark(source: Bitmap, text: String): Bitmap {
+        if (text.isBlank()) return source
+        val out = source.copy(Bitmap.Config.ARGB_8888, true)
+        val canvas = Canvas(out)
+        val w = out.width.toFloat()
+        val h = out.height.toFloat()
+
+        val diagonal = kotlin.math.hypot(w, h)
+        // Scaled proportionally to bitmap width
+        val baseSize = (w / 24f).coerceIn(24f, 96f)
+
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            textSize = baseSize
+            color = Color.argb(90, 255, 255, 255)
+            style = Paint.Style.FILL
+            isFakeBoldText = true
+            setShadowLayer(3f, 1.5f, 1.5f, Color.argb(140, 0, 0, 0))
+        }
+
+        val textWidth = paint.measureText(text)
+        val textHeight = paint.fontMetrics.let { it.bottom - it.top }
+        val stepX = textWidth + baseSize * 3.2f
+        val stepY = textHeight + baseSize * 3.8f
+
+        val cx = w / 2f
+        val cy = h / 2f
+        canvas.save()
+        canvas.rotate(-30f, cx, cy)
+
+        val startX = cx - diagonal
+        val endX = cx + diagonal
+        val startY = cy - diagonal
+        val endY = cy + diagonal
+
+        var y = startY
+        var row = 0
+        while (y <= endY) {
+            val rowOffset = if (row % 2 == 0) 0f else stepX / 2f
+            var x = startX + rowOffset
+            while (x <= endX) {
+                canvas.drawText(text, x, y, paint)
+                x += stepX
+            }
+            y += stepY
+            row++
+        }
+        canvas.restore()
+        return out
+    }
 
     private fun decode(sourceUri: Uri, resolver: ContentResolver): Triple<Bitmap, Long?, String> {
         val originalBytes = resolver.openAssetFileDescriptor(sourceUri, "r")?.use { it.length }

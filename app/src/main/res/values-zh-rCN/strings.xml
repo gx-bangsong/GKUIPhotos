@@ -219,4 +219,22 @@
     <string name="toolbox_no_images_selected">未选择照片</string>
     <string name="toolbox_edit_section">批量编辑</string>
     <string name="toolbox_edit_run">应用编辑</string>
+
+    <!-- 隐私水印 -->
+    <string name="editor_watermark">隐私水印</string>
+    <string name="editor_watermark_description">全图平铺微透明防盗水印，防止证件和资料被挪作他用</string>
+    <string name="editor_watermark_input_hint">水印文字</string>
+    <string name="editor_watermark_shortcuts">快捷预设</string>
+    <string name="editor_watermark_preset_used_for">仅供…使用</string>
+    <string name="editor_watermark_template_used_for">仅供……使用，他用无效</string>
+    <string name="editor_watermark_preset_id_verification">仅供身份认证使用</string>
+    <string name="editor_watermark_preset_business">仅供办理业务使用</string>
+    <string name="editor_watermark_preset_sample">样本复印件</string>
+    <string name="editor_watermark_preset_invalid_other">他用无效</string>
+    <string name="editor_watermark_preset_rental">仅供租房审核使用</string>
+    <string name="editor_watermark_clear">清除水印</string>
+    <string name="editor_watermark_apply">应用</string>
+    <string name="editor_watermark_active">已加水印</string>
+    <string name="editor_watermark_applied">已应用隐私水印</string>
+    <string name="editor_watermark_removed">已清除隐私水印</string>
 </resources>

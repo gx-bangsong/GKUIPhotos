@@ -52,6 +52,13 @@ class CropImageView @JvmOverloads constructor(
     /** When true the face-alignment oval is drawn inside the crop rectangle. */
     var showFaceGuide: Boolean = true
 
+    /** Tiled repeating privacy watermark text drawn live inside the crop area. */
+    var watermarkText: String? = null
+        set(value) {
+            field = value
+            invalidate()
+        }
+
     // Gesture state
     private var scaleFactor = 1f
     private var translateX = 0f
@@ -136,7 +143,62 @@ class CropImageView @JvmOverloads constructor(
 
         // Compute the centered crop rectangle respecting aspect ratio.
         computeCropRect()
+
+        // Draw live tiled privacy watermark inside cropRect if configured
+        val watermark = watermarkText
+        if (!watermark.isNullOrBlank()) {
+            drawWatermark(canvas, cropRect, watermark)
+        }
+
         drawGuides(canvas)
+    }
+
+    private fun drawWatermark(canvas: Canvas, rect: RectF, text: String) {
+        val w = rect.width()
+        val h = rect.height()
+        if (w <= 0 || h <= 0) return
+
+        canvas.save()
+        canvas.clipRect(rect)
+
+        val diagonal = kotlin.math.hypot(w, h)
+        val baseSize = (w / 24f).coerceIn(24f, 48f)
+
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            textSize = baseSize
+            color = Color.argb(90, 255, 255, 255)
+            style = Paint.Style.FILL
+            isFakeBoldText = true
+            setShadowLayer(2.5f, 1.2f, 1.2f, Color.argb(140, 0, 0, 0))
+        }
+
+        val textWidth = paint.measureText(text)
+        val textHeight = paint.fontMetrics.let { it.bottom - it.top }
+        val stepX = textWidth + baseSize * 3.2f
+        val stepY = textHeight + baseSize * 3.8f
+
+        val cx = rect.centerX()
+        val cy = rect.centerY()
+        canvas.rotate(-30f, cx, cy)
+
+        val startX = cx - diagonal
+        val endX = cx + diagonal
+        val startY = cy - diagonal
+        val endY = cy + diagonal
+
+        var y = startY
+        var row = 0
+        while (y <= endY) {
+            val rowOffset = if (row % 2 == 0) 0f else stepX / 2f
+            var x = startX + rowOffset
+            while (x <= endX) {
+                canvas.drawText(text, x, y, paint)
+                x += stepX
+            }
+            y += stepY
+            row++
+        }
+        canvas.restore()
     }
 
     private fun computeCropRect() {

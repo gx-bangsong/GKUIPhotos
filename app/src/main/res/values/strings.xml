@@ -274,4 +274,22 @@
     <string name="toolbox_no_images_selected">No photos selected</string>
     <string name="toolbox_edit_section">Batch edit</string>
     <string name="toolbox_edit_run">Apply edit</string>
+
+    <!-- Privacy watermark in image editor -->
+    <string name="editor_watermark">Privacy watermark</string>
+    <string name="editor_watermark_description">Add repeating tiled watermark across the image to prevent sensitive document abuse</string>
+    <string name="editor_watermark_input_hint">Watermark text</string>
+    <string name="editor_watermark_shortcuts">Shortcuts</string>
+    <string name="editor_watermark_preset_used_for">Used for...</string>
+    <string name="editor_watermark_template_used_for">Used for ... only, invalid for other uses</string>
+    <string name="editor_watermark_preset_id_verification">Identity verification</string>
+    <string name="editor_watermark_preset_business">Business application</string>
+    <string name="editor_watermark_preset_sample">Sample / Copy</string>
+    <string name="editor_watermark_preset_invalid_other">Invalid for other uses</string>
+    <string name="editor_watermark_preset_rental">Rental verification</string>
+    <string name="editor_watermark_clear">Remove watermark</string>
+    <string name="editor_watermark_apply">Apply</string>
+    <string name="editor_watermark_active">Watermark on</string>
+    <string name="editor_watermark_applied">Privacy watermark applied</string>
+    <string name="editor_watermark_removed">Privacy watermark removed</string>
 </resources>

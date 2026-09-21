@@ -26,8 +26,10 @@ import androidx.core.view.isVisible
 import androidx.lifecycle.lifecycleScope
 import androidx.preference.PreferenceManager
 import com.google.android.material.appbar.MaterialToolbar
+import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
+import com.google.android.material.textfield.TextInputEditText
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -36,6 +38,7 @@ import org.lineageos.glimpse.ext.createWriteRequest
 import org.lineageos.glimpse.ui.views.CropImageView
 import org.lineageos.glimpse.utils.EditSaveBehavior
 import org.lineageos.glimpse.utils.media.ImageFilter
+import org.lineageos.glimpse.utils.media.ImageToolbox
 import java.io.ByteArrayOutputStream
 
 /**
@@ -59,6 +62,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
     private val ratioChipGroup by lazy { findViewById<ChipGroup>(R.id.ratioChipGroup) }
     private val rotateButton by lazy { findViewById<android.widget.Button>(R.id.rotateButton) }
     private val faceGuideButton by lazy { findViewById<android.widget.Button>(R.id.faceGuideButton) }
+    private val watermarkButton by lazy { findViewById<android.widget.Button>(R.id.watermarkButton) }
     private val savingOverlay by lazy { findViewById<android.view.View>(R.id.savingOverlay) }
 
     private var sourceUri: Uri? = null
@@ -113,6 +117,10 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             cropImageView.showFaceGuide = !cropImageView.showFaceGuide
             cropImageView.invalidate()
         }
+        watermarkButton.setOnClickListener {
+            showPrivacyWatermarkDialog()
+        }
+        updateWatermarkButtonState()
 
         setupFilterChips()
         setupRatioChips()
@@ -204,10 +212,13 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
 
     private fun onSave() {
         val result = cropImageView.crop() ?: baseBitmap ?: return
+        val finalResult = cropImageView.watermarkText?.takeIf { it.isNotBlank() }?.let {
+            ImageToolbox.applyWatermark(result, it)
+        } ?: result
         showSaving()
         lifecycleScope.launch {
             val bytes = withContext(Dispatchers.Default) {
-                encode(result, sourceMimeType ?: "image/jpeg")
+                encode(finalResult, sourceMimeType ?: "image/jpeg")
             }
             val behavior = PreferenceManager.getDefaultSharedPreferences(this@ImageEditorActivity)
                 .editSaveBehavior
@@ -216,6 +227,122 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                 EditSaveBehavior.ALWAYS_OVERWRITE -> overwrite(bytes)
                 EditSaveBehavior.ASK -> askAndSave(bytes)
             }
+        }
+    }
+
+    private fun showPrivacyWatermarkDialog() {
+        val dialog = BottomSheetDialog(this)
+        dialog.setContentView(R.layout.dialog_privacy_watermark)
+
+        val editText = dialog.findViewById<TextInputEditText>(R.id.watermarkEditText)!!
+        val chipGroup = dialog.findViewById<ChipGroup>(R.id.watermarkShortcutChipGroup)!!
+        val clearButton = dialog.findViewById<android.widget.Button>(R.id.watermarkClearButton)!!
+        val cancelButton = dialog.findViewById<android.widget.Button>(R.id.watermarkCancelButton)!!
+        val applyButton = dialog.findViewById<android.widget.Button>(R.id.watermarkApplyButton)!!
+
+        val currentText = cropImageView.watermarkText ?: ""
+        editText.setText(currentText)
+        if (currentText.isNotEmpty()) {
+            editText.setSelection(currentText.length)
+        }
+
+        clearButton.isVisible = currentText.isNotBlank()
+        clearButton.setOnClickListener {
+            cropImageView.watermarkText = null
+            updateWatermarkButtonState()
+            Toast.makeText(this, R.string.editor_watermark_removed, Toast.LENGTH_SHORT).show()
+            dialog.dismiss()
+        }
+
+        cancelButton.setOnClickListener {
+            dialog.dismiss()
+        }
+
+        applyButton.setOnClickListener {
+            val text = editText.text?.toString()?.trim()
+            if (!text.isNullOrBlank()) {
+                cropImageView.watermarkText = text
+                updateWatermarkButtonState()
+                Toast.makeText(this, R.string.editor_watermark_applied, Toast.LENGTH_SHORT).show()
+            } else {
+                cropImageView.watermarkText = null
+                updateWatermarkButtonState()
+            }
+            dialog.dismiss()
+        }
+
+        data class WatermarkPreset(
+            val labelRes: Int,
+            val templateRes: Int,
+            val isCustomPlaceholder: Boolean = false,
+        )
+
+        val presets = listOf(
+            WatermarkPreset(
+                R.string.editor_watermark_preset_used_for,
+                R.string.editor_watermark_template_used_for,
+                isCustomPlaceholder = true
+            ),
+            WatermarkPreset(
+                R.string.editor_watermark_preset_id_verification,
+                R.string.editor_watermark_preset_id_verification
+            ),
+            WatermarkPreset(
+                R.string.editor_watermark_preset_business,
+                R.string.editor_watermark_preset_business
+            ),
+            WatermarkPreset(
+                R.string.editor_watermark_preset_rental,
+                R.string.editor_watermark_preset_rental
+            ),
+            WatermarkPreset(
+                R.string.editor_watermark_preset_sample,
+                R.string.editor_watermark_preset_sample
+            ),
+            WatermarkPreset(
+                R.string.editor_watermark_preset_invalid_other,
+                R.string.editor_watermark_preset_invalid_other
+            ),
+        )
+
+        chipGroup.removeAllViews()
+        presets.forEach { preset ->
+            val chip = Chip(this).apply {
+                text = getString(preset.labelRes)
+                isCheckable = false
+            }
+            chip.setOnClickListener {
+                val templateText = getString(preset.templateRes)
+                editText.setText(templateText)
+                if (preset.isCustomPlaceholder) {
+                    val ellipsisCn = "……"
+                    val ellipsisEn = "..."
+                    val idxCn = templateText.indexOf(ellipsisCn)
+                    val idxEn = templateText.indexOf(ellipsisEn)
+                    if (idxCn != -1) {
+                        editText.setSelection(idxCn, idxCn + ellipsisCn.length)
+                    } else if (idxEn != -1) {
+                        editText.setSelection(idxEn, idxEn + ellipsisEn.length)
+                    } else {
+                        editText.setSelection(templateText.length)
+                    }
+                } else {
+                    editText.setSelection(templateText.length)
+                }
+                editText.requestFocus()
+            }
+            chipGroup.addView(chip)
+        }
+
+        dialog.show()
+    }
+
+    private fun updateWatermarkButtonState() {
+        val hasWatermark = !cropImageView.watermarkText.isNullOrBlank()
+        if (hasWatermark) {
+            watermarkButton.setText(R.string.editor_watermark_active)
+        } else {
+            watermarkButton.setText(R.string.editor_watermark)
         }
     }
 

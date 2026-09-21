@@ -192,6 +192,23 @@ Files: `utils/media/GifCodec.kt`, `utils/media/ImageToolbox.kt`,
 
 ---
 
+## 11. Xiaomi-style Privacy Watermark in Image Editor
+
+Adds an offline, full-coverage privacy watermark tool modeled after Xiaomi's MIUI/HyperOS gallery:
+- **Tiled Repeating Pattern**: Watermark text is repeated diagonally across the entire image at an angle of -30° in a staggered brick layout with subtle shadow, ensuring legibility on both pure white documents and dark backgrounds without obstructing underlying numbers or text.
+- **Live 60fps Preview**: `CropImageView` renders the watermark dynamically in `onDraw()` clipped to the active crop frame, allowing pan, pinch-zoom, ratio adjustment, and rotation with zero latency.
+- **Dedicated Shortcut "Used for..."**:
+  - Tapping **"Used for..."** (`仅供…使用` / `僅供…使用`) populates the input field with the standard legal disclaimer (`Used for ... only, invalid for other uses` / `仅供……使用，他用无效`) and automatically selects/focuses the ellipsis placeholder so the user can immediately type their purpose (e.g., "办卡", "入职", "租房", "verification").
+  - Additional one-tap presets: **"Identity verification"** (`仅供身份认证使用`), **"Business application"** (`仅供办理业务使用`), **"Rental verification"** (`仅供租房审核使用`), **"Sample / Copy"** (`样本复印件`), and **"Invalid for other uses"** (`他用无效`).
+- **High-Resolution Vector Export**: When saving the edited image, `ImageToolbox.applyWatermark()` bakes proportional high-resolution watermark tiles directly onto the cropped output before encoding.
+- **One-Tap Removal**: An active indicator and a clear button allow removing the watermark at any time.
+
+Files: `ImageEditorActivity.kt`, `ui/views/CropImageView.kt`, `utils/media/ImageToolbox.kt`,
+`res/layout/activity_image_editor.xml`, `res/layout/dialog_privacy_watermark.xml`,
+`res/drawable/ic_privacy_watermark.xml`.
+
+---
+
 ## Self-contained GIF codec (`GifCodec.kt`)
 
 Pure-Kotlin, dependency-free GIF89a decoder + encoder (LZW + median-cut color
@@ -240,6 +257,7 @@ aggregation is one MediaStore query + a bounded EXIF scan.
 | Share privacy | Share button (images) → bottom sheet |
 | Source albums | Albums tab → top carousel |
 | Image editor + ID photo | Edit button (images) → `ImageEditorActivity` |
+| Privacy watermark | Image editor → Watermark button (`activity_image_editor.xml`) |
 | Image toolbox | Floating capsule in viewer → bottom sheet |
 | GIF editor | Edit button (animated GIFs) → `GifEditorActivity` |
 | Edit-save setting | Settings → Editing |

@@ -211,4 +211,22 @@
     <string name="edit_save_behavior_ask">每次詢問</string>
     <string name="edit_save_behavior_overwrite">永遠覆寫原圖</string>
     <string name="edit_save_behavior_new">永遠另存為新圖片</string>
+
+    <!-- 隱私浮水印 -->
+    <string name="editor_watermark">隱私浮水印</string>
+    <string name="editor_watermark_description">全圖平鋪微透明防盜浮水印，防止證件和資料被挪作他用</string>
+    <string name="editor_watermark_input_hint">浮水印文字</string>
+    <string name="editor_watermark_shortcuts">快捷預設</string>
+    <string name="editor_watermark_preset_used_for">僅供…使用</string>
+    <string name="editor_watermark_template_used_for">僅供……使用，他用無效</string>
+    <string name="editor_watermark_preset_id_verification">僅供身分認證使用</string>
+    <string name="editor_watermark_preset_business">僅供辦理業務使用</string>
+    <string name="editor_watermark_preset_sample">樣本複印件</string>
+    <string name="editor_watermark_preset_invalid_other">他用無效</string>
+    <string name="editor_watermark_preset_rental">僅供租屋審核使用</string>
+    <string name="editor_watermark_clear">清除浮水印</string>
+    <string name="editor_watermark_apply">套用</string>
+    <string name="editor_watermark_active">已加浮水印</string>
+    <string name="editor_watermark_applied">已套用隱私浮水印</string>
+    <string name="editor_watermark_removed">已清除隱私浮水印</string>
 </resources>
