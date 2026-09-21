@@ -137,6 +137,18 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
                 },
                 menu
             )
+
+            val colorOnSurface = com.google.android.material.color.MaterialColors.getColor(
+                toolbar, com.google.android.material.R.attr.colorOnSurface
+            )
+            for (i in 0 until (menu?.size() ?: 0)) {
+                val menuItem = menu?.getItem(i) ?: continue
+                menuItem.icon?.let { icon ->
+                    val wrapped = androidx.core.graphics.drawable.DrawableCompat.wrap(icon.mutate())
+                    androidx.core.graphics.drawable.DrawableCompat.setTint(wrapped, colorOnSurface)
+                    menuItem.icon = wrapped
+                }
+            }
             return true
         }
 

@@ -34,16 +34,19 @@ data class CompressOptions(
     val format: Bitmap.CompressFormat = Bitmap.CompressFormat.JPEG,
     /** Resolution scale ratio in 0.1..1.0 (e.g. 0.75 for 75%, 0.5 for 50%). */
     val scaleRatio: Float = 1.0f,
+    /** Optional maximum edge (width or height) in pixels (e.g. 3840 for 4K, 1920 for 1080p). */
+    val maxEdge: Int? = null,
 )
 
 /**
  * Target format for the format-conversion tool, along with the MIME type that
  * will be used when inserting the result into the MediaStore.
  */
-enum class ImageTargetFormat(val mime: String, val ext: String, val compressFormat: Bitmap.CompressFormat) {
+enum class ImageTargetFormat(val mime: String, val ext: String, val compressFormat: Bitmap.CompressFormat?) {
     JPEG("image/jpeg", "jpg", Bitmap.CompressFormat.JPEG),
     PNG("image/png", "png", Bitmap.CompressFormat.PNG),
-    WEBP("image/webp", "webp", Bitmap.CompressFormat.WEBP);
+    WEBP("image/webp", "webp", Bitmap.CompressFormat.WEBP),
+    PDF("application/pdf", "pdf", null);
 }
 
 /**
@@ -80,14 +83,33 @@ object ImageToolbox {
     fun compress(context: Context, sourceUri: Uri, options: CompressOptions): ToolboxResult {
         val resolver: ContentResolver = context.contentResolver
         val (decodedBitmap, originalBytes, sourceName) = decode(sourceUri, resolver)
-        val bitmap = if (options.scaleRatio in 0.05f..0.999f) {
-            val targetW = (decodedBitmap.width * options.scaleRatio).toInt().coerceAtLeast(1)
-            val targetH = (decodedBitmap.height * options.scaleRatio).toInt().coerceAtLeast(1)
-            val scaled = Bitmap.createScaledBitmap(decodedBitmap, targetW, targetH, true)
-            if (scaled !== decodedBitmap) decodedBitmap.recycle()
-            scaled
+
+        // 1. Resolution limit downscaling if maxEdge specified
+        val currentBitmap = if (options.maxEdge != null && options.maxEdge > 0) {
+            val longest = maxOf(decodedBitmap.width, decodedBitmap.height)
+            if (longest > options.maxEdge) {
+                val scale = options.maxEdge.toFloat() / longest
+                val targetW = (decodedBitmap.width * scale).toInt().coerceAtLeast(1)
+                val targetH = (decodedBitmap.height * scale).toInt().coerceAtLeast(1)
+                val scaled = Bitmap.createScaledBitmap(decodedBitmap, targetW, targetH, true)
+                if (scaled !== decodedBitmap) decodedBitmap.recycle()
+                scaled
+            } else {
+                decodedBitmap
+            }
         } else {
             decodedBitmap
+        }
+
+        // 2. Dimension scale ratio downscaling if scaleRatio < 1.0f
+        val bitmap = if (options.scaleRatio in 0.05f..0.999f) {
+            val targetW = (currentBitmap.width * options.scaleRatio).toInt().coerceAtLeast(1)
+            val targetH = (currentBitmap.height * options.scaleRatio).toInt().coerceAtLeast(1)
+            val scaled = Bitmap.createScaledBitmap(currentBitmap, targetW, targetH, true)
+            if (scaled !== currentBitmap) currentBitmap.recycle()
+            scaled
+        } else {
+            currentBitmap
         }
 
         try {
@@ -117,11 +139,16 @@ object ImageToolbox {
     // ----------------------------------------------------------------------
 
     fun convert(context: Context, sourceUri: Uri, target: ImageTargetFormat): ToolboxResult {
+        if (target == ImageTargetFormat.PDF) {
+            return imagesToPdf(context, listOf(sourceUri))
+        }
+
         val resolver: ContentResolver = context.contentResolver
         val (bitmap, originalBytes, sourceName) = decode(sourceUri, resolver)
+        val format = target.compressFormat ?: Bitmap.CompressFormat.JPEG
 
         try {
-            val (data, _) = encodeOnce(bitmap, target.compressFormat, 90)
+            val (data, _) = encodeOnce(bitmap, format, 90)
             val outName = buildName(sourceName, "converted", target.ext)
             val uri = writeBitmapToMediaStore(
                 context, data, outName, target.mime,
@@ -225,6 +252,11 @@ object ImageToolbox {
         target: ImageTargetFormat,
         onProgress: ((current: Int, total: Int) -> Unit)? = null,
     ): List<ToolboxResult> {
+        if (target == ImageTargetFormat.PDF) {
+            val result = imagesToPdf(context, uris, onProgress)
+            return listOf(result)
+        }
+
         val results = mutableListOf<ToolboxResult>()
         uris.forEachIndexed { index, uri ->
             runCatching {
@@ -236,6 +268,55 @@ object ImageToolbox {
             onProgress?.invoke(index + 1, uris.size)
         }
         return results
+    }
+
+    fun imagesToPdf(
+        context: Context,
+        uris: List<Uri>,
+        onProgress: ((current: Int, total: Int) -> Unit)? = null,
+    ): ToolboxResult {
+        require(uris.isNotEmpty()) { "No images to convert to PDF" }
+        val resolver = context.contentResolver
+        val document = android.graphics.pdf.PdfDocument()
+        var totalOriginalBytes = 0L
+
+        try {
+            uris.forEachIndexed { index, uri ->
+                val (bitmap, originalBytes, _) = decode(uri, resolver)
+                if (originalBytes != null) totalOriginalBytes += originalBytes
+
+                val pageInfo = android.graphics.pdf.PdfDocument.PageInfo.Builder(
+                    bitmap.width, bitmap.height, index + 1
+                ).create()
+                val page = document.startPage(pageInfo)
+                page.canvas.drawBitmap(bitmap, 0f, 0f, null)
+                document.finishPage(page)
+                bitmap.recycle()
+
+                onProgress?.invoke(index + 1, uris.size)
+            }
+
+            val out = ByteArrayOutputStream()
+            document.writeTo(out)
+            val data = out.toByteArray()
+
+            val baseName = if (uris.size == 1) {
+                uris.first().lastPathSegment ?: "document"
+            } else {
+                "glimpse_collection"
+            }
+            val outName = buildName(baseName, "converted", "pdf")
+            val uri = writePdfToMediaStore(context, data, outName)
+
+            return ToolboxResult(
+                uri = uri,
+                displayName = outName,
+                originalBytes = if (totalOriginalBytes > 0) totalOriginalBytes else null,
+                resultBytes = data.size.toLong(),
+            )
+        } finally {
+            document.close()
+        }
     }
 
     fun batchEdit(
@@ -470,6 +551,31 @@ object ImageToolbox {
         }
         values.clear()
         values.put(MediaStore.Images.Media.IS_PENDING, 0)
+        resolver.update(uri, values, null, null)
+        return uri
+    }
+
+    private fun writePdfToMediaStore(
+        context: Context,
+        data: ByteArray,
+        displayName: String,
+    ): Uri {
+        val resolver = context.contentResolver
+        val collection = MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+        val values = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, displayName)
+            put(MediaStore.MediaColumns.MIME_TYPE, "application/pdf")
+            put(MediaStore.MediaColumns.RELATIVE_PATH, "${Environment.DIRECTORY_DOCUMENTS}/Glimpse")
+            put(MediaStore.MediaColumns.IS_PENDING, 1)
+        }
+        val uri = resolver.insert(collection, values)
+            ?: throw IllegalStateException("MediaStore insert failed for PDF")
+        resolver.openOutputStream(uri).use { stream: OutputStream? ->
+            requireNotNull(stream) { "Cannot open output stream for $uri" }
+            stream.write(data)
+        }
+        values.clear()
+        values.put(MediaStore.MediaColumns.IS_PENDING, 0)
         resolver.update(uri, values, null, null)
         return uri
     }

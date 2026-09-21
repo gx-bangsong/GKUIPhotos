@@ -143,15 +143,23 @@ Files: `GifEditorActivity.kt`, `utils/media/GifCodec.kt` (self-contained LZW dec
 ## 8. Multi-editing photos & multi-image toolbox (reusing the image toolbox)
 
 Extends the offline image toolbox to support batch editing and multiple photo selection:
-- **Batch compress**: Compresses multiple selected photos concurrently/sequentially using chosen quality, file size budget, and customizable dimension scale ratio (10% to 100% slider, 25%/50%/75%/100% presets).
-- **Expanded size presets**: Adds 200 KB, 500 KB, 1 MB, 2 MB, 5 MB file size limit budgets in addition to quality presets (85%, 70%, 50%, 35%).
-- **Batch convert**: Converts multiple selected photos into JPEG, PNG, or WEBP.
+- **Batch compress with resolution & scale**:
+  - Resolution downscaling presets: Original, 4K (2160p), 2K (1440p), 1080p (FHD), 720p (HD), 480p (SD).
+  - Dimension scale ratio: 10% to 100% fine-grained slider + 25%, 50%, 75%, 100% preset chips.
+  - Quality presets: High (85%), Medium (70%), Low (50%), Economy (35%).
+  - Clean target size presets: 200 KB, 500 KB, 1 MB, 2 MB, 5 MB, 10 MB budgets without confusing/meaningless "no limit size" chips. Selecting a size budget seamlessly clears the quality hint, and deselecting cleanly returns to quality mode.
+  - All chip groups (Quality, Resolution, Scale, Size, Format, Rotate, FPS) are wrapped in `HorizontalScrollView` with hidden scrollbars, ensuring horizontal scrolling without wrapping or clipping across screen sizes.
+- **Batch convert to formats & PDF**:
+  - Converts multiple selected photos into JPEG, PNG, WEBP, or multi-page PDF documents.
+  - PDF generation uses `android.graphics.pdf.PdfDocument`, assembling all selected images into sequentially paged vector PDF documents saved to `Documents/Glimpse`.
 - **Batch photo edit**: Applies rotation (0°, +90°, +180°, +270°) and filters (Grayscale, Sepia, Invert, Warm, Cool) across all selected photos in one go.
-- **Selection Action Bar entry**: When photos are selected in `AlbumFragment`, a toolbox icon button (`ic_toolbox`) opens `ImageToolboxBottomSheet` initialized with all selected photos.
+- **Selection Action Bar entry & Dark Mode visibility**:
+  - When photos are selected in `AlbumFragment`, a toolbox icon button (`ic_toolbox`) opens `ImageToolboxBottomSheet` initialized with all selected photos.
+  - Action mode icons are dynamically wrapped and tinted with `colorOnSurface` (along with XML `app:iconTint="?attr/colorOnSurface"`), guaranteeing high contrast and readability across dark and light themes.
 
 Files: `utils/media/ImageToolbox.kt`, `ui/dialogs/ImageToolboxBottomSheet.kt`,
 `res/layout/dialog_image_toolbox.xml`, `res/menu/fragment_album_action_bar.xml`,
-`fragments/AlbumFragment.kt`.
+`res/drawable/ic_toolbox.xml`, `fragments/AlbumFragment.kt`.
 
 ---
 

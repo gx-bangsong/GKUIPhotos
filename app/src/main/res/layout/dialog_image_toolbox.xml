@@ -39,6 +39,28 @@
             android:textAppearance="?attr/textAppearanceTitleSmall"
             app:drawableStartCompat="@drawable/ic_compress" />
 
+        <!-- Resolution Option -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/toolbox_compress_resolution"
+            android:textAppearance="?attr/textAppearanceLabelMedium" />
+
+        <HorizontalScrollView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:scrollbars="none">
+
+            <com.google.android.material.chip.ChipGroup
+                android:id="@+id/compressResolutionChipGroup"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                app:selectionRequired="true"
+                app:singleLine="true"
+                app:singleSelection="true" />
+        </HorizontalScrollView>
+
         <!-- Dimension Scale Ratio -->
         <TextView
             android:layout_width="wrap_content"
@@ -74,13 +96,19 @@
                 android:textAppearance="?attr/textAppearanceLabelLarge" />
         </LinearLayout>
 
-        <com.google.android.material.chip.ChipGroup
-            android:id="@+id/compressScaleChipGroup"
+        <HorizontalScrollView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            app:selectionRequired="false"
-            app:singleLine="true"
-            app:singleSelection="true" />
+            android:scrollbars="none">
+
+            <com.google.android.material.chip.ChipGroup
+                android:id="@+id/compressScaleChipGroup"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                app:selectionRequired="false"
+                app:singleLine="true"
+                app:singleSelection="true" />
+        </HorizontalScrollView>
 
         <!-- Quality Preset -->
         <TextView
@@ -90,13 +118,19 @@
             android:text="@string/toolbox_compress_quality"
             android:textAppearance="?attr/textAppearanceLabelMedium" />
 
-        <com.google.android.material.chip.ChipGroup
-            android:id="@+id/compressQualityChipGroup"
+        <HorizontalScrollView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            app:selectionRequired="true"
-            app:singleLine="true"
-            app:singleSelection="true" />
+            android:scrollbars="none">
+
+            <com.google.android.material.chip.ChipGroup
+                android:id="@+id/compressQualityChipGroup"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                app:selectionRequired="false"
+                app:singleLine="true"
+                app:singleSelection="true" />
+        </HorizontalScrollView>
 
         <!-- Target Max File Size -->
         <TextView
@@ -115,7 +149,7 @@
                 android:id="@+id/compressSizeChipGroup"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                app:selectionRequired="true"
+                app:selectionRequired="false"
                 app:singleLine="true"
                 app:singleSelection="true" />
         </HorizontalScrollView>
@@ -185,13 +219,19 @@
             android:textAppearance="?attr/textAppearanceTitleSmall"
             app:drawableStartCompat="@drawable/ic_convert" />
 
-        <com.google.android.material.chip.ChipGroup
-            android:id="@+id/convertChipGroup"
+        <HorizontalScrollView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            app:selectionRequired="true"
-            app:singleLine="true"
-            app:singleSelection="true" />
+            android:scrollbars="none">
+
+            <com.google.android.material.chip.ChipGroup
+                android:id="@+id/convertChipGroup"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                app:selectionRequired="true"
+                app:singleLine="true"
+                app:singleSelection="true" />
+        </HorizontalScrollView>
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/convertRunButton"
@@ -231,13 +271,19 @@
             android:text="@string/editor_rotate"
             android:textAppearance="?attr/textAppearanceBodyMedium" />
 
-        <com.google.android.material.chip.ChipGroup
-            android:id="@+id/rotateChipGroup"
+        <HorizontalScrollView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            app:selectionRequired="true"
-            app:singleLine="true"
-            app:singleSelection="true" />
+            android:scrollbars="none">
+
+            <com.google.android.material.chip.ChipGroup
+                android:id="@+id/rotateChipGroup"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                app:selectionRequired="true"
+                app:singleLine="true"
+                app:singleSelection="true" />
+        </HorizontalScrollView>
 
         <TextView
             android:layout_width="wrap_content"
@@ -384,12 +430,19 @@
             android:text="@string/toolbox_video_to_gif_fps"
             android:textAppearance="?attr/textAppearanceLabelMedium" />
 
-        <com.google.android.material.chip.ChipGroup
-            android:id="@+id/fpsChipGroup"
+        <HorizontalScrollView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            app:selectionRequired="true"
-            app:singleSelection="true" />
+            android:scrollbars="none">
+
+            <com.google.android.material.chip.ChipGroup
+                android:id="@+id/fpsChipGroup"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                app:selectionRequired="true"
+                app:singleLine="true"
+                app:singleSelection="true" />
+        </HorizontalScrollView>
 
         <!-- Quality / Resolution chips -->
         <TextView
@@ -399,12 +452,19 @@
             android:text="@string/toolbox_video_to_gif_quality"
             android:textAppearance="?attr/textAppearanceLabelMedium" />
 
-        <com.google.android.material.chip.ChipGroup
-            android:id="@+id/qualityChipGroup"
+        <HorizontalScrollView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            app:selectionRequired="true"
-            app:singleSelection="true" />
+            android:scrollbars="none">
+
+            <com.google.android.material.chip.ChipGroup
+                android:id="@+id/qualityChipGroup"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                app:selectionRequired="true"
+                app:singleLine="true"
+                app:singleSelection="true" />
+        </HorizontalScrollView>
 
         <!-- Legacy SeekBar kept hidden for backward compat -->
         <SeekBar

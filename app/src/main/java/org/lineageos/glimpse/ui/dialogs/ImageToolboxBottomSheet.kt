@@ -38,8 +38,8 @@ import org.lineageos.glimpse.utils.media.ImageToolbox
 
 /**
  * Module 6 & 8: an offline single- and multi-image/video toolkit (compress, convert
- * format, batch edit, video to GIF). All heavy work runs on background dispatchers;
- * a progress bar keeps the UI responsive. No network access is performed.
+ * format, batch edit, video to GIF, export to PDF). All heavy work runs on background
+ * dispatchers; a progress bar keeps the UI responsive. No network access is performed.
  */
 class ImageToolboxBottomSheet(
     context: Context,
@@ -65,6 +65,7 @@ class ImageToolboxBottomSheet(
     private val videoToGifSection by lazy { findViewById<View>(R.id.videoToGifSection)!! }
 
     // Compress controls
+    private val compressResolutionChipGroup by lazy { findViewById<ChipGroup>(R.id.compressResolutionChipGroup) }
     private val compressScaleSlider by lazy { findViewById<Slider>(R.id.compressScaleSlider) }
     private val compressScaleValue by lazy { findViewById<TextView>(R.id.compressScaleValue) }
     private val compressScaleChipGroup by lazy { findViewById<ChipGroup>(R.id.compressScaleChipGroup) }
@@ -88,6 +89,7 @@ class ImageToolboxBottomSheet(
 
     private val progressBar by lazy { findViewById<LinearProgressIndicator>(R.id.toolboxProgressBar)!! }
 
+    private var selectedResolutionMaxEdge: Int? = null
     private var selectedScaleRatio: Float = 1.0f
     private var selectedQuality: Int = 85
     private var selectedMaxBytes: Long? = null
@@ -141,7 +143,33 @@ class ImageToolboxBottomSheet(
     }
 
     private fun setupCompressControls() {
-        // 1. Scale ratio slider & chips
+        // 1. Resolution preset chips
+        val resolutionPresets = listOf(
+            null to R.string.toolbox_compress_res_original,
+            3840 to R.string.toolbox_compress_res_4k,
+            2560 to R.string.toolbox_compress_res_2k,
+            1920 to R.string.toolbox_compress_res_1080p,
+            1280 to R.string.toolbox_compress_res_720p,
+            854 to R.string.toolbox_compress_res_480p,
+        )
+        compressResolutionChipGroup?.let { group ->
+            group.removeAllViews()
+            resolutionPresets.forEachIndexed { index, (edge, labelRes) ->
+                val chip = Chip(context).apply {
+                    text = context.getString(labelRes)
+                    isCheckable = true
+                    id = View.generateViewId()
+                    isChecked = index == 0
+                }
+                chip.setOnClickListener {
+                    selectedResolutionMaxEdge = edge
+                    group.check(chip.id)
+                }
+                group.addView(chip)
+            }
+        }
+
+        // 2. Scale ratio slider & chips
         compressScaleSlider?.let { slider ->
             slider.value = 100f
             slider.addOnChangeListener { _, value, fromUser ->
@@ -174,7 +202,7 @@ class ImageToolboxBottomSheet(
             }
         }
 
-        // 2. Quality presets
+        // 3. Quality presets
         val qualityPresets = listOf(
             85 to R.string.toolbox_compress_quality_high,
             70 to R.string.toolbox_compress_quality_medium,
@@ -192,20 +220,22 @@ class ImageToolboxBottomSheet(
                 }
                 chip.setOnClickListener {
                     selectedQuality = q
+                    selectedMaxBytes = null
+                    compressSizeChipGroup?.clearCheck()
                     group.check(chip.id)
                 }
                 group.addView(chip)
             }
         }
 
-        // 3. Target file size presets
+        // 4. Target file size presets (no meaningless 'no limit' chip)
         val sizePresets = listOf(
-            null to R.string.toolbox_compress_size_none,
             200 * 1024L to R.string.toolbox_compress_size_200k,
             500 * 1024L to R.string.toolbox_compress_size_500k,
             1 * 1024 * 1024L to R.string.toolbox_compress_size_1m,
             2 * 1024 * 1024L to R.string.toolbox_compress_size_2m,
             5 * 1024 * 1024L to R.string.toolbox_compress_size_5m,
+            10 * 1024 * 1024L to R.string.toolbox_compress_size_10m,
         )
         compressSizeChipGroup?.let { group ->
             group.removeAllViews()
@@ -214,11 +244,22 @@ class ImageToolboxBottomSheet(
                     text = context.getString(labelRes)
                     isCheckable = true
                     id = View.generateViewId()
-                    isChecked = index == 0
+                    isChecked = false
                 }
                 chip.setOnClickListener {
-                    selectedMaxBytes = bytes
-                    group.check(chip.id)
+                    if (selectedMaxBytes == bytes) {
+                        // Deselect size budget and revert to quality mode
+                        selectedMaxBytes = null
+                        group.clearCheck()
+                        (compressQualityChipGroup?.getChildAt(0) as? Chip)?.let { qc ->
+                            compressQualityChipGroup?.check(qc.id)
+                            selectedQuality = 85
+                        }
+                    } else {
+                        selectedMaxBytes = bytes
+                        group.check(chip.id)
+                        compressQualityChipGroup?.clearCheck()
+                    }
                 }
                 group.addView(chip)
             }
@@ -226,7 +267,12 @@ class ImageToolboxBottomSheet(
     }
 
     private fun setupConvertChips() {
-        val targets = listOf(ImageTargetFormat.JPEG, ImageTargetFormat.PNG, ImageTargetFormat.WEBP)
+        val targets = listOf(
+            ImageTargetFormat.JPEG,
+            ImageTargetFormat.PNG,
+            ImageTargetFormat.WEBP,
+            ImageTargetFormat.PDF,
+        )
         targets.forEachIndexed { index, target ->
             val chip = Chip(context).apply {
                 text = target.name
@@ -400,6 +446,7 @@ class ImageToolboxBottomSheet(
             quality = selectedQuality,
             maxBytes = selectedMaxBytes,
             scaleRatio = selectedScaleRatio,
+            maxEdge = selectedResolutionMaxEdge,
         )
         val mainHandler = Handler(Looper.getMainLooper())
         val imageUris = medias.filter { it.mediaType == MediaType.IMAGE }.map { it.uri }
@@ -413,6 +460,7 @@ class ImageToolboxBottomSheet(
     private fun runConvert() {
         val mainHandler = Handler(Looper.getMainLooper())
         val imageUris = medias.filter { it.mediaType == MediaType.IMAGE }.map { it.uri }
+        val isPdf = convertTarget == ImageTargetFormat.PDF
         launchHeavy(progressive = true) { onProgress ->
             ImageToolbox.batchConvert(context, imageUris, convertTarget) { current, total ->
                 mainHandler.post { onProgress(current.toFloat() / total.toFloat()) }
@@ -473,7 +521,9 @@ class ImageToolboxBottomSheet(
                 progressBar.isVisible = false
                 dismiss()
                 val count = medias.size
-                val msg = if (count > 1) {
+                val msg = if (convertTarget == ImageTargetFormat.PDF) {
+                    context.getString(R.string.toolbox_done_pdf)
+                } else if (count > 1) {
                     context.getString(R.string.toolbox_done_multi, count)
                 } else {
                     context.getString(R.string.toolbox_done)

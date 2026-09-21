@@ -12,6 +12,7 @@
         android:contentDescription="@string/toolbox_title"
         android:icon="@drawable/ic_toolbox"
         android:title="@string/toolbox_title"
+        app:iconTint="?attr/colorOnSurface"
         app:showAsAction="ifRoom" />
 
     <item
@@ -20,6 +21,7 @@
         android:contentDescription="@string/file_action_share"
         android:icon="@drawable/ic_share"
         android:title="@string/file_action_share"
+        app:iconTint="?attr/colorOnSurface"
         app:showAsAction="ifRoom" />
 
     <item
@@ -28,6 +30,7 @@
         android:contentDescription="@string/file_action_move_to_trash"
         android:icon="@drawable/ic_delete"
         android:title="@string/file_action_move_to_trash"
+        app:iconTint="?attr/colorOnSurface"
         app:showAsAction="ifRoom" />
 
 </menu>
