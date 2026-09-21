@@ -32,6 +32,8 @@ data class CompressOptions(
     val maxBytes: Long? = null,
     /** Output format for the compressed bitmap. */
     val format: Bitmap.CompressFormat = Bitmap.CompressFormat.JPEG,
+    /** Resolution scale ratio in 0.1..1.0 (e.g. 0.75 for 75%, 0.5 for 50%). */
+    val scaleRatio: Float = 1.0f,
 )
 
 /**
@@ -77,7 +79,16 @@ object ImageToolbox {
      */
     fun compress(context: Context, sourceUri: Uri, options: CompressOptions): ToolboxResult {
         val resolver: ContentResolver = context.contentResolver
-        val (bitmap, originalBytes, sourceName) = decode(sourceUri, resolver)
+        val (decodedBitmap, originalBytes, sourceName) = decode(sourceUri, resolver)
+        val bitmap = if (options.scaleRatio in 0.05f..0.999f) {
+            val targetW = (decodedBitmap.width * options.scaleRatio).toInt().coerceAtLeast(1)
+            val targetH = (decodedBitmap.height * options.scaleRatio).toInt().coerceAtLeast(1)
+            val scaled = Bitmap.createScaledBitmap(decodedBitmap, targetW, targetH, true)
+            if (scaled !== decodedBitmap) decodedBitmap.recycle()
+            scaled
+        } else {
+            decodedBitmap
+        }
 
         try {
             val (data, usedQuality) = when (options.maxBytes) {
@@ -268,9 +279,21 @@ object ImageToolbox {
         maxFrames: Int = 36,
         onProgress: ((Float) -> Unit)? = null,
     ): ToolboxResult {
+        val resolver = context.contentResolver
         val retriever = MediaMetadataRetriever()
-        retriever.setDataSource(context, sourceUri)
+        var fd: android.content.res.AssetFileDescriptor? = null
         try {
+            try {
+                fd = resolver.openAssetFileDescriptor(sourceUri, "r")
+                if (fd != null) {
+                    retriever.setDataSource(fd.fileDescriptor)
+                } else {
+                    retriever.setDataSource(context, sourceUri)
+                }
+            } catch (e: Exception) {
+                try { retriever.setDataSource(context, sourceUri) } catch (_: Exception) { throw e }
+            }
+
             val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
                 ?.toLongOrNull() ?: 0L
             val total = durationMs.coerceAtLeast(1L)
@@ -281,23 +304,46 @@ object ImageToolbox {
 
             val frameDelayMs = (1000 / fps.coerceIn(1, 15)).toInt().coerceAtLeast(33)
             var tUs = 0L
+            var consecutiveNulls = 0
             while (tUs < windowMs * 1000L && frames.size < maxFrames) {
-                val bmp = retriever.getFrameAtTime(tUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                var bmp: Bitmap? = null
+                try {
+                    bmp = retriever.getFrameAtTime(tUs, MediaMetadataRetriever.OPTION_CLOSEST)
+                        ?: retriever.getFrameAtTime(tUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                } catch (e: Exception) {
+                    Log.w("ImageToolbox", "getFrameAtTime failed at $tUs us", e)
+                }
                 if (bmp != null) {
                     val scaled = scaleDown(bmp, maxEdge)
                     if (scaled !== bmp) bmp.recycle()
                     frames.add(GifCodec.GifFrame(scaled, frameDelayMs))
+                    consecutiveNulls = 0
+                } else {
+                    consecutiveNulls++
+                    if (consecutiveNulls > 6) {
+                        tUs += intervalUs * 2
+                        consecutiveNulls = 0
+                        onProgress?.invoke((tUs.toFloat() / (windowMs * 1000f)).coerceIn(0f, 1f))
+                        continue
+                    }
                 }
                 onProgress?.invoke((tUs.toFloat() / (windowMs * 1000f)).coerceIn(0f, 1f))
                 tUs += intervalUs
             }
             if (frames.isEmpty()) {
-                retriever.getFrameAtTime(0)?.let { bmp ->
-                    val scaled = scaleDown(bmp, maxEdge)
-                    if (scaled !== bmp) bmp.recycle()
-                    frames.add(GifCodec.GifFrame(scaled, frameDelayMs))
+                try {
+                    val bmp = retriever.getFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST)
+                        ?: retriever.getFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                    if (bmp != null) {
+                        val scaled = scaleDown(bmp, maxEdge)
+                        if (scaled !== bmp) bmp.recycle()
+                        frames.add(GifCodec.GifFrame(scaled, frameDelayMs))
+                    }
+                } catch (e: Exception) {
+                    Log.w("ImageToolbox", "fallback frame at 0 failed", e)
                 }
             }
+            if (frames.isEmpty()) throw IllegalStateException("No frames extracted — video may be DRM or unsupported: $sourceUri")
 
             val out = ByteArrayOutputStream()
             GifCodec.encode(frames, out, loopCount = 0)
@@ -318,6 +364,7 @@ object ImageToolbox {
                 resultBytes = data.size.toLong(),
             )
         } finally {
+            try { fd?.close() } catch (_: Exception) {}
             retriever.release()
         }
     }

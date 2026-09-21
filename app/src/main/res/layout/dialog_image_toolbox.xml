@@ -39,11 +39,94 @@
             android:textAppearance="?attr/textAppearanceTitleSmall"
             app:drawableStartCompat="@drawable/ic_compress" />
 
+        <!-- Dimension Scale Ratio -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/toolbox_compress_scale_ratio"
+            android:textAppearance="?attr/textAppearanceLabelMedium" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <com.google.android.material.slider.Slider
+                android:id="@+id/compressScaleSlider"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:stepSize="5"
+                android:value="100"
+                android:valueFrom="10"
+                android:valueTo="100"
+                app:labelBehavior="withinBounds" />
+
+            <TextView
+                android:id="@+id/compressScaleValue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:minWidth="48dp"
+                android:text="100%"
+                android:textAppearance="?attr/textAppearanceLabelLarge" />
+        </LinearLayout>
+
+        <com.google.android.material.chip.ChipGroup
+            android:id="@+id/compressScaleChipGroup"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            app:selectionRequired="false"
+            app:singleLine="true"
+            app:singleSelection="true" />
+
+        <!-- Quality Preset -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/toolbox_compress_quality"
+            android:textAppearance="?attr/textAppearanceLabelMedium" />
+
+        <com.google.android.material.chip.ChipGroup
+            android:id="@+id/compressQualityChipGroup"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            app:selectionRequired="true"
+            app:singleLine="true"
+            app:singleSelection="true" />
+
+        <!-- Target Max File Size -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/toolbox_compress_target_size"
+            android:textAppearance="?attr/textAppearanceLabelMedium" />
+
+        <HorizontalScrollView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:scrollbars="none">
+
+            <com.google.android.material.chip.ChipGroup
+                android:id="@+id/compressSizeChipGroup"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                app:selectionRequired="true"
+                app:singleLine="true"
+                app:singleSelection="true" />
+        </HorizontalScrollView>
+
+        <!-- Hidden legacy radio group for backward compatibility -->
         <RadioGroup
             android:id="@+id/compressRadioGroup"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical">
+            android:orientation="vertical"
+            android:visibility="gone">
 
             <RadioButton
                 android:id="@+id/compressHigh"
@@ -75,7 +158,7 @@
             android:id="@+id/compressRunButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
+            android:layout_marginTop="12dp"
             android:text="@string/toolbox_compress_run" />
     </LinearLayout>
 
@@ -185,7 +268,7 @@
             android:text="@string/toolbox_edit_run" />
     </LinearLayout>
 
-    <!-- 4. Video to GIF -->
+    <!-- 4. Video to GIF (Modern Material3 HCI with Preview, Sliders, Chips) -->
     <LinearLayout
         android:id="@+id/videoToGifSection"
         android:layout_width="match_parent"
@@ -209,25 +292,136 @@
             android:textAppearance="?attr/textAppearanceTitleSmall"
             app:drawableStartCompat="@drawable/ic_video_to_gif" />
 
+        <!-- Preview + Info card -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            app:cardCornerRadius="12dp"
+            app:strokeWidth="0dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:padding="12dp">
+
+                <ImageView
+                    android:id="@+id/videoGifPreview"
+                    android:layout_width="64dp"
+                    android:layout_height="64dp"
+                    android:background="?attr/colorSurfaceVariant"
+                    android:contentDescription="@string/toolbox_video_to_gif"
+                    android:scaleType="centerCrop" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="12dp"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/videoGifInfo"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Video → GIF • Offline"
+                        android:textAppearance="?attr/textAppearanceBodySmall" />
+
+                    <TextView
+                        android:id="@+id/videoGifEstimate"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="~5s • 8fps • 480p"
+                        android:textAppearance="?attr/textAppearanceLabelSmall"
+                        android:textColor="?attr/colorOnSurfaceVariant" />
+                </LinearLayout>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Duration Slider -->
         <TextView
             android:id="@+id/gifDurationLabel"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="@string/toolbox_video_to_gif_duration" />
+            android:layout_marginTop="16dp"
+            android:text="@string/toolbox_video_to_gif_duration"
+            android:textAppearance="?attr/textAppearanceLabelMedium" />
 
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <com.google.android.material.slider.Slider
+                android:id="@+id/gifDurationSlider"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:stepSize="1"
+                android:value="5"
+                android:valueFrom="1"
+                android:valueTo="15"
+                app:labelBehavior="withinBounds" />
+
+            <TextView
+                android:id="@+id/gifDurationValue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:minWidth="32dp"
+                android:text="5s"
+                android:textAppearance="?attr/textAppearanceLabelLarge" />
+        </LinearLayout>
+
+        <!-- FPS chips -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="@string/toolbox_video_to_gif_fps"
+            android:textAppearance="?attr/textAppearanceLabelMedium" />
+
+        <com.google.android.material.chip.ChipGroup
+            android:id="@+id/fpsChipGroup"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            app:selectionRequired="true"
+            app:singleSelection="true" />
+
+        <!-- Quality / Resolution chips -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="@string/toolbox_video_to_gif_quality"
+            android:textAppearance="?attr/textAppearanceLabelMedium" />
+
+        <com.google.android.material.chip.ChipGroup
+            android:id="@+id/qualityChipGroup"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            app:selectionRequired="true"
+            app:singleSelection="true" />
+
+        <!-- Legacy SeekBar kept hidden for backward compat -->
         <SeekBar
             android:id="@+id/gifDurationSeekBar"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:max="15"
-            android:progress="5" />
+            android:progress="5"
+            android:visibility="gone" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/videoToGifRunButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:text="@string/toolbox_video_to_gif_run" />
+            android:layout_marginTop="16dp"
+            android:text="@string/toolbox_video_to_gif_run"
+            app:icon="@drawable/ic_video_to_gif" />
     </LinearLayout>
 
     <com.google.android.material.progressindicator.LinearProgressIndicator

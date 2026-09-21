@@ -388,9 +388,24 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
             ThumbnailItemDetailsLookup(recyclerView),
             StorageStrategy.createParcelableStorage(Media::class.java),
         ).withSelectionPredicate(
-            when (intentsViewModel.allowMultipleSelection.value) {
-                true -> SelectionPredicates.createSelectAnything()
-                false -> SelectionPredicates.createSelectSingleAnything()
+            object : SelectionTracker.SelectionPredicate<Media>() {
+                private val delegate = when (intentsViewModel.allowMultipleSelection.value) {
+                    true -> SelectionPredicates.createSelectAnything<Media>()
+                    false -> SelectionPredicates.createSelectSingleAnything<Media>()
+                }
+
+                override fun canSetStateForKey(key: Media, nextState: Boolean): Boolean {
+                    if (key == ThumbnailAdapter.DATE_HEADER_KEY) return false
+                    return delegate.canSetStateForKey(key, nextState)
+                }
+
+                override fun canSetStateAtPosition(position: Int, nextState: Boolean): Boolean {
+                    val item = thumbnailAdapter.currentList.getOrNull(position)
+                    if (item is AlbumViewModel.AlbumContent.DateHeader) return false
+                    return delegate.canSetStateAtPosition(position, nextState)
+                }
+
+                override fun canSelectMultiple(): Boolean = delegate.canSelectMultiple()
             }
         ).build().also {
             thumbnailAdapter.selectionTracker = it

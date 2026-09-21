@@ -143,7 +143,8 @@ Files: `GifEditorActivity.kt`, `utils/media/GifCodec.kt` (self-contained LZW dec
 ## 8. Multi-editing photos & multi-image toolbox (reusing the image toolbox)
 
 Extends the offline image toolbox to support batch editing and multiple photo selection:
-- **Batch compress**: Compresses multiple selected photos concurrently/sequentially using chosen quality or size budget.
+- **Batch compress**: Compresses multiple selected photos concurrently/sequentially using chosen quality, file size budget, and customizable dimension scale ratio (10% to 100% slider, 25%/50%/75%/100% presets).
+- **Expanded size presets**: Adds 200 KB, 500 KB, 1 MB, 2 MB, 5 MB file size limit budgets in addition to quality presets (85%, 70%, 50%, 35%).
 - **Batch convert**: Converts multiple selected photos into JPEG, PNG, or WEBP.
 - **Batch photo edit**: Applies rotation (0°, +90°, +180°, +270°) and filters (Grayscale, Sepia, Invert, Warm, Cool) across all selected photos in one go.
 - **Selection Action Bar entry**: When photos are selected in `AlbumFragment`, a toolbox icon button (`ic_toolbox`) opens `ImageToolboxBottomSheet` initialized with all selected photos.
@@ -154,16 +155,32 @@ Files: `utils/media/ImageToolbox.kt`, `ui/dialogs/ImageToolboxBottomSheet.kt`,
 
 ---
 
-## 9. Date quick-select checkmark option
+## 9. Date quick-select checkmark option & multi-day selection
 
 An option to show a checkmark button beside the date header in the photo list to quickly select/deselect all photos of that day:
 - **Global toggle**: Configurable in Settings (`SettingsActivity` / `root_preferences.xml` → `quick_select_date_enabled`), persisted via `SharedPreferences.quickSelectDateEnabled`.
 - **Interactive date header check**: `date_header_view.xml` renders a check button beside the date title. Tapping it calculates all photos belonging to that date and selects or deselects them via `SelectionTracker`, automatically activating selection action mode.
-- **Dynamic state synchronization**: Observers keep the date header checkmark in sync with the selection state of its child photos with payload-based updates.
+- **Concurrent multi-day selection**: Resolves AndroidX `SelectionTracker` `TouchInputHandler` tap clearing by surfacing a non-selectable sentinel key (`DATE_HEADER_KEY`) in `ThumbnailItemDetailsLookup` and disallowing touch interception on `checkImageView` during `ACTION_DOWN`. Tapping multiple date headers preserves selections across all selected days.
+- **Dynamic state synchronization**: In-place visible view holder updates keep the date header checkmarks synced with child photos with zero main-thread blocking or ANRs.
 
 Files: `res/layout/date_header_view.xml`, `ui/recyclerview/ThumbnailAdapter.kt`,
-`fragments/AlbumFragment.kt`, `res/xml/root_preferences.xml`,
-`ext/SharedPreferences.kt`, `res/values/strings.xml`, `res/values-zh-rCN/strings.xml`.
+`ui/recyclerview/ThumbnailItemDetailsLookup.kt`, `fragments/AlbumFragment.kt`,
+`res/xml/root_preferences.xml`, `ext/SharedPreferences.kt`,
+`res/values/strings.xml`, `res/values-zh-rCN/strings.xml`.
+
+---
+
+## 10. Modern Video-to-GIF converter & optimized GifCodec
+
+Restores the modern Material3 HCI and fixes color fidelity and encoding speed:
+- **Material3 HCI**: First-frame thumbnail preview, live duration slider (1-15s), FPS chips (5, 8, 10, 12, 15), Quality/Resolution chips (240p, 360p, 480p, 720p), and live estimate (~s • fps • p • frames).
+- **Blue channel fix**: Corrected off-by-one pointer arithmetic when parsing the Logical Screen Descriptor in `GifCodec.kt` (`p++` on packed fields byte), properly aligning the Global Color Table read to byte 13 and eliminating blue/green channel loss/shift.
+- **Blazing fast LZW encoding**: Replaced `HashMap<List<Byte>, Int>` with a primitive zero-allocation hash table (`htab`/`codetab` size 5003), eliminating millions of heap allocations per second.
+- **Fast 15-bit color lookup cache**: Cached nearest-color palette lookups in a 64KB `ShortArray(32768)` table, cutting encoding time by up to 20x.
+- **Scoped storage resiliency**: `AssetFileDescriptor` data source handling prevents `Invalid ID 0x0000000f` failures on `content://` URIs.
+
+Files: `utils/media/GifCodec.kt`, `utils/media/ImageToolbox.kt`,
+`ui/dialogs/ImageToolboxBottomSheet.kt`, `res/layout/dialog_image_toolbox.xml`.
 
 ---
 

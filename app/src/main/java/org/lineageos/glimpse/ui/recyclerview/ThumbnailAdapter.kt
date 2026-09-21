@@ -7,11 +7,13 @@ package org.lineageos.glimpse.ui.recyclerview
 
 import android.graphics.RenderEffect
 import android.graphics.Shader
+import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.text.format.DateUtils
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
@@ -86,7 +88,10 @@ class ThumbnailAdapter : ListAdapter<AlbumViewModel.AlbumContent, RecyclerView.V
             AlbumViewModel.AlbumContent.MediaItem::class.safeCast(it)?.media
         }
 
-        override fun getPosition(key: Media) = mediaToIndex?.get(key) ?: -1
+        override fun getPosition(key: Media): Int {
+            if (key == DATE_HEADER_KEY) return -1
+            return mediaToIndex?.get(key) ?: -1
+        }
     }
 
     private var onItemSelected: (media: Media) -> Unit = {}
@@ -296,6 +301,25 @@ class ThumbnailAdapter : ListAdapter<AlbumViewModel.AlbumContent, RecyclerView.V
 
         private var currentDate: Date? = null
 
+        val itemDetails = object : ItemDetailsLookup.ItemDetails<Media>() {
+            override fun getPosition() = bindingAdapterPosition
+            override fun getSelectionKey(): Media = DATE_HEADER_KEY
+        }
+
+        init {
+            checkImageView.setOnTouchListener { v, event ->
+                if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+                    v.parent?.requestDisallowInterceptTouchEvent(true)
+                }
+                false
+            }
+            itemView.setOnClickListener {
+                if (isQuickSelectEnabled) {
+                    checkImageView.performClick()
+                }
+            }
+        }
+
         fun bind(date: Date) {
             this.currentDate = date
             textView.text = DateUtils.getRelativeTimeSpanString(
@@ -343,6 +367,23 @@ class ThumbnailAdapter : ListAdapter<AlbumViewModel.AlbumContent, RecyclerView.V
     companion object {
         private const val BLUR_RADIUS = 15f
         const val PAYLOAD_DATE_CHECK = "payload_date_check"
+
+        val DATE_HEADER_KEY = Media(
+            uri = Uri.parse("glimpse://date_header"),
+            mediaType = MediaType.IMAGE,
+            mimeType = "",
+            albumUri = Uri.EMPTY,
+            albumName = null,
+            displayName = null,
+            isFavorite = false,
+            isTrashed = false,
+            dateAdded = Date(0),
+            dateModified = Date(0),
+            width = 0,
+            height = 0,
+            orientation = 0,
+            sizeBytes = 0,
+        )
 
         // Exposed as a function (not an eager companion val) so the RenderEffect
         // class is only referenced when this is actually called, which happens

@@ -6,9 +6,12 @@
 package org.lineageos.glimpse.ui.dialogs
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.media.MediaMetadataRetriever
 import android.os.Handler
 import android.os.Looper
 import android.view.View
+import android.widget.ImageView
 import android.widget.RadioGroup
 import android.widget.SeekBar
 import android.widget.TextView
@@ -21,6 +24,7 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
 import com.google.android.material.progressindicator.LinearProgressIndicator
+import com.google.android.material.slider.Slider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -60,16 +64,40 @@ class ImageToolboxBottomSheet(
     private val editSection by lazy { findViewById<View>(R.id.editSection)!! }
     private val videoToGifSection by lazy { findViewById<View>(R.id.videoToGifSection)!! }
 
-    private val compressRadioGroup by lazy { findViewById<RadioGroup>(R.id.compressRadioGroup)!! }
+    // Compress controls
+    private val compressScaleSlider by lazy { findViewById<Slider>(R.id.compressScaleSlider) }
+    private val compressScaleValue by lazy { findViewById<TextView>(R.id.compressScaleValue) }
+    private val compressScaleChipGroup by lazy { findViewById<ChipGroup>(R.id.compressScaleChipGroup) }
+    private val compressQualityChipGroup by lazy { findViewById<ChipGroup>(R.id.compressQualityChipGroup) }
+    private val compressSizeChipGroup by lazy { findViewById<ChipGroup>(R.id.compressSizeChipGroup) }
+    private val compressRadioGroup by lazy { findViewById<RadioGroup>(R.id.compressRadioGroup) }
+
+    // Convert & Edit controls
     private val convertChipGroup by lazy { findViewById<ChipGroup>(R.id.convertChipGroup)!! }
     private val rotateChipGroup by lazy { findViewById<ChipGroup>(R.id.rotateChipGroup)!! }
     private val filterChipGroup by lazy { findViewById<ChipGroup>(R.id.filterChipGroup)!! }
-    private val gifDurationSeekBar by lazy { findViewById<SeekBar>(R.id.gifDurationSeekBar)!! }
+
+    // Modern Video to GIF controls
+    private val previewImage by lazy { findViewById<ImageView>(R.id.videoGifPreview) }
+    private val estimateText by lazy { findViewById<TextView>(R.id.videoGifEstimate) }
+    private val durationSlider by lazy { findViewById<Slider>(R.id.gifDurationSlider) }
+    private val durationValue by lazy { findViewById<TextView>(R.id.gifDurationValue) }
+    private val fpsChipGroup by lazy { findViewById<ChipGroup>(R.id.fpsChipGroup) }
+    private val qualityChipGroup by lazy { findViewById<ChipGroup>(R.id.qualityChipGroup) }
+    private val legacySeekBar by lazy { findViewById<SeekBar>(R.id.gifDurationSeekBar) }
+
     private val progressBar by lazy { findViewById<LinearProgressIndicator>(R.id.toolboxProgressBar)!! }
+
+    private var selectedScaleRatio: Float = 1.0f
+    private var selectedQuality: Int = 85
+    private var selectedMaxBytes: Long? = null
 
     private var convertTarget: ImageTargetFormat = ImageTargetFormat.JPEG
     private var selectedRotation: Int = 0
     private var selectedFilter: ImageFilter = ImageFilter.NONE
+
+    private var selectedFps: Int = 8
+    private var selectedMaxEdge: Int = 480
 
     init {
         setContentView(R.layout.dialog_image_toolbox)
@@ -87,9 +115,15 @@ class ImageToolboxBottomSheet(
         videoToGifSection.isVisible = isSingleVideo
 
         if (hasImages) {
+            setupCompressControls()
             setupConvertChips()
             setupRotateChips()
             setupFilterChips()
+        }
+
+        if (isSingleVideo) {
+            setupVideoToGifModernUi()
+            loadVideoPreview()
         }
 
         findViewById<MaterialButton>(R.id.compressRunButton)!!.setOnClickListener {
@@ -102,7 +136,92 @@ class ImageToolboxBottomSheet(
             runEdit()
         }
         findViewById<MaterialButton>(R.id.videoToGifRunButton)!!.setOnClickListener {
-            runVideoToGif()
+            runVideoToGifModern()
+        }
+    }
+
+    private fun setupCompressControls() {
+        // 1. Scale ratio slider & chips
+        compressScaleSlider?.let { slider ->
+            slider.value = 100f
+            slider.addOnChangeListener { _, value, fromUser ->
+                val ratio = value.toInt()
+                compressScaleValue?.text = "${ratio}%"
+                selectedScaleRatio = value / 100f
+                if (fromUser) {
+                    compressScaleChipGroup?.clearCheck()
+                }
+            }
+        }
+
+        val scalePresets = listOf(100 to "100%", 75 to "75%", 50 to "50%", 25 to "25%")
+        compressScaleChipGroup?.let { group ->
+            group.removeAllViews()
+            scalePresets.forEachIndexed { index, (pct, label) ->
+                val chip = Chip(context).apply {
+                    text = label
+                    isCheckable = true
+                    id = View.generateViewId()
+                    isChecked = index == 0
+                }
+                chip.setOnClickListener {
+                    selectedScaleRatio = pct / 100f
+                    compressScaleSlider?.value = pct.toFloat()
+                    compressScaleValue?.text = "${pct}%"
+                    group.check(chip.id)
+                }
+                group.addView(chip)
+            }
+        }
+
+        // 2. Quality presets
+        val qualityPresets = listOf(
+            85 to R.string.toolbox_compress_quality_high,
+            70 to R.string.toolbox_compress_quality_medium,
+            50 to R.string.toolbox_compress_quality_low,
+            35 to R.string.toolbox_compress_quality_economy,
+        )
+        compressQualityChipGroup?.let { group ->
+            group.removeAllViews()
+            qualityPresets.forEachIndexed { index, (q, labelRes) ->
+                val chip = Chip(context).apply {
+                    text = context.getString(labelRes)
+                    isCheckable = true
+                    id = View.generateViewId()
+                    isChecked = index == 0
+                }
+                chip.setOnClickListener {
+                    selectedQuality = q
+                    group.check(chip.id)
+                }
+                group.addView(chip)
+            }
+        }
+
+        // 3. Target file size presets
+        val sizePresets = listOf(
+            null to R.string.toolbox_compress_size_none,
+            200 * 1024L to R.string.toolbox_compress_size_200k,
+            500 * 1024L to R.string.toolbox_compress_size_500k,
+            1 * 1024 * 1024L to R.string.toolbox_compress_size_1m,
+            2 * 1024 * 1024L to R.string.toolbox_compress_size_2m,
+            5 * 1024 * 1024L to R.string.toolbox_compress_size_5m,
+        )
+        compressSizeChipGroup?.let { group ->
+            group.removeAllViews()
+            sizePresets.forEachIndexed { index, (bytes, labelRes) ->
+                val chip = Chip(context).apply {
+                    text = context.getString(labelRes)
+                    isCheckable = true
+                    id = View.generateViewId()
+                    isChecked = index == 0
+                }
+                chip.setOnClickListener {
+                    selectedMaxBytes = bytes
+                    group.check(chip.id)
+                }
+                group.addView(chip)
+            }
         }
     }
 
@@ -164,14 +283,124 @@ class ImageToolboxBottomSheet(
         }
     }
 
-    private fun runCompress() {
-        val options = when (compressRadioGroup.checkedRadioButtonId) {
-            R.id.compressHigh -> CompressOptions(quality = 85)
-            R.id.compressMedium -> CompressOptions(quality = 70)
-            R.id.compressLow -> CompressOptions(quality = 50)
-            R.id.compressMaxSize -> CompressOptions(maxBytes = 500 * 1024L)
-            else -> CompressOptions(quality = 70)
+    private fun setupVideoToGifModernUi() {
+        // Duration slider 1..15s
+        durationSlider?.let { slider ->
+            slider.value = 5f
+            slider.addOnChangeListener { _, value, fromUser ->
+                if (fromUser) {
+                    val seconds = value.toInt().coerceAtLeast(1)
+                    durationValue?.text = "${seconds}s"
+                    legacySeekBar?.progress = seconds
+                    updateEstimate()
+                }
+            }
+            durationValue?.text = "${slider.value.toInt()}s"
         }
+
+        // FPS chips: 5, 8, 10, 12, 15
+        val fpsOptions = listOf(5 to "5 fps", 8 to "8 fps", 10 to "10 fps", 12 to "12 fps", 15 to "15 fps")
+        fpsChipGroup?.let { group ->
+            group.removeAllViews()
+            fpsOptions.forEach { (fps, label) ->
+                val chip = Chip(context).apply {
+                    text = label
+                    isCheckable = true
+                    id = View.generateViewId()
+                    isChecked = fps == selectedFps
+                }
+                chip.setOnClickListener {
+                    selectedFps = fps
+                    group.check(chip.id)
+                    updateEstimate()
+                }
+                group.addView(chip)
+            }
+        }
+
+        // Quality / resolution chips: map to maxEdge
+        val qualityOptions = listOf(
+            240 to "240p",
+            360 to "360p",
+            480 to "480p",
+            720 to "720p"
+        )
+        qualityChipGroup?.let { group ->
+            group.removeAllViews()
+            qualityOptions.forEach { (edge, label) ->
+                val chip = Chip(context).apply {
+                    text = label
+                    isCheckable = true
+                    id = View.generateViewId()
+                    isChecked = edge == selectedMaxEdge
+                }
+                chip.setOnClickListener {
+                    selectedMaxEdge = edge
+                    group.check(chip.id)
+                    updateEstimate()
+                }
+                group.addView(chip)
+            }
+        }
+
+        // Sync legacy seekbar to slider for backward compatibility
+        legacySeekBar?.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (fromUser) {
+                    val seconds = progress.coerceAtLeast(1)
+                    durationSlider?.value = seconds.toFloat()
+                    durationValue?.text = "${seconds}s"
+                    updateEstimate()
+                }
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+        })
+
+        updateEstimate()
+    }
+
+    private fun loadVideoPreview() {
+        val videoMedia = medias.firstOrNull { it.mediaType == MediaType.VIDEO } ?: return
+        lifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+            var bmp: Bitmap? = null
+            try {
+                val retriever = MediaMetadataRetriever()
+                val fd = context.contentResolver.openAssetFileDescriptor(videoMedia.uri, "r")
+                if (fd != null) {
+                    retriever.setDataSource(fd.fileDescriptor)
+                    fd.close()
+                } else {
+                    retriever.setDataSource(context, videoMedia.uri)
+                }
+                bmp = retriever.getFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                retriever.release()
+            } catch (_: Exception) {
+            }
+            withContext(Dispatchers.Main) {
+                if (bmp != null) {
+                    previewImage?.setImageBitmap(bmp)
+                } else {
+                    previewImage?.setImageResource(R.drawable.ic_video_to_gif)
+                }
+            }
+        }
+    }
+
+    private fun updateEstimate() {
+        val seconds = (durationSlider?.value?.toInt() ?: legacySeekBar?.progress ?: 5).coerceAtLeast(1)
+        val fps = selectedFps
+        val edge = selectedMaxEdge
+        val frames = (seconds * fps).coerceAtMost(36)
+        estimateText?.text = "~${seconds}s • ${fps}fps • ${edge}p • ~${frames} frames"
+    }
+
+    private fun runCompress() {
+        val options = CompressOptions(
+            quality = selectedQuality,
+            maxBytes = selectedMaxBytes,
+            scaleRatio = selectedScaleRatio,
+        )
         val mainHandler = Handler(Looper.getMainLooper())
         val imageUris = medias.filter { it.mediaType == MediaType.IMAGE }.map { it.uri }
         launchHeavy(progressive = true) { onProgress ->
@@ -201,12 +430,20 @@ class ImageToolboxBottomSheet(
         }
     }
 
-    private fun runVideoToGif() {
+    private fun runVideoToGifModern() {
         val videoMedia = medias.firstOrNull { it.mediaType == MediaType.VIDEO } ?: return
-        val seconds = gifDurationSeekBar.progress.coerceAtLeast(1)
+        val seconds = (durationSlider?.value?.toInt() ?: legacySeekBar?.progress ?: 5).coerceAtLeast(1)
+        val fps = selectedFps
+        val maxEdge = selectedMaxEdge
         val mainHandler = Handler(Looper.getMainLooper())
         launchHeavy(progressive = true) { onProgress ->
-            ImageToolbox.videoToGif(context, videoMedia.uri, durationSeconds = seconds) { p ->
+            ImageToolbox.videoToGif(
+                context,
+                videoMedia.uri,
+                durationSeconds = seconds,
+                fps = fps,
+                maxEdge = maxEdge,
+            ) { p ->
                 mainHandler.post { onProgress(p) }
             }
         }
