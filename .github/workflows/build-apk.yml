@@ -17,21 +17,17 @@ jobs:
       - run: chmod +x ./gradlew
       - name: Accept Android SDK licenses (best effort)
         run: set +e; yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1; exit 0
-      - name: Build
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
+      - run: |
           set +e
           ./gradlew assembleDebug --stacktrace > build_log.txt 2>&1
           RC=$?
           if [ $RC -ne 0 ]; then
-            ERROR_LOG=$(tail -n 80 build_log.txt)
-            echo "Build failed with code $RC"
-            gh api "/repos/${{ github.repository }}/commits/${{ github.sha }}/comments" \
-              -X POST \
-              -f body="```
-$ERROR_LOG
-```" || true
+            grep -E "e: |error: |AAPT: |FAILURE: |Execution failed " build_log.txt | head -n 10 | while IFS= read -r line; do
+              echo "::error title=BuildError::$line"
+            done
+            tail -n 5 build_log.txt | while IFS= read -r line; do
+              echo "::error title=Tail::$line"
+            done
             exit $RC
           fi
       - uses: actions/upload-artifact@v7
