@@ -5,10 +5,8 @@
 
 package org.lineageos.glimpse.ui.dialogs
 
-import android.app.Dialog
 import android.content.Context
 import android.view.LayoutInflater
-import android.view.View
 import android.view.animation.AnimationUtils
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
@@ -23,19 +21,21 @@ import org.lineageos.glimpse.R
 import org.lineageos.glimpse.utils.privacy.PrivacyLockManager
 
 /**
- * Oppo ColorOS-style Privacy PIN dialog that prompts the user to set up or verify
+ * Privacy PIN dialog that prompts the user to set up or verify
  * their 4-6 digit privacy PIN to access the Locked Album or ID & License Safe.
  */
 class PrivacyPinDialog(
     private val context: Context,
+    private val onCancel: (() -> Unit)? = null,
     private val onSuccess: () -> Unit,
 ) {
     private var dialog: AlertDialog? = null
     private var isSettingUp = !PrivacyLockManager.isPinSet(context)
     private var pendingFirstPin: String? = null
+    private var authenticated = false
 
-    fun show() {
-        if (PrivacyLockManager.isSessionUnlocked()) {
+    fun show(forcePrompt: Boolean = false) {
+        if (!forcePrompt && PrivacyLockManager.isSessionUnlocked()) {
             onSuccess()
             return
         }
@@ -91,6 +91,7 @@ class PrivacyPinDialog(
                 } else {
                     if (pin == pendingFirstPin) {
                         PrivacyLockManager.setPin(context, pin)
+                        authenticated = true
                         dialog?.dismiss()
                         onSuccess()
                     } else {
@@ -101,6 +102,7 @@ class PrivacyPinDialog(
                 }
             } else {
                 if (PrivacyLockManager.verifyPin(context, pin)) {
+                    authenticated = true
                     dialog?.dismiss()
                     onSuccess()
                 } else {
@@ -131,6 +133,11 @@ class PrivacyPinDialog(
         dialog = MaterialAlertDialogBuilder(context)
             .setView(view)
             .setCancelable(true)
+            .setOnDismissListener {
+                if (!authenticated) {
+                    onCancel?.invoke()
+                }
+            }
             .create()
 
         dialog?.setOnShowListener {

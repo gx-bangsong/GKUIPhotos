@@ -299,8 +299,6 @@
     <string name="privacy_locked_album_desc">Requires PIN to view private photos and videos</string>
     <string name="privacy_id_licenses_title">ID cards &amp; licenses</string>
     <string name="privacy_id_licenses_desc">Securely view your ID card, driver\'s license, and other credentials</string>
-    <string name="privacy_id_safe_title">ColorOS-style ID Safe</string>
-    <string name="privacy_id_safe_description">Encrypted on-device storage. No network access.</string>
     <string name="privacy_pin_create_title">Set Privacy PIN</string>
     <string name="privacy_pin_create_subtitle">Enter a 4 to 6-digit numeric PIN</string>
     <string name="privacy_pin_confirm_title">Confirm Privacy PIN</string>

@@ -244,8 +244,6 @@
     <string name="privacy_locked_album_desc">需验证隐私密码，安全隔离私密照片与视频</string>
     <string name="privacy_id_licenses_title">证件夹</string>
     <string name="privacy_id_licenses_desc">安全加密存储并随时查看身份证、驾照等证件照片</string>
-    <string name="privacy_id_safe_title">ColorOS 风格证件安全夹</string>
-    <string name="privacy_id_safe_description">本地安全隔离加密存储，断网可用，绝不上云。</string>
     <string name="privacy_pin_create_title">设置隐私密码</string>
     <string name="privacy_pin_create_subtitle">请输入 4 到 6 位数字隐私密码</string>
     <string name="privacy_pin_confirm_title">确认隐私密码</string>

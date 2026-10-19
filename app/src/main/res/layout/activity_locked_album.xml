@@ -18,6 +18,7 @@
             android:layout_width="match_parent"
             android:layout_height="?attr/actionBarSize"
             app:navigationIcon="@drawable/ic_back"
+            app:navigationIconTint="?attr/colorOnSurface"
             app:title="@string/privacy_locked_album" />
 
     </com.google.android.material.appbar.AppBarLayout>

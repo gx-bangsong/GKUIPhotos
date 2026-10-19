@@ -72,13 +72,13 @@ class LibraryFragment : Fragment(R.layout.fragment_library) {
         lockedAlbumListItem.setOnClickListener {
             PrivacyPinDialog(requireContext()) {
                 startActivity(Intent(requireContext(), LockedAlbumActivity::class.java))
-            }.show()
+            }.show(forcePrompt = true)
         }
 
         idLicenseListItem.setOnClickListener {
             PrivacyPinDialog(requireContext()) {
                 startActivity(Intent(requireContext(), IdLicenseActivity::class.java))
-            }.show()
+            }.show(forcePrompt = true)
         }
     }
 

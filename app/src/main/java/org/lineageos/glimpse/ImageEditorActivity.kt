@@ -19,10 +19,15 @@ import android.os.Environment
 import android.provider.MediaStore
 import android.view.MenuItem
 import android.widget.Toast
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.core.view.isVisible
+import androidx.core.view.updatePadding
 import androidx.lifecycle.lifecycleScope
 import androidx.preference.PreferenceManager
 import com.google.android.material.appbar.MaterialToolbar
@@ -97,6 +102,12 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            isAppearanceLightStatusBars = false
+            isAppearanceLightNavigationBars = false
+        }
 
         sourceUri = intent.data ?: intent.getParcelableExtra<Uri>(EXTRA_MEDIA_URI)
         sourceMimeType = intent.type ?: intent.getStringExtra(EXTRA_MIME_TYPE) ?: "image/jpeg"
@@ -108,6 +119,15 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
 
         toolbar.setNavigationOnClickListener { finish() }
         toolbar.setOnMenuItemClickListener(::onMenuItemSelected)
+
+        val bottomControls = findViewById<View>(R.id.editorBottomControls)
+        bottomControls?.let { v ->
+            ViewCompat.setOnApplyWindowInsetsListener(v) { view, insets ->
+                val navBars = insets.getInsets(WindowInsetsCompat.Type.navigationBars())
+                view.updatePadding(bottom = navBars.bottom + 8)
+                insets
+            }
+        }
 
         rotateButton.setOnClickListener {
             rotation = (rotation + 90) % 360

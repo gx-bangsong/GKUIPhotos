@@ -225,9 +225,15 @@ Introduces a privacy vault and credential organizer modeled after ColorOS Galler
     - **Resident ID Card (身份证)**: Dual-slot layout for Front / Portrait (`人像面`) and Back / Emblem (`国徽面`).
     - **Driver's License (机动车驾驶证)**: Dual-slot layout for Main page (`正页`) and Sub page (`副页`).
     - **Passport (护照)**.
-    - **Vehicle Registration (机动车行驶证)**.
     - **Other Licenses & Certificates (其他证照 / 营业执照)**.
   - Quick image picker import and full-resolution secure viewer dialog with one-tap replacement and removal.
+  - Clean layout starting immediately with credential cards without promotional/branding banner.
+- **Strict Security Lifecycle**:
+  - Session is locked immediately whenever user exits `LockedAlbumActivity` or `IdLicenseActivity` (in `onStop` / `onDestroy`).
+  - Re-entering the locked album or ID cards & licenses requires PIN authentication every single time.
+  - Edge-to-edge window insets (`enableEdgeToEdge()`) seamlessly blend status bar and toolbar across `LockedAlbumActivity`, `IdLicenseActivity`, and `ImageEditorActivity`.
+  - Back/return button in `ic_back.xml` uses `?attr/colorControlNormal` with `app:navigationIconTint="?attr/colorOnSurface"`, ensuring high contrast light icons in dark mode.
+  - Locking photos deletes the public originals from `MediaStore` (via direct delete or `createDeleteRequest`), instantly removing locked photos from the timeline tab.
 - **Seamless Gallery Entry Points**:
   - Categorized under a new "Privacy & Security" section in the Library tab (`fragment_library.xml`, `LibraryFragment.kt`).
   - Action mode option "Move to locked album" (`ic_lock`) in `AlbumFragment.kt` selection bar.

@@ -236,8 +236,6 @@
     <string name="privacy_locked_album_desc">需驗證隱私密碼，安全隔離私密照片與影片</string>
     <string name="privacy_id_licenses_title">證件夾</string>
     <string name="privacy_id_licenses_desc">安全加密儲存並隨時檢視身分證、駕照等證件照片</string>
-    <string name="privacy_id_safe_title">ColorOS 風格證件安全夾</string>
-    <string name="privacy_id_safe_description">本機安全隔離加密儲存，離線可用，絕不上雲。</string>
     <string name="privacy_pin_create_title">設定隱私密碼</string>
     <string name="privacy_pin_create_subtitle">請輸入 4 到 6 位數字隱私密碼</string>
     <string name="privacy_pin_confirm_title">確認隱私密碼</string>

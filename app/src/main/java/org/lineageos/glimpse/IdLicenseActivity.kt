@@ -15,9 +15,13 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.isVisible
+import androidx.core.view.updatePadding
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.bottomsheet.BottomSheetDialog
@@ -31,9 +35,9 @@ import org.lineageos.glimpse.utils.privacy.PrivacyLockManager
 import java.io.File
 
 /**
- * Oppo ColorOS-style ID & License Safe (证件夹).
+ * ID & License Safe (证件夹).
  * Encrypts and securely displays user identification documents including Resident ID Card,
- * Driver's License, Passport, Vehicle Registration, and other licenses.
+ * Driver's License, Passport, and other licenses.
  */
 class IdLicenseActivity : AppCompatActivity(R.layout.activity_id_license) {
 
@@ -66,8 +70,10 @@ class IdLicenseActivity : AppCompatActivity(R.layout.activity_id_license) {
 
     private var pendingPickType: LicenseType = LicenseType.ID_CARD
     private var pendingPickSide: String = "front"
+    private var isLaunchingPicker = false
 
     private val pickPhotoLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        isLaunchingPicker = false
         if (uri != null) {
             savePickedLicense(uri)
         }
@@ -75,18 +81,43 @@ class IdLicenseActivity : AppCompatActivity(R.layout.activity_id_license) {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
 
         toolbar.setNavigationOnClickListener { finish() }
 
+        val scrollView = findViewById<View>(R.id.licenseScrollView)
+        scrollView?.let { view ->
+            ViewCompat.setOnApplyWindowInsetsListener(view) { v, insets ->
+                val navBar = insets.getInsets(WindowInsetsCompat.Type.navigationBars())
+                v.updatePadding(bottom = navBar.bottom + 16)
+                insets
+            }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
         if (!PrivacyLockManager.isSessionUnlocked()) {
-            PrivacyPinDialog(this) {
+            PrivacyPinDialog(this, onCancel = { finish() }) {
                 initSlots()
                 loadLicenses()
-            }.show()
+            }.show(forcePrompt = true)
         } else {
             initSlots()
             loadLicenses()
         }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if (!isLaunchingPicker) {
+            PrivacyLockManager.lockSession()
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        PrivacyLockManager.lockSession()
     }
 
     private fun initSlots() {
@@ -112,6 +143,7 @@ class IdLicenseActivity : AppCompatActivity(R.layout.activity_id_license) {
     private fun launchPick(type: LicenseType, side: String) {
         pendingPickType = type
         pendingPickSide = side
+        isLaunchingPicker = true
         pickPhotoLauncher.launch("image/*")
     }
 

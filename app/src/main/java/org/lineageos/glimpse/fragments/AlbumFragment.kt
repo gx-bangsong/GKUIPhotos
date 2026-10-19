@@ -216,21 +216,43 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
                         PrivacyPinDialog(requireContext()) {
                             viewLifecycleOwner.lifecycleScope.launch {
                                 var count = 0
+                                val needsConsentUris = mutableListOf<Uri>()
                                 withContext(Dispatchers.IO) {
                                     selection.forEach { media ->
                                         if (LockedVaultRepository.importToVault(requireContext(), media.uri) != null) {
                                             count++
+                                            val deleted = runCatching {
+                                                requireContext().contentResolver.delete(media.uri, null, null) > 0
+                                            }.getOrDefault(false)
+                                            if (!deleted) {
+                                                needsConsentUris.add(media.uri)
+                                            }
                                         }
                                     }
                                 }
-                                selectionTracker?.clearSelection()
-                                Toast.makeText(
-                                    requireContext(),
-                                    getString(R.string.privacy_locked_import_success, count),
-                                    Toast.LENGTH_SHORT
-                                ).show()
+                                if (needsConsentUris.isNotEmpty()) {
+                                    lastProcessedSelection = selection
+                                    runCatching {
+                                        lockDeleteForeverContract.launch(
+                                            requireContext().contentResolver.createDeleteRequest(
+                                                *needsConsentUris.toTypedArray()
+                                            )
+                                        )
+                                    }.onFailure {
+                                        selectionTracker?.clearSelection()
+                                    }
+                                } else {
+                                    selectionTracker?.clearSelection()
+                                }
+                                if (count > 0) {
+                                    Toast.makeText(
+                                        requireContext(),
+                                        getString(R.string.privacy_locked_import_success, count),
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
                             }
-                        }.show()
+                        }.show(forcePrompt = true)
                         true
                     }
 
@@ -270,6 +292,12 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
                 succeeded, count,
             )
 
+            lastProcessedSelection = null
+            selectionTracker?.clearSelection()
+        }
+
+    private val lockDeleteForeverContract =
+        registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) {
             lastProcessedSelection = null
             selectionTracker?.clearSelection()
         }

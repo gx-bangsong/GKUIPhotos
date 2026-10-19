@@ -5,7 +5,6 @@
 
 package org.lineageos.glimpse
 
-import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
@@ -13,12 +12,15 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.ImageView
-import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.isVisible
+import androidx.core.view.updatePadding
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -29,13 +31,14 @@ import com.google.android.material.floatingactionbutton.FloatingActionButton
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.lineageos.glimpse.ext.createDeleteRequest
 import org.lineageos.glimpse.ui.dialogs.PrivacyPinDialog
 import org.lineageos.glimpse.utils.privacy.LockedVaultRepository
 import org.lineageos.glimpse.utils.privacy.PrivacyLockManager
 import org.lineageos.glimpse.utils.privacy.VaultItem
 
 /**
- * Oppo ColorOS-style Locked Album (私密相册).
+ * Locked Album (私密相册).
  * Safely displays, imports, unlocks, or permanently deletes private photos and videos
  * isolated within the app's internal sandbox.
  */
@@ -53,8 +56,15 @@ class LockedAlbumActivity : AppCompatActivity(R.layout.activity_locked_album) {
 
     private var vaultItems = listOf<VaultItem>()
     private val selectedItems = mutableSetOf<String>()
+    private var isLaunchingPicker = false
+
+    private val deleteRequestLauncher =
+        registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) {
+            loadVault()
+        }
 
     private val pickMediaLauncher = registerForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris: List<Uri> ->
+        isLaunchingPicker = false
         if (uris.isNotEmpty()) {
             importUris(uris)
         }
@@ -64,6 +74,7 @@ class LockedAlbumActivity : AppCompatActivity(R.layout.activity_locked_album) {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
 
         toolbar.setNavigationOnClickListener { finish() }
 
@@ -76,28 +87,74 @@ class LockedAlbumActivity : AppCompatActivity(R.layout.activity_locked_album) {
         unlockToPublicButton.setOnClickListener { unlockSelected() }
         deletePermanentlyButton.setOnClickListener { deleteSelected() }
 
+        ViewCompat.setOnApplyWindowInsetsListener(recyclerView) { v, insets ->
+            val navBars = insets.getInsets(WindowInsetsCompat.Type.navigationBars())
+            v.updatePadding(bottom = navBars.bottom + 96)
+            insets
+        }
+
+        ViewCompat.setOnApplyWindowInsetsListener(selectionActionBar) { v, insets ->
+            val navBars = insets.getInsets(WindowInsetsCompat.Type.navigationBars())
+            v.updatePadding(bottom = navBars.bottom + 8)
+            insets
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
         if (!PrivacyLockManager.isSessionUnlocked()) {
-            PrivacyPinDialog(this) {
+            PrivacyPinDialog(this, onCancel = { finish() }) {
                 loadVault()
-            }.show()
+            }.show(forcePrompt = true)
         } else {
             loadVault()
         }
     }
 
+    override fun onStop() {
+        super.onStop()
+        if (!isLaunchingPicker) {
+            PrivacyLockManager.lockSession()
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        PrivacyLockManager.lockSession()
+    }
+
     private fun launchPickMedia() {
+        isLaunchingPicker = true
         pickMediaLauncher.launch("image/*")
     }
 
     private fun importUris(uris: List<Uri>) {
         lifecycleScope.launch {
             var successCount = 0
+            val pendingConsentUris = mutableListOf<Uri>()
             withContext(Dispatchers.IO) {
                 uris.forEach { uri ->
                     if (LockedVaultRepository.importToVault(this@LockedAlbumActivity, uri) != null) {
                         successCount++
+                        val deleted = runCatching {
+                            contentResolver.delete(uri, null, null) > 0
+                        }.getOrDefault(false)
+                        if (!deleted) {
+                            pendingConsentUris.add(uri)
+                        }
                     }
                 }
+            }
+            if (pendingConsentUris.isNotEmpty()) {
+                runCatching {
+                    deleteRequestLauncher.launch(
+                        contentResolver.createDeleteRequest(*pendingConsentUris.toTypedArray())
+                    )
+                }.onFailure {
+                    loadVault()
+                }
+            } else {
+                loadVault()
             }
             if (successCount > 0) {
                 Toast.makeText(
@@ -105,7 +162,6 @@ class LockedAlbumActivity : AppCompatActivity(R.layout.activity_locked_album) {
                     getString(R.string.privacy_locked_import_success, successCount),
                     Toast.LENGTH_SHORT
                 ).show()
-                loadVault()
             }
         }
     }
