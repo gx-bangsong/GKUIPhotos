@@ -17,13 +17,22 @@ jobs:
       - run: chmod +x ./gradlew
       - name: Accept Android SDK licenses (best effort)
         run: set +e; yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1; exit 0
-      - run: |
-          set -o pipefail
-          ./gradlew assembleDebug --stacktrace 2>&1 | tee build_log.txt || {
-            grep -E "e: |error:|FAILURE:|FAILED|Compilation error" build_log.txt | head -n 30 | while IFS= read -r line; do
-              echo "::error::$line"
-            done
-            exit 1
-          }
+      - name: Build
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          ./gradlew assembleDebug --stacktrace > build_log.txt 2>&1
+          RC=$?
+          if [ $RC -ne 0 ]; then
+            ERROR_LOG=$(tail -n 80 build_log.txt)
+            echo "Build failed with code $RC"
+            gh api "/repos/${{ github.repository }}/commits/${{ github.sha }}/comments" \
+              -X POST \
+              -f body="```
+$ERROR_LOG
+```" || true
+            exit $RC
+          fi
       - uses: actions/upload-artifact@v7
         with: { name: glimpse-debug-apk, path: app/build/outputs/apk/debug/app-debug.apk, if-no-files-found: error }
