@@ -17,13 +17,6 @@ jobs:
       - run: chmod +x ./gradlew
       - name: Accept Android SDK licenses (best effort)
         run: set +e; yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1; exit 0
-      - name: Build with Gradle
-        run: |
-          if ! ./gradlew assembleDebug --stacktrace > build.log 2>&1; then
-            grep -E "e: |error: |FAILURE: " build.log | head -n 30 | while IFS= read -r line; do
-              echo "::error title=Gradle Error::$line"
-            done
-            exit 1
-          fi
+      - run: ./gradlew assembleDebug --stacktrace
       - uses: actions/upload-artifact@v7
         with: { name: glimpse-debug-apk, path: app/build/outputs/apk/debug/app-debug.apk, if-no-files-found: error }
