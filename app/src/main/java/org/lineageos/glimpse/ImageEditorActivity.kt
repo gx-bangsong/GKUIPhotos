@@ -18,6 +18,7 @@ import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
 import android.view.MenuItem
+import android.view.View
 import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
