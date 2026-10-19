@@ -148,6 +148,20 @@
             android:label="@string/gif_editor_title"
             android:theme="@style/Theme.Glimpse.MediaViewer" />
 
+        <!-- Oppo ColorOS-style Locked Album (Private Safe) -->
+        <activity
+            android:name=".LockedAlbumActivity"
+            android:configChanges="orientation|screenLayout|screenSize|smallestScreenSize|keyboardHidden"
+            android:exported="false"
+            android:label="@string/privacy_locked_album" />
+
+        <!-- Oppo ColorOS-style ID & License Safe (证件夹) -->
+        <activity
+            android:name=".IdLicenseActivity"
+            android:configChanges="orientation|screenLayout|screenSize|smallestScreenSize|keyboardHidden"
+            android:exported="false"
+            android:label="@string/privacy_id_licenses_title" />
+
         <!-- Module 2: FileProvider used to share EXIF-stripped copies via content:// -->
         <provider
             android:name="androidx.core.content.FileProvider"

@@ -209,6 +209,39 @@ Files: `ImageEditorActivity.kt`, `ui/views/CropImageView.kt`, `utils/media/Image
 
 ---
 
+## 12. Oppo ColorOS-style Locked Album (Private Safe) & ID & Licenses Safe
+
+Introduces a privacy vault and credential organizer modeled after ColorOS Gallery & Private Safe:
+- **PIN Access Control (`PrivacyLockManager.kt`)**:
+  - Salted SHA-256 cryptographic PIN authentication. Plaintext PINs are never persisted.
+  - Setup on first use (`Set PIN` $\rightarrow$ `Confirm PIN`), seamless verification on return, and session-based caching to avoid redundant prompts within the same session.
+  - Interactive PIN dialog (`PrivacyPinDialog.kt`, `dialog_privacy_pin.xml`) with numeric keypad input, masked password display, and error shake animation.
+- **Isolated Vault Storage (`LockedVaultRepository.kt`)**:
+  - Private media files are saved inside internal application storage (`filesDir/locked_vault/`), completely hidden and isolated from Android's MediaStore, external file scans, and public apps.
+  - Seamless "Unlock to Public" restores files to `Pictures/Glimpse` / `Movies/Glimpse`.
+  - Multi-select batch unlock and permanent deletion.
+- **ColorOS-style ID & Licenses Safe (`IdLicenseActivity.kt`, `IdLicenseRepository.kt`)**:
+  - Organized credential dashboard displaying specialized cards for:
+    - **Resident ID Card (身份证)**: Dual-slot layout for Front / Portrait (`人像面`) and Back / Emblem (`国徽面`).
+    - **Driver's License (机动车驾驶证)**: Dual-slot layout for Main page (`正页`) and Sub page (`副页`).
+    - **Passport (护照)**.
+    - **Vehicle Registration (机动车行驶证)**.
+    - **Other Licenses & Certificates (其他证照 / 营业执照)**.
+  - Quick image picker import and full-resolution secure viewer dialog with one-tap replacement and removal.
+- **Seamless Gallery Entry Points**:
+  - Categorized under a new "Privacy & Security" section in the Library tab (`fragment_library.xml`, `LibraryFragment.kt`).
+  - Action mode option "Move to locked album" (`ic_lock`) in `AlbumFragment.kt` selection bar.
+
+Files: `utils/privacy/PrivacyLockManager.kt`, `utils/privacy/LockedVaultRepository.kt`,
+`utils/privacy/IdLicenseRepository.kt`, `ui/dialogs/PrivacyPinDialog.kt`,
+`LockedAlbumActivity.kt`, `IdLicenseActivity.kt`, `fragments/LibraryFragment.kt`,
+`fragments/AlbumFragment.kt`, `res/layout/activity_locked_album.xml`,
+`res/layout/activity_id_license.xml`, `res/layout/dialog_privacy_pin.xml`,
+`res/layout/dialog_license_viewer.xml`, `res/layout/item_vault_media.xml`,
+`res/drawable/ic_lock.xml`, `res/drawable/ic_id_card.xml`.
+
+---
+
 ## Self-contained GIF codec (`GifCodec.kt`)
 
 Pure-Kotlin, dependency-free GIF89a decoder + encoder (LZW + median-cut color
@@ -258,6 +291,8 @@ aggregation is one MediaStore query + a bounded EXIF scan.
 | Source albums | Albums tab → top carousel |
 | Image editor + ID photo | Edit button (images) → `ImageEditorActivity` |
 | Privacy watermark | Image editor → Watermark button (`activity_image_editor.xml`) |
+| Locked album | Library tab → Privacy & Security → Locked album |
+| ID cards & licenses | Library tab → Privacy & Security → ID cards & licenses |
 | Image toolbox | Floating capsule in viewer → bottom sheet |
 | GIF editor | Edit button (animated GIFs) → `GifEditorActivity` |
 | Edit-save setting | Settings → Editing |

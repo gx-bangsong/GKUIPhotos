@@ -65,12 +65,14 @@ import org.lineageos.glimpse.models.Media
 import org.lineageos.glimpse.models.MediaType
 import org.lineageos.glimpse.models.RequestStatus
 import org.lineageos.glimpse.ui.dialogs.ImageToolboxBottomSheet
+import org.lineageos.glimpse.ui.dialogs.PrivacyPinDialog
 import org.lineageos.glimpse.ui.recyclerview.ThumbnailAdapter
 import org.lineageos.glimpse.ui.recyclerview.ThumbnailItemDetailsLookup
 import org.lineageos.glimpse.ui.recyclerview.ThumbnailLayoutManager
 import org.lineageos.glimpse.utils.MediaDialogsUtils
 import org.lineageos.glimpse.utils.PermissionsChecker
 import org.lineageos.glimpse.utils.PermissionsUtils
+import org.lineageos.glimpse.utils.privacy.LockedVaultRepository
 import org.lineageos.glimpse.viewmodels.AlbumViewModel
 import org.lineageos.glimpse.viewmodels.IntentsViewModel
 import kotlin.reflect.safeCast
@@ -205,6 +207,28 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
                             }.show()
                         }
 
+                        true
+                    }
+
+                    R.id.lockMedia -> {
+                        PrivacyPinDialog(requireContext()) {
+                            viewLifecycleOwner.lifecycleScope.launch {
+                                var count = 0
+                                withContext(Dispatchers.IO) {
+                                    selection.forEach { media ->
+                                        if (LockedVaultRepository.importToVault(requireContext(), media.uri) != null) {
+                                            count++
+                                        }
+                                    }
+                                }
+                                selectionTracker?.clearSelection()
+                                Toast.makeText(
+                                    requireContext(),
+                                    getString(R.string.privacy_locked_import_success, count),
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        }.show()
                         true
                     }
 
