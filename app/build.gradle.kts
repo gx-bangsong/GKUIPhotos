@@ -3,10 +3,63 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.lineageos.generatebp)
 }
+
+val keystorePath: String? = System.getenv("KEYSTORE_FILE")
+val keystorePass: String? = System.getenv("KEYSTORE_PASS")
+val keyAlias: String? = System.getenv("KEY_ALIAS")
+val keyPass: String? = System.getenv("KEY_PASS")
+val isCi: Boolean = System.getenv("CI") == "true"
+
+val releaseKeystoreFile: File? = if (!keystorePath.isNullOrBlank()) {
+    val f = file(keystorePath)
+    if (f.exists()) f else null
+} else {
+    null
+}
+
+val hasReleaseSigning: Boolean = releaseKeystoreFile != null &&
+        !keystorePass.isNullOrBlank() &&
+        !keyAlias.isNullOrBlank() &&
+        !keyPass.isNullOrBlank()
+
+fun getGitVersionCode(): Int {
+    return try {
+        val process = ProcessBuilder("git", "rev-list", "--count", "HEAD").start()
+        val output = process.inputStream.bufferedReader().readText().trim()
+        val exitCode = process.waitFor()
+        if (exitCode == 0 && output.isNotEmpty()) {
+            output.toInt()
+        } else {
+            1
+        }
+    } catch (e: Exception) {
+        1
+    }
+}
+
+fun getAppVersionName(versionCode: Int): String {
+    val envVersion = System.getenv("VERSION_NAME")
+    if (!envVersion.isNullOrBlank()) {
+        return envVersion.trim()
+    }
+    val dateFormat = SimpleDateFormat("yyyyMMdd", Locale.US).apply {
+        timeZone = TimeZone.getTimeZone("UTC")
+    }
+    return "${dateFormat.format(Date())}.$versionCode"
+}
+
+val calculatedVersionCode = getGitVersionCode()
+val calculatedVersionName = getAppVersionName(calculatedVersionCode)
 
 android {
     namespace = "org.lineageos.glimpse"
@@ -16,17 +69,36 @@ android {
         applicationId = "org.lineageos.glimpse"
         minSdk = 30
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = calculatedVersionCode
+        versionName = calculatedVersionName
+    }
+
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = releaseKeystoreFile
+                storePassword = keystorePass
+                this.keyAlias = keyAlias
+                keyPassword = keyPass
+            }
+        }
     }
 
     buildTypes {
         release {
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            } else {
+                signingConfig = signingConfigs.getByName("debug")
+            }
+
             // Enables code shrinking, obfuscation, and optimization.
             isMinifyEnabled = true
 
             // Enables resource shrinking.
             isShrinkResources = true
+
+            isDebuggable = false
 
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -82,8 +154,8 @@ dependencies {
 generateBp {
     targetSdk = android.defaultConfig.targetSdk!!
     minSdk = android.defaultConfig.minSdk!!
-    versionCode = android.defaultConfig.versionCode!!
-    versionName = android.defaultConfig.versionName!!
+    versionCode = 1
+    versionName = "1.0"
     availableInAOSP = { module ->
         when {
             module.group.startsWith("androidx") -> {
@@ -98,3 +170,21 @@ generateBp {
         }
     }
 }
+
+gradle.taskGraph.whenReady {
+    if (isCi && !hasReleaseSigning) {
+        val hasReleaseTask = allTasks.any {
+            it.name.equals("assembleRelease", ignoreCase = true) ||
+                    it.name.equals("bundleRelease", ignoreCase = true)
+        }
+        if (hasReleaseTask) {
+            throw GradleException(
+                "Release keystore environment variables (KEYSTORE_FILE, KEYSTORE_PASS, KEY_ALIAS, KEY_PASS) " +
+                        "are missing or invalid in CI environment! Refusing to build unsigned or debug-signed release APK."
+            )
+        }
+    }
+}
+
+
+
