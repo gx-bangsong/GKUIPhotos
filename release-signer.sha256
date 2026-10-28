@@ -1,0 +1,8 @@
+# SPDX-FileCopyrightText: The LineageOS Project
+# SPDX-License-Identifier: Apache-2.0
+#
+# TODO: Replace with the 64-character hexadecimal SHA-256 digest of your
+# release signing certificate (Signer #1 certificate SHA-256 digest).
+# On the first CI build with your secrets configured, ci-build.sh will output
+# the detected fingerprint and instruct you to paste it here to lock the signing key.
+
