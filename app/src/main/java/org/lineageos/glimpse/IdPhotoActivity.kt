@@ -37,7 +37,6 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
-import com.google.android.material.color.MaterialColors
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.progressindicator.CircularProgressIndicator
 import kotlinx.coroutines.Dispatchers
@@ -403,20 +402,12 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
         private val pxText = itemView.findViewById<TextView>(R.id.railChipPx)
 
         fun bind(preset: IdPhotoPreset, isSelected: Boolean) {
-            val context = itemView.context
             nameText.setText(preset.nameRes)
             pxText.text = "${preset.targetWidthPx}×${preset.targetHeightPx}"
 
-            val primaryColor = MaterialColors.getColor(card, R.attr.colorPrimary)
-            val outlineColor = MaterialColors.getColor(card, R.attr.colorOutlineVariant)
-            val surfaceColor = MaterialColors.getColor(card, R.attr.colorSurface)
-            val onSurfaceColor = MaterialColors.getColor(card, R.attr.colorOnSurface)
-            val onSurfaceVariant = MaterialColors.getColor(card, R.attr.colorOnSurfaceVariant)
-
-            card.strokeColor = if (isSelected) primaryColor else outlineColor
-            card.setCardBackgroundColor(if (isSelected) primaryColor else surfaceColor)
-            nameText.setTextColor(if (isSelected) android.graphics.Color.WHITE else onSurfaceColor)
-            pxText.setTextColor(if (isSelected) android.graphics.Color.argb(210, 255, 255, 255) else onSurfaceVariant)
+            card.isCheckable = true
+            card.isChecked = isSelected
+            card.alpha = if (isSelected) 1.0f else 0.75f
 
             itemView.setOnClickListener { onPresetSelected(preset) }
         }
