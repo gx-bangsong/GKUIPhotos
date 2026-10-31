@@ -10,6 +10,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.RectF
+import android.graphics.Typeface
 import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
@@ -209,12 +210,16 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
             PresetGroup.EXAM to R.string.id_photo_group_exam,
         )
 
+        val density = resources.displayMetrics.density
+        val hPad = (10 * density).toInt()
+        val vPad = (4 * density).toInt()
+
         categoryTabsContainer.removeAllViews()
         categories.forEach { (group, labelRes) ->
             val tabView = TextView(this).apply {
                 setText(labelRes)
-                textSize = 13sp
-                setPadding(24, 8, 24, 8)
+                textSize = 13f
+                setPadding(hPad, vPad, hPad, vPad)
                 isClickable = true
                 isFocusable = true
                 setBackgroundResource(android.R.color.transparent)
@@ -238,17 +243,14 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
             val isCurrent = categories.getOrNull(i) == activeGroup
             if (isCurrent) {
                 child.setTextColor(Color.WHITE)
-                child.paint.isFakeBoldText = true
+                child.setTypeface(null, Typeface.BOLD)
             } else {
                 child.setTextColor(COLOR_TEXT_UNSELECTED)
-                child.paint.isFakeBoldText = false
+                child.setTypeface(null, Typeface.NORMAL)
             }
             child.invalidate()
         }
     }
-
-    private val Int.sp: Float
-        get() = this.toFloat()
 
     private fun setupPresetRail() {
         presetRailRecyclerView.layoutManager =
@@ -381,17 +383,17 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
                 specsContainer.isVisible = true
                 backgroundContainer.isVisible = false
                 tabSpecsButton.setTextColor(COLOR_SELECTED_GOLD)
-                tabSpecsButton.paint.isFakeBoldText = true
+                tabSpecsButton.setTypeface(null, Typeface.BOLD)
                 tabBackgroundButton.setTextColor(COLOR_TEXT_UNSELECTED)
-                tabBackgroundButton.paint.isFakeBoldText = false
+                tabBackgroundButton.setTypeface(null, Typeface.NORMAL)
             }
             IdPhotoBottomTab.BACKGROUND -> {
                 specsContainer.isVisible = false
                 backgroundContainer.isVisible = true
                 tabSpecsButton.setTextColor(COLOR_TEXT_UNSELECTED)
-                tabSpecsButton.paint.isFakeBoldText = false
+                tabSpecsButton.setTypeface(null, Typeface.NORMAL)
                 tabBackgroundButton.setTextColor(COLOR_SELECTED_GOLD)
-                tabBackgroundButton.paint.isFakeBoldText = true
+                tabBackgroundButton.setTypeface(null, Typeface.BOLD)
             }
         }
         tabSpecsButton.invalidate()
