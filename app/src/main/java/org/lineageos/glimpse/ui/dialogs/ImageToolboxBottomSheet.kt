@@ -28,6 +28,7 @@ import com.google.android.material.slider.Slider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.lineageos.glimpse.IdPhotoActivity
 import org.lineageos.glimpse.R
 import org.lineageos.glimpse.models.Media
 import org.lineageos.glimpse.models.MediaType
@@ -130,7 +131,10 @@ class ImageToolboxBottomSheet(
         if (isSingleImage) {
             idPhotoOpenButton.setOnClickListener {
                 dismiss()
-                IdPhotoBottomSheet(context, lifecycleOwner, medias.first(), onComplete).show()
+                val media = medias.first()
+                val intent = IdPhotoActivity.createIntent(context, media.uri, media.mimeType)
+                context.startActivity(intent)
+                onComplete?.invoke()
             }
         }
 

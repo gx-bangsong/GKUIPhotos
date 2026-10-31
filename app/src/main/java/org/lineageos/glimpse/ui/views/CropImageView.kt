@@ -96,10 +96,28 @@ class CropImageView @JvmOverloads constructor(
     private val cropRect = RectF()
     private var initialized = false
 
-    fun setBitmap(bmp: Bitmap) {
+    @JvmOverloads
+    fun setBitmap(bmp: Bitmap, restoreTransform: Triple<Float, Float, Float>? = null) {
         bitmap = bmp
-        initialized = false
+        if (restoreTransform != null) {
+            scaleFactor = restoreTransform.first
+            translateX = restoreTransform.second
+            translateY = restoreTransform.third
+            initialized = true
+        } else {
+            initialized = false
+        }
         requestLayout()
+        invalidate()
+    }
+
+    fun getTransformState(): Triple<Float, Float, Float> = Triple(scaleFactor, translateX, translateY)
+
+    fun setTransformState(scale: Float, tx: Float, ty: Float) {
+        scaleFactor = scale
+        translateX = tx
+        translateY = ty
+        initialized = true
         invalidate()
     }
 

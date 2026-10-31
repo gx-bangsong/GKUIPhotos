@@ -140,6 +140,13 @@
             android:label="@string/editor_title"
             android:theme="@style/Theme.Glimpse.MediaViewer" />
 
+        <!-- ID Photo Tool: full-screen workflow (selector -> framing -> background -> export) -->
+        <activity
+            android:name=".IdPhotoActivity"
+            android:configChanges="orientation|screenLayout|screenSize|smallestScreenSize|keyboardHidden"
+            android:exported="false"
+            android:label="@string/image_toolbox_id_photo" />
+
         <!-- Module 7: full offline animated-GIF editor -->
         <activity
             android:name=".GifEditorActivity"
