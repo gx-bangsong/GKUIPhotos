@@ -75,6 +75,7 @@ object IdPhotoGenerator {
         cropRectNormalized: RectF,
         preset: IdPhotoPreset,
         targetBackgroundColor: Int? = null,
+        isPrintSheet: Boolean = false,
     ): Uri {
         val (sourceBitmap, _, sourceName) = ImageToolbox.decode(sourceUri, context.contentResolver)
 
@@ -114,29 +115,51 @@ object IdPhotoGenerator {
             }
         }
 
+        val outputBitmap: Bitmap
+        val outputDpi: Int
+        val displayName: String
+
+        if (isPrintSheet) {
+            val sheet = IdPhotoPrintSheetComposer.composeSheet(resampled, preset)
+            if (sheet != null) {
+                outputBitmap = sheet
+                outputDpi = IdPhotoPrintSheetComposer.SHEET_DPI
+                displayName = "${sourceName}_排版_6寸.jpg"
+                resampled.recycle()
+            } else {
+                outputBitmap = resampled
+                outputDpi = preset.dpi
+                val presetName = context.getString(preset.nameRes)
+                displayName = ImageToolbox.buildName(sourceName, presetName, "jpg")
+            }
+        } else {
+            outputBitmap = resampled
+            outputDpi = preset.dpi
+            val presetName = context.getString(preset.nameRes)
+            displayName = ImageToolbox.buildName(sourceName, presetName, "jpg")
+        }
+
         val rawJpegStream = ByteArrayOutputStream()
-        resampled.compress(Bitmap.CompressFormat.JPEG, 95, rawJpegStream)
+        outputBitmap.compress(Bitmap.CompressFormat.JPEG, 95, rawJpegStream)
         val rawBytes = rawJpegStream.toByteArray()
-        val jfifBytes = patchJfifApp0Density(rawBytes, preset.dpi)
+        val jfifBytes = patchJfifApp0Density(rawBytes, outputDpi)
 
         val tempFile = File.createTempFile("id_photo_exif", ".jpg", context.cacheDir)
         val finalBytes: ByteArray
         try {
             tempFile.writeBytes(jfifBytes)
             val exif = ExifInterface(tempFile)
-            exif.setAttribute(ExifInterface.TAG_X_RESOLUTION, "${preset.dpi}/1")
-            exif.setAttribute(ExifInterface.TAG_Y_RESOLUTION, "${preset.dpi}/1")
+            exif.setAttribute(ExifInterface.TAG_X_RESOLUTION, "$outputDpi/1")
+            exif.setAttribute(ExifInterface.TAG_Y_RESOLUTION, "$outputDpi/1")
             exif.setAttribute(ExifInterface.TAG_RESOLUTION_UNIT, "2") // 2 = Inches
             exif.saveAttributes()
-            finalBytes = patchJfifApp0Density(tempFile.readBytes(), preset.dpi)
+            finalBytes = patchJfifApp0Density(tempFile.readBytes(), outputDpi)
         } finally {
             tempFile.delete()
-            resampled.recycle()
+            outputBitmap.recycle()
             sourceBitmap.recycle()
         }
 
-        val presetName = context.getString(preset.nameRes)
-        val displayName = ImageToolbox.buildName(sourceName, presetName, "jpg")
         return ImageToolbox.writeBitmapToMediaStore(
             context = context,
             data = finalBytes,

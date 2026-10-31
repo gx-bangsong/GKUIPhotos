@@ -38,6 +38,8 @@ import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.appbar.MaterialToolbar
+import com.google.android.material.button.MaterialButton
+import com.google.android.material.button.MaterialButtonToggleGroup
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
@@ -50,10 +52,12 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.lineageos.glimpse.models.idphoto.IdPhotoCatalog
+import org.lineageos.glimpse.models.idphoto.IdPhotoCustomPresetManager
 import org.lineageos.glimpse.models.idphoto.IdPhotoPreset
 import org.lineageos.glimpse.models.idphoto.PresetGroup
 import org.lineageos.glimpse.ui.views.CropImageView
 import org.lineageos.glimpse.utils.media.IdPhotoGenerator
+import org.lineageos.glimpse.utils.media.IdPhotoPrintSheetComposer
 import org.lineageos.glimpse.viewmodels.IdPhotoBgColorItem
 import org.lineageos.glimpse.viewmodels.IdPhotoBottomTab
 import org.lineageos.glimpse.viewmodels.IdPhotoViewModel
@@ -94,6 +98,11 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
     // Bottom tab bar views
     private val tabSpecsButton by lazy { findViewById<TextView>(R.id.tabSpecsButton) }
     private val tabBackgroundButton by lazy { findViewById<TextView>(R.id.tabBackgroundButton) }
+
+    // Print sheet / Single image toggle views
+    private val printSheetToggleRow by lazy { findViewById<View>(R.id.printSheetToggleRow) }
+    private val printSheetCountPreview by lazy { findViewById<TextView>(R.id.printSheetCountPreview) }
+    private val outputModeToggleGroup by lazy { findViewById<MaterialButtonToggleGroup>(R.id.outputModeToggleGroup) }
 
     // Full catalog picker overlay views
     private val catalogPickerOverlay by lazy { findViewById<View>(R.id.catalogPickerOverlay) }
@@ -496,6 +505,15 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
         specBadgeText.text = "$nameStr · ${preset.targetWidthPx}×${preset.targetHeightPx} px · ${preset.dpi} DPI (${preset.widthMm}×${preset.heightMm}mm)"
         toolbar.subtitle = "$nameStr · ${preset.targetWidthPx}×${preset.targetHeightPx} px"
 
+        val printCount = IdPhotoPrintSheetComposer.calculatePrintCount(preset)
+        if (printCount >= 2) {
+            printSheetToggleRow.isVisible = true
+            printSheetCountPreview.text = getString(R.string.id_photo_sheet_count_preview, printCount)
+        } else {
+            printSheetToggleRow.isVisible = false
+            outputModeToggleGroup.check(R.id.toggleModeSingle)
+        }
+
         updateRailItemsForGroup(viewModel.selectedRailGroup.value, preset)
     }
 
@@ -578,7 +596,7 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
             .setPositiveButton(R.string.id_photo_custom_delete) { _, _ ->
                 IdPhotoCustomPresetManager.deleteCustomPreset(this, preset.id)
                 if (viewModel.selectedPreset.value.id == preset.id) {
-                    onPresetSelectedLive(IdPhotoCatalog.PRESET_ONE_INCH)
+                    onPresetSelectedLive(IdPhotoCatalog.presets.first())
                 } else {
                     updateRailItemsForGroup(viewModel.selectedRailGroup.value, viewModel.selectedPreset.value)
                 }
@@ -633,10 +651,12 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
             Toast.makeText(this, R.string.id_photo_failed, Toast.LENGTH_SHORT).show()
             return
         }
-        executeSavePipeline(normalizedRect, preset)
+        val isPrintSheet = outputModeToggleGroup.checkedButtonId == R.id.toggleModeSheet &&
+                IdPhotoPrintSheetComposer.calculatePrintCount(preset) >= 2
+        executeSavePipeline(normalizedRect, preset, isPrintSheet)
     }
 
-    private fun executeSavePipeline(cropRect: RectF, preset: IdPhotoPreset) {
+    private fun executeSavePipeline(cropRect: RectF, preset: IdPhotoPreset, isPrintSheet: Boolean = false) {
         val uri = viewModel.sourceUri ?: return
         val targetBg = viewModel.selectedBgColor.value
         savingOverlay.isVisible = true
@@ -650,6 +670,7 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
                         cropRectNormalized = cropRect,
                         preset = preset,
                         targetBackgroundColor = targetBg,
+                        isPrintSheet = isPrintSheet,
                     )
                 }.getOrNull()
             }

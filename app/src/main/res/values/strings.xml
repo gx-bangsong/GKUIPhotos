@@ -247,6 +247,9 @@
     <string name="id_photo_custom_error_invalid">Please enter valid values (width/height &gt; 0, aspect ratio between 0.3 and 3.0)</string>
     <string name="id_photo_custom_delete_confirm">Delete this custom size?</string>
     <string name="id_photo_custom_delete">Delete</string>
+    <string name="id_photo_output_single">Single</string>
+    <string name="id_photo_output_sheet">Print sheet</string>
+    <string name="id_photo_sheet_count_preview">6-inch sheet · Fits %d photos</string>
     <string name="id_photo_editor_entry_warning">The ID photo will be created from the original image. Current unsaved edits will not be included.</string>
     <string name="id_photo_editor_entry_continue">Continue</string>
     <string name="id_photo_discard_title">Discard changes?</string>

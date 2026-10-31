@@ -97,6 +97,12 @@ android {
     lint {
         lintConfig = file("lint.xml")
     }
+
+    testOptions {
+        unitTests {
+            isReturnDefaultValues = true
+        }
+    }
 }
 
 dependencies {

@@ -17,6 +17,13 @@ jobs:
       - run: chmod +x ./gradlew
       - name: Accept Android SDK licenses (best effort)
         run: set +e; yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1; exit 0
-      - run: ./gradlew testDebugUnitTest assembleDebug --stacktrace
+      - name: Build and test
+        run: |
+          set -o pipefail
+          ./gradlew testDebugUnitTest assembleDebug --stacktrace 2>&1 | tee build.log || {
+            ERR=$(grep -E '(:[a-zA-Z0-9:]* FAILED|FAILURE:|Caused by:|e: |error:)' build.log -B 2 -A 8 | head -n 35 | tr '\n' ' ' | sed 's/[^a-zA-Z0-9 ._/:=-]/ /g')
+            echo "::error::$ERR"
+            exit 1
+          }
       - uses: actions/upload-artifact@v7
         with: { name: glimpse-debug-apk, path: app/build/outputs/apk/debug/app-debug.apk, if-no-files-found: error }

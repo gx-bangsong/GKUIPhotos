@@ -174,6 +174,9 @@
     <string name="id_photo_custom_error_invalid">请输入有效数值（宽/高 &gt; 0，高宽比在 0.3~3.0 之间）</string>
     <string name="id_photo_custom_delete_confirm">确认删除此自定义尺寸？</string>
     <string name="id_photo_custom_delete">删除</string>
+    <string name="id_photo_output_single">单图</string>
+    <string name="id_photo_output_sheet">排版</string>
+    <string name="id_photo_sheet_count_preview">6寸相纸 · 可排 %d 张</string>
     <string name="id_photo_editor_entry_warning">证件照将基于原图制作，当前未保存的编辑不会包含在内。</string>
     <string name="id_photo_editor_entry_continue">继续</string>
     <string name="id_photo_discard_title">放弃修改？</string>
