@@ -52,6 +52,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.lineageos.glimpse.ext.editSaveBehavior
 import org.lineageos.glimpse.ext.createWriteRequest
+import org.lineageos.glimpse.ui.views.AnnotationItem
 import org.lineageos.glimpse.ui.views.AnnotationOverlayView
 import org.lineageos.glimpse.ui.views.CropImageView
 import org.lineageos.glimpse.ui.views.MarkupTool
