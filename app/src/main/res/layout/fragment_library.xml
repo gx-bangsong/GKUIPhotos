@@ -64,6 +64,39 @@
 
             </LinearLayout>
 
+            <TextView
+                android:id="@+id/privacyTitleTextView"
+                style="@style/TextAppearance.Material3.TitleMedium"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginHorizontal="17dp"
+                android:layout_marginTop="22dp"
+                android:layout_marginBottom="12dp"
+                android:text="@string/privacy_security_title" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <org.lineageos.glimpse.ui.views.ListItem
+                    android:id="@+id/lockedAlbumListItem"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:headlineText="@string/privacy_locked_album"
+                    app:leadingIconImage="@drawable/ic_lock"
+                    app:supportingText="@string/privacy_locked_album_desc" />
+
+                <org.lineageos.glimpse.ui.views.ListItem
+                    android:id="@+id/idLicenseListItem"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:headlineText="@string/privacy_id_licenses_title"
+                    app:leadingIconImage="@drawable/ic_id_card"
+                    app:supportingText="@string/privacy_id_licenses_desc" />
+
+            </LinearLayout>
+
         </LinearLayout>
 
     </androidx.core.widget.NestedScrollView>

@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+     SPDX-FileCopyrightText: The LineageOS Project
+     SPDX-License-Identifier: Apache-2.0
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/colorSwatchRoot"
+    android:layout_width="54dp"
+    android:layout_height="54dp"
+    android:layout_marginEnd="10dp"
+    android:clickable="true"
+    android:focusable="true">
+
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/colorSwatchCard"
+        android:layout_width="44dp"
+        android:layout_height="44dp"
+        android:layout_gravity="center"
+        app:cardCornerRadius="10dp"
+        app:cardElevation="0dp"
+        app:strokeColor="?attr/colorOutlineVariant"
+        app:strokeWidth="1dp">
+
+        <TextView
+            android:id="@+id/originalLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:text="@string/id_photo_bg_original"
+            android:textColor="@android:color/white"
+            android:textSize="10sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
+
+        <ImageView
+            android:id="@+id/colorCheckIcon"
+            android:layout_width="20dp"
+            android:layout_height="20dp"
+            android:layout_gravity="center"
+            android:src="@drawable/ic_check"
+            android:visibility="gone"
+            app:tint="@android:color/white" />
+    </com.google.android.material.card.MaterialCardView>
+
+</FrameLayout>

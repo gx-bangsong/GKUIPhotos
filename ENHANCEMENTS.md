@@ -140,6 +140,115 @@ Files: `GifEditorActivity.kt`, `utils/media/GifCodec.kt` (self-contained LZW dec
 
 ---
 
+## 8. Multi-editing photos & multi-image toolbox (reusing the image toolbox)
+
+Extends the offline image toolbox to support batch editing and multiple photo selection:
+- **Batch compress with resolution & scale**:
+  - Resolution downscaling presets: Original, 4K (2160p), 2K (1440p), 1080p (FHD), 720p (HD), 480p (SD).
+  - Dimension scale ratio: 10% to 100% fine-grained slider + 25%, 50%, 75%, 100% preset chips.
+  - Quality presets: High (85%), Medium (70%), Low (50%), Economy (35%).
+  - Clean target size presets: 200 KB, 500 KB, 1 MB, 2 MB, 5 MB, 10 MB budgets without confusing/meaningless "no limit size" chips. Selecting a size budget seamlessly clears the quality hint, and deselecting cleanly returns to quality mode.
+  - All chip groups (Quality, Resolution, Scale, Size, Format, Rotate, FPS) are wrapped in `HorizontalScrollView` with hidden scrollbars, ensuring horizontal scrolling without wrapping or clipping across screen sizes.
+- **Batch convert to formats & PDF**:
+  - Converts multiple selected photos into JPEG, PNG, WEBP, or multi-page PDF documents.
+  - PDF generation uses `android.graphics.pdf.PdfDocument`, assembling all selected images into sequentially paged vector PDF documents saved to `Documents/Glimpse`.
+- **Batch photo edit**: Applies rotation (0°, +90°, +180°, +270°) and filters (Grayscale, Sepia, Invert, Warm, Cool) across all selected photos in one go.
+- **Selection Action Bar entry & Dark Mode visibility**:
+  - When photos are selected in `AlbumFragment`, a toolbox icon button (`ic_toolbox`) opens `ImageToolboxBottomSheet` initialized with all selected photos.
+  - Action mode icons are dynamically wrapped and tinted with `colorOnSurface` (along with XML `app:iconTint="?attr/colorOnSurface"`), guaranteeing high contrast and readability across dark and light themes.
+
+Files: `utils/media/ImageToolbox.kt`, `ui/dialogs/ImageToolboxBottomSheet.kt`,
+`res/layout/dialog_image_toolbox.xml`, `res/menu/fragment_album_action_bar.xml`,
+`res/drawable/ic_toolbox.xml`, `fragments/AlbumFragment.kt`.
+
+---
+
+## 9. Date quick-select checkmark option & multi-day selection
+
+An option to show a checkmark button beside the date header in the photo list to quickly select/deselect all photos of that day:
+- **Global toggle**: Configurable in Settings (`SettingsActivity` / `root_preferences.xml` → `quick_select_date_enabled`), persisted via `SharedPreferences.quickSelectDateEnabled`.
+- **Interactive date header check**: `date_header_view.xml` renders a check button beside the date title. Tapping it calculates all photos belonging to that date and selects or deselects them via `SelectionTracker`, automatically activating selection action mode.
+- **Concurrent multi-day selection**: Resolves AndroidX `SelectionTracker` `TouchInputHandler` tap clearing by surfacing a non-selectable sentinel key (`DATE_HEADER_KEY`) in `ThumbnailItemDetailsLookup` and disallowing touch interception on `checkImageView` during `ACTION_DOWN`. Tapping multiple date headers preserves selections across all selected days.
+- **Dynamic state synchronization**: In-place visible view holder updates keep the date header checkmarks synced with child photos with zero main-thread blocking or ANRs.
+
+Files: `res/layout/date_header_view.xml`, `ui/recyclerview/ThumbnailAdapter.kt`,
+`ui/recyclerview/ThumbnailItemDetailsLookup.kt`, `fragments/AlbumFragment.kt`,
+`res/xml/root_preferences.xml`, `ext/SharedPreferences.kt`,
+`res/values/strings.xml`, `res/values-zh-rCN/strings.xml`.
+
+---
+
+## 10. Modern Video-to-GIF converter & optimized GifCodec
+
+Restores the modern Material3 HCI and fixes color fidelity and encoding speed:
+- **Material3 HCI**: First-frame thumbnail preview, live duration slider (1-15s), FPS chips (5, 8, 10, 12, 15), Quality/Resolution chips (240p, 360p, 480p, 720p), and live estimate (~s • fps • p • frames).
+- **Blue channel fix**: Corrected off-by-one pointer arithmetic when parsing the Logical Screen Descriptor in `GifCodec.kt` (`p++` on packed fields byte), properly aligning the Global Color Table read to byte 13 and eliminating blue/green channel loss/shift.
+- **Blazing fast LZW encoding**: Replaced `HashMap<List<Byte>, Int>` with a primitive zero-allocation hash table (`htab`/`codetab` size 5003), eliminating millions of heap allocations per second.
+- **Fast 15-bit color lookup cache**: Cached nearest-color palette lookups in a 64KB `ShortArray(32768)` table, cutting encoding time by up to 20x.
+- **Scoped storage resiliency**: `AssetFileDescriptor` data source handling prevents `Invalid ID 0x0000000f` failures on `content://` URIs.
+
+Files: `utils/media/GifCodec.kt`, `utils/media/ImageToolbox.kt`,
+`ui/dialogs/ImageToolboxBottomSheet.kt`, `res/layout/dialog_image_toolbox.xml`.
+
+---
+
+## 11. Xiaomi-style Privacy Watermark in Image Editor
+
+Adds an offline, full-coverage privacy watermark tool modeled after Xiaomi's MIUI/HyperOS gallery:
+- **Tiled Repeating Pattern**: Watermark text is repeated diagonally across the entire image at an angle of -30° in a staggered brick layout with subtle shadow, ensuring legibility on both pure white documents and dark backgrounds without obstructing underlying numbers or text.
+- **Live 60fps Preview**: `CropImageView` renders the watermark dynamically in `onDraw()` clipped to the active crop frame, allowing pan, pinch-zoom, ratio adjustment, and rotation with zero latency.
+- **Dedicated Shortcut "Used for..."**:
+  - Tapping **"Used for..."** (`仅供…使用` / `僅供…使用`) populates the input field with the standard legal disclaimer (`Used for ... only, invalid for other uses` / `仅供……使用，他用无效`) and automatically selects/focuses the ellipsis placeholder so the user can immediately type their purpose (e.g., "办卡", "入职", "租房", "verification").
+  - Additional one-tap presets: **"Identity verification"** (`仅供身份认证使用`), **"Business application"** (`仅供办理业务使用`), **"Rental verification"** (`仅供租房审核使用`), **"Sample / Copy"** (`样本复印件`), and **"Invalid for other uses"** (`他用无效`).
+- **High-Resolution Vector Export**: When saving the edited image, `ImageToolbox.applyWatermark()` bakes proportional high-resolution watermark tiles directly onto the cropped output before encoding.
+- **One-Tap Removal**: An active indicator and a clear button allow removing the watermark at any time.
+
+Files: `ImageEditorActivity.kt`, `ui/views/CropImageView.kt`, `utils/media/ImageToolbox.kt`,
+`res/layout/activity_image_editor.xml`, `res/layout/dialog_privacy_watermark.xml`,
+`res/drawable/ic_privacy_watermark.xml`.
+
+---
+
+## 12. Oppo ColorOS-style Locked Album (Private Safe) & ID & Licenses Safe
+
+Introduces a privacy vault and credential organizer modeled after ColorOS Gallery & Private Safe:
+- **PIN Access Control (`PrivacyLockManager.kt`)**:
+  - Salted SHA-256 cryptographic PIN authentication. Plaintext PINs are never persisted.
+  - Setup on first use (`Set PIN` $\rightarrow$ `Confirm PIN`), seamless verification on return, and session-based caching to avoid redundant prompts within the same session.
+  - Interactive PIN dialog (`PrivacyPinDialog.kt`, `dialog_privacy_pin.xml`) with numeric keypad input, masked password display, and error shake animation.
+- **Isolated Vault Storage (`LockedVaultRepository.kt`)**:
+  - Private media files are saved inside internal application storage (`filesDir/locked_vault/`), completely hidden and isolated from Android's MediaStore, external file scans, and public apps.
+  - Seamless "Unlock to Public" restores files to `Pictures/Glimpse` / `Movies/Glimpse`.
+  - Multi-select batch unlock and permanent deletion.
+- **ColorOS-style ID & Licenses Safe (`IdLicenseActivity.kt`, `IdLicenseRepository.kt`)**:
+  - Organized credential dashboard displaying specialized cards for:
+    - **Resident ID Card (身份证)**: Dual-slot layout for Front / Portrait (`人像面`) and Back / Emblem (`国徽面`).
+    - **Driver's License (机动车驾驶证)**: Dual-slot layout for Main page (`正页`) and Sub page (`副页`).
+    - **Passport (护照)**.
+    - **Other Licenses & Certificates (其他证照 / 营业执照)**.
+  - Quick image picker import and full-resolution secure viewer dialog with one-tap replacement and removal.
+  - Clean layout starting immediately with credential cards without promotional/branding banner.
+- **Strict Security Lifecycle & True Move Semantics**:
+  - Session is locked immediately whenever user exits `LockedAlbumActivity` or `IdLicenseActivity` (in `onStop` / `onDestroy`), while keeping active sessions open during system picker and delete confirmation flows.
+  - Re-entering the locked album or ID cards & licenses requires PIN authentication every single time.
+  - Edge-to-edge window insets (`enableEdgeToEdge()`) seamlessly blend status bar and toolbar across `LockedAlbumActivity`, `IdLicenseActivity`, and `ImageEditorActivity`.
+  - Back/return button in `ic_back.xml` uses `?attr/colorControlNormal` with `app:navigationIconTint="?attr/colorOnSurface"`, ensuring high contrast light icons in dark mode.
+  - **Atomic Move Semantics**: Moving photos to the locked album removes the originals from `MediaStore` (via direct delete if privileged or owning the media, or via `MediaStore.createDeleteRequest` with system confirmation on sideloaded user installs). If the deletion request is cancelled or denied by the user, the staged vault copy is immediately rolled back to preserve consistency.
+  - Preserves original display name and timestamps during vault storage and public restore.
+- **Seamless Gallery Entry Points**:
+  - Categorized under a new "Privacy & Security" section in the Library tab (`fragment_library.xml`, `LibraryFragment.kt`).
+  - Action mode option "Move to locked album" (`ic_lock`) in `AlbumFragment.kt` selection bar.
+
+Files: `utils/privacy/PrivacyLockManager.kt`, `utils/privacy/LockedVaultRepository.kt`,
+`utils/privacy/IdLicenseRepository.kt`, `ui/dialogs/PrivacyPinDialog.kt`,
+`LockedAlbumActivity.kt`, `IdLicenseActivity.kt`, `fragments/LibraryFragment.kt`,
+`fragments/AlbumFragment.kt`, `res/layout/activity_locked_album.xml`,
+`res/layout/activity_id_license.xml`, `res/layout/dialog_privacy_pin.xml`,
+`res/layout/dialog_license_viewer.xml`, `res/layout/item_vault_media.xml`,
+`res/drawable/ic_lock.xml`, `res/drawable/ic_id_card.xml`.
+
+---
+
 ## Self-contained GIF codec (`GifCodec.kt`)
 
 Pure-Kotlin, dependency-free GIF89a decoder + encoder (LZW + median-cut color
@@ -188,6 +297,11 @@ aggregation is one MediaStore query + a bounded EXIF scan.
 | Share privacy | Share button (images) → bottom sheet |
 | Source albums | Albums tab → top carousel |
 | Image editor + ID photo | Edit button (images) → `ImageEditorActivity` |
+| Privacy watermark | Image editor → Watermark button (`activity_image_editor.xml`) |
+| Locked album | Library tab → Privacy & Security → Locked album |
+| ID cards & licenses | Library tab → Privacy & Security → ID cards & licenses |
 | Image toolbox | Floating capsule in viewer → bottom sheet |
 | GIF editor | Edit button (animated GIFs) → `GifEditorActivity` |
 | Edit-save setting | Settings → Editing |
+| Multi-image toolbox | Multi-select photos → Action bar toolbox icon |
+| Date quick-select | Toggle in Settings → General; check icon beside date header |

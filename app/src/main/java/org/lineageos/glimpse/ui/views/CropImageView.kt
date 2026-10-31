@@ -52,6 +52,23 @@ class CropImageView @JvmOverloads constructor(
     /** When true the face-alignment oval is drawn inside the crop rectangle. */
     var showFaceGuide: Boolean = true
 
+    /** When true (default), the dimming scrim, rule-of-thirds grid, and crop borders are drawn. */
+    var showCropGuides: Boolean = true
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    /** Callback invoked whenever the user modifies framing via pan or zoom gestures. */
+    var onFramingModified: (() -> Unit)? = null
+
+    /** Tiled repeating privacy watermark text drawn live inside the crop area. */
+    var watermarkText: String? = null
+        set(value) {
+            field = value
+            invalidate()
+        }
+
     // Gesture state
     private var scaleFactor = 1f
     private var translateX = 0f
@@ -62,6 +79,7 @@ class CropImageView @JvmOverloads constructor(
     private val scaleDetector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
         override fun onScale(detector: ScaleGestureDetector): Boolean {
             scaleFactor = (scaleFactor * detector.scaleFactor).coerceIn(0.3f, 8f)
+            onFramingModified?.invoke()
             invalidate()
             return true
         }
@@ -89,10 +107,28 @@ class CropImageView @JvmOverloads constructor(
     private val cropRect = RectF()
     private var initialized = false
 
-    fun setBitmap(bmp: Bitmap) {
+    @JvmOverloads
+    fun setBitmap(bmp: Bitmap, restoreTransform: Triple<Float, Float, Float>? = null) {
         bitmap = bmp
-        initialized = false
+        if (restoreTransform != null) {
+            scaleFactor = restoreTransform.first
+            translateX = restoreTransform.second
+            translateY = restoreTransform.third
+            initialized = true
+        } else {
+            initialized = false
+        }
         requestLayout()
+        invalidate()
+    }
+
+    fun getTransformState(): Triple<Float, Float, Float> = Triple(scaleFactor, translateX, translateY)
+
+    fun setTransformState(scale: Float, tx: Float, ty: Float) {
+        scaleFactor = scale
+        translateX = tx
+        translateY = ty
+        initialized = true
         invalidate()
     }
 
@@ -101,6 +137,30 @@ class CropImageView @JvmOverloads constructor(
         translateX = 0f
         translateY = 0f
         invalidate()
+    }
+
+    fun getCropRect(): RectF {
+        computeCropRect()
+        return RectF(cropRect)
+    }
+
+    fun getDisplayBitmap(): Bitmap? = bitmap
+
+    /**
+     * Applies a new preset aspect ratio live.
+     * If [oldRatio] shares the same aspect ratio (< 0.005 difference), current pan and zoom
+     * coordinates are preserved pixel-identically.
+     * If cross-ratio, re-fits the viewport centered while preserving zoom intent.
+     */
+    fun applyPresetRatio(newRatio: Float, oldRatio: Float? = null) {
+        val isSameRatio = oldRatio != null && kotlin.math.abs(newRatio - oldRatio) < 0.005f
+        aspectRatio = newRatio
+        if (!isSameRatio && oldRatio != null) {
+            translateX = 0f
+            translateY = 0f
+            scaleFactor = max(scaleFactor, fitScale())
+            invalidate()
+        }
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
@@ -136,7 +196,62 @@ class CropImageView @JvmOverloads constructor(
 
         // Compute the centered crop rectangle respecting aspect ratio.
         computeCropRect()
+
+        // Draw live tiled privacy watermark inside cropRect if configured
+        val watermark = watermarkText
+        if (!watermark.isNullOrBlank()) {
+            drawWatermark(canvas, cropRect, watermark)
+        }
+
         drawGuides(canvas)
+    }
+
+    private fun drawWatermark(canvas: Canvas, rect: RectF, text: String) {
+        val w = rect.width()
+        val h = rect.height()
+        if (w <= 0 || h <= 0) return
+
+        canvas.save()
+        canvas.clipRect(rect)
+
+        val diagonal = kotlin.math.hypot(w, h)
+        val baseSize = (w / 24f).coerceIn(24f, 48f)
+
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            textSize = baseSize
+            color = Color.argb(90, 255, 255, 255)
+            style = Paint.Style.FILL
+            isFakeBoldText = true
+            setShadowLayer(2.5f, 1.2f, 1.2f, Color.argb(140, 0, 0, 0))
+        }
+
+        val textWidth = paint.measureText(text)
+        val textHeight = paint.fontMetrics.let { it.bottom - it.top }
+        val stepX = textWidth + baseSize * 3.2f
+        val stepY = textHeight + baseSize * 3.8f
+
+        val cx = rect.centerX()
+        val cy = rect.centerY()
+        canvas.rotate(-30f, cx, cy)
+
+        val startX = cx - diagonal
+        val endX = cx + diagonal
+        val startY = cy - diagonal
+        val endY = cy + diagonal
+
+        var y = startY
+        var row = 0
+        while (y <= endY) {
+            val rowOffset = if (row % 2 == 0) 0f else stepX / 2f
+            var x = startX + rowOffset
+            while (x <= endX) {
+                canvas.drawText(text, x, y, paint)
+                x += stepX
+            }
+            y += stepY
+            row++
+        }
+        canvas.restore()
     }
 
     private fun computeCropRect() {
@@ -155,6 +270,8 @@ class CropImageView @JvmOverloads constructor(
     }
 
     private fun drawGuides(canvas: Canvas) {
+        if (!showCropGuides) return
+
         // Dim everything except the crop rectangle. Scrim + erase must share a
         // layer so the CLEAR xfermode actually punches a hole through the scrim.
         val full = RectF(0f, 0f, width.toFloat(), height.toFloat())
@@ -195,11 +312,16 @@ class CropImageView @JvmOverloads constructor(
             }
             MotionEvent.ACTION_MOVE -> {
                 if (!scaleDetector.isInProgress) {
-                    translateX += event.x - lastTouchX
-                    translateY += event.y - lastTouchY
-                    lastTouchX = event.x
-                    lastTouchY = event.y
-                    invalidate()
+                    val dx = event.x - lastTouchX
+                    val dy = event.y - lastTouchY
+                    if (dx != 0f || dy != 0f) {
+                        translateX += dx
+                        translateY += dy
+                        onFramingModified?.invoke()
+                        lastTouchX = event.x
+                        lastTouchY = event.y
+                        invalidate()
+                    }
                 }
             }
         }
@@ -224,5 +346,26 @@ class CropImageView @JvmOverloads constructor(
         var right = max(srcCorners[0], srcCorners[2]).toInt().coerceIn(left + 1, bmp.width)
         var bottom = max(srcCorners[1], srcCorners[3]).toInt().coerceIn(top + 1, bmp.height)
         return Bitmap.createBitmap(bmp, left, top, right - left, bottom - top)
+    }
+
+    /**
+     * Computes the normalized crop rectangle [0f..1f] relative to the source bitmap.
+     * Used by full-resolution pipelines such as [IdPhotoGenerator].
+     */
+    fun getNormalizedCropRect(): RectF? {
+        val bmp = bitmap ?: return null
+        computeCropRect()
+        drawMatrix.invert(inverseMatrix)
+        val srcCorners = floatArrayOf(
+            cropRect.left, cropRect.top,
+            cropRect.right, cropRect.bottom,
+        )
+        inverseMatrix.mapPoints(srcCorners)
+        val minX = min(srcCorners[0], srcCorners[2]).coerceIn(0f, bmp.width.toFloat())
+        val minY = min(srcCorners[1], srcCorners[3]).coerceIn(0f, bmp.height.toFloat())
+        val maxX = max(srcCorners[0], srcCorners[2]).coerceIn(0f, bmp.width.toFloat())
+        val maxY = max(srcCorners[1], srcCorners[3]).coerceIn(0f, bmp.height.toFloat())
+        if (maxX <= minX || maxY <= minY) return null
+        return RectF(minX / bmp.width, minY / bmp.height, maxX / bmp.width, maxY / bmp.height)
     }
 }

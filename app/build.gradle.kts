@@ -3,10 +3,41 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.lineageos.generatebp)
 }
+
+fun getGitVersionCode(): Int {
+    return try {
+        val process = ProcessBuilder("git", "rev-list", "--count", "HEAD").start()
+        val output = process.inputStream.bufferedReader().readText().trim()
+        val exitCode = process.waitFor()
+        if (exitCode == 0 && output.isNotEmpty()) {
+            output.toInt()
+        } else {
+            1
+        }
+    } catch (e: Exception) {
+        1
+    }
+}
+
+fun getAppVersionName(versionCode: Int): String {
+    val dateFormat = SimpleDateFormat("yyyyMMdd", Locale.US).apply {
+        timeZone = TimeZone.getTimeZone("UTC")
+    }
+    return "${dateFormat.format(Date())}.$versionCode"
+}
+
+val calculatedVersionCode = getGitVersionCode()
+val calculatedVersionName = getAppVersionName(calculatedVersionCode)
 
 android {
     namespace = "org.lineageos.glimpse"
@@ -16,12 +47,30 @@ android {
         applicationId = "org.lineageos.glimpse"
         minSdk = 30
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = calculatedVersionCode
+        versionName = calculatedVersionName
     }
+
+    val keystoreFile = System.getenv("KEYSTORE_FILE")?.takeIf { it.isNotBlank() }
+    val keystorePassword = System.getenv("KEYSTORE_PASS")?.takeIf { it.isNotBlank() } ?: System.getenv("KEYSTORE_PASSWORD")?.takeIf { it.isNotBlank() }
+    val keyAliasName = System.getenv("KEY_ALIAS")?.takeIf { it.isNotBlank() }
+    val keyPasswordValue = System.getenv("KEY_PASS")?.takeIf { it.isNotBlank() } ?: System.getenv("KEY_PASSWORD")?.takeIf { it.isNotBlank() }
+    val signingValues = listOf(keystoreFile, keystorePassword, keyAliasName, keyPasswordValue)
+    val hasCompleteReleaseSigning = signingValues.all { it != null }
+
+    val productionReleaseSigning = if (hasCompleteReleaseSigning) {
+        signingConfigs.create("productionRelease") {
+            storeFile = file(keystoreFile!!)
+            storePassword = keystorePassword
+            keyAlias = keyAliasName
+            keyPassword = keyPasswordValue  // 严格注意赋值方向
+        }
+    } else { null }
 
     buildTypes {
         release {
+            signingConfig = productionReleaseSigning
+
             // Enables code shrinking, obfuscation, and optimization.
             isMinifyEnabled = true
 
@@ -47,6 +96,12 @@ android {
 
     lint {
         lintConfig = file("lint.xml")
+    }
+
+    testOptions {
+        unitTests {
+            isReturnDefaultValues = true
+        }
     }
 }
 
@@ -77,13 +132,15 @@ dependencies {
     implementation(libs.material)
     implementation(libs.okhttp)
     implementation(libs.zoomimage.view.glide)
+
+    testImplementation("junit:junit:4.13.2")
 }
 
 generateBp {
     targetSdk = android.defaultConfig.targetSdk!!
     minSdk = android.defaultConfig.minSdk!!
-    versionCode = android.defaultConfig.versionCode!!
-    versionName = android.defaultConfig.versionName!!
+    versionCode = 1
+    versionName = "1.0"
     availableInAOSP = { module ->
         when {
             module.group.startsWith("androidx") -> {
@@ -95,6 +152,19 @@ generateBp {
             module.group == "com.google.errorprone" -> true
             module.group == "com.google.guava" -> true
             else -> false
+        }
+    }
+}
+
+tasks.matching { it.name == "assembleRelease" }.configureEach {
+    doLast {
+        val rootReleaseDir = rootProject.layout.projectDirectory.dir("build/outputs/apk/release").asFile
+        rootReleaseDir.mkdirs()
+        val appReleaseDir = layout.buildDirectory.dir("outputs/apk/release").get().asFile
+        appReleaseDir.listFiles()?.forEach { file ->
+            if (file.name.endsWith("-release.apk")) {
+                file.copyTo(File(rootReleaseDir, file.name), overwrite = true)
+            }
         }
     }
 }

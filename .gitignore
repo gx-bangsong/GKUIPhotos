@@ -8,3 +8,9 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# Keystores and release distribution artifacts
+*.jks
+*.keystore
+dist/
+
