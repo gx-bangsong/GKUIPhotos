@@ -8,6 +8,7 @@ package org.lineageos.glimpse
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.RectF
 import android.graphics.Typeface
