@@ -228,12 +228,13 @@ Introduces a privacy vault and credential organizer modeled after ColorOS Galler
     - **Other Licenses & Certificates (其他证照 / 营业执照)**.
   - Quick image picker import and full-resolution secure viewer dialog with one-tap replacement and removal.
   - Clean layout starting immediately with credential cards without promotional/branding banner.
-- **Strict Security Lifecycle**:
-  - Session is locked immediately whenever user exits `LockedAlbumActivity` or `IdLicenseActivity` (in `onStop` / `onDestroy`).
+- **Strict Security Lifecycle & True Move Semantics**:
+  - Session is locked immediately whenever user exits `LockedAlbumActivity` or `IdLicenseActivity` (in `onStop` / `onDestroy`), while keeping active sessions open during system picker and delete confirmation flows.
   - Re-entering the locked album or ID cards & licenses requires PIN authentication every single time.
   - Edge-to-edge window insets (`enableEdgeToEdge()`) seamlessly blend status bar and toolbar across `LockedAlbumActivity`, `IdLicenseActivity`, and `ImageEditorActivity`.
   - Back/return button in `ic_back.xml` uses `?attr/colorControlNormal` with `app:navigationIconTint="?attr/colorOnSurface"`, ensuring high contrast light icons in dark mode.
-  - Locking photos deletes the public originals from `MediaStore` (via direct delete or `createDeleteRequest`), instantly removing locked photos from the timeline tab.
+  - **Atomic Move Semantics**: Moving photos to the locked album removes the originals from `MediaStore` (via direct delete if privileged or owning the media, or via `MediaStore.createDeleteRequest` with system confirmation on sideloaded user installs). If the deletion request is cancelled or denied by the user, the staged vault copy is immediately rolled back to preserve consistency.
+  - Preserves original display name and timestamps during vault storage and public restore.
 - **Seamless Gallery Entry Points**:
   - Categorized under a new "Privacy & Security" section in the Library tab (`fragment_library.xml`, `LibraryFragment.kt`).
   - Action mode option "Move to locked album" (`ic_lock`) in `AlbumFragment.kt` selection bar.
