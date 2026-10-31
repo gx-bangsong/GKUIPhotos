@@ -50,10 +50,10 @@
             android:layout_height="wrap_content"
             android:layout_gravity="top|center_horizontal"
             android:layout_marginTop="12dp"
-            app:cardBackgroundColor="@color/id_photo_badge_bg"
+            app:cardBackgroundColor="?attr/colorSurfaceContainerHighest"
             app:cardCornerRadius="14dp"
             app:cardElevation="0dp"
-            app:strokeColor="@color/id_photo_badge_stroke"
+            app:strokeColor="?attr/colorOutlineVariant"
             app:strokeWidth="1dp">
 
             <TextView
@@ -82,7 +82,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom"
-        android:background="@color/id_photo_surface_bg"
+        android:background="?attr/colorSurfaceContainer"
         android:orientation="vertical">
 
         <!-- CONTENT LAYER 1: Specs Mode (规格) -->
@@ -110,7 +110,7 @@
                     android:contentDescription="@string/id_photo_all_specs"
                     android:scaleType="centerInside"
                     android:src="@drawable/ic_search"
-                    app:tint="@color/id_photo_text_secondary" />
+                    app:tint="?attr/colorOnSurfaceVariant" />
 
                 <HorizontalScrollView
                     android:layout_width="match_parent"
@@ -146,10 +146,10 @@
                     android:clickable="true"
                     android:focusable="true"
                     android:foreground="?attr/selectableItemBackground"
-                    app:cardBackgroundColor="@color/id_photo_card_bg"
+                    app:cardBackgroundColor="?attr/colorSurfaceContainerHigh"
                     app:cardCornerRadius="10dp"
                     app:cardElevation="0dp"
-                    app:strokeColor="@color/id_photo_card_border"
+                    app:strokeColor="?attr/colorOutlineVariant"
                     app:strokeWidth="1dp">
 
                     <ImageView
@@ -158,7 +158,7 @@
                         android:layout_gravity="center"
                         android:contentDescription="@string/id_photo_all_specs"
                         android:src="@drawable/ic_photo_size_select_actual"
-                        app:tint="@android:color/white" />
+                        app:tint="?attr/colorOnSurface" />
                 </com.google.android.material.card.MaterialCardView>
 
                 <!-- Scrollable Preset Cards -->
@@ -199,7 +199,7 @@
             android:layout_width="match_parent"
             android:layout_height="0.5dp"
             android:layout_marginTop="12dp"
-            android:background="@color/id_photo_divider" />
+            android:background="?attr/colorOutlineVariant" />
 
         <!-- BOTTOM-MOST TAB BAR: "规格" (Specs) and "背景" (Background) -->
         <LinearLayout
@@ -220,7 +220,7 @@
                 android:gravity="center"
                 android:text="@string/id_photo_tab_spec"
                 android:textAppearance="?attr/textAppearanceLabelLarge"
-                android:textColor="@color/id_photo_gold"
+                android:textColor="?attr/colorPrimary"
                 android:textSize="14sp"
                 android:textStyle="bold" />
 
@@ -235,7 +235,7 @@
                 android:gravity="center"
                 android:text="@string/id_photo_tab_background"
                 android:textAppearance="?attr/textAppearanceLabelLarge"
-                android:textColor="@color/id_photo_text_secondary"
+                android:textColor="?attr/colorOnSurfaceVariant"
                 android:textSize="14sp" />
         </LinearLayout>
 
@@ -311,7 +311,8 @@
         android:id="@+id/savingOverlay"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="@color/id_photo_scrim_overlay"
+        android:background="?attr/colorSurface"
+        android:alpha="0.85"
         android:clickable="true"
         android:elevation="24dp"
         android:focusable="true"

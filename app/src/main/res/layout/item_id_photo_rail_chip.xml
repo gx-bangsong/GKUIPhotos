@@ -12,10 +12,10 @@
     android:clickable="true"
     android:focusable="true"
     android:foreground="?attr/selectableItemBackground"
-    app:cardBackgroundColor="@color/id_photo_card_bg"
+    app:cardBackgroundColor="?attr/colorSurfaceContainerHigh"
     app:cardCornerRadius="10dp"
     app:cardElevation="0dp"
-    app:strokeColor="@color/id_photo_card_border"
+    app:strokeColor="?attr/colorOutlineVariant"
     app:strokeWidth="1dp">
 
     <LinearLayout
@@ -34,7 +34,7 @@
             android:layout_height="wrap_content"
             android:ellipsize="end"
             android:maxLines="1"
-            android:textColor="@android:color/white"
+            android:textColor="?attr/colorOnSurface"
             android:textSize="13sp"
             android:textStyle="bold" />
 
@@ -43,7 +43,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="2dp"
-            android:textColor="@color/id_photo_text_secondary"
+            android:textColor="?attr/colorOnSurfaceVariant"
             android:textSize="10sp" />
     </LinearLayout>
 

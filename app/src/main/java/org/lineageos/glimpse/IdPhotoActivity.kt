@@ -120,10 +120,6 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
 
     companion object {
         const val EXTRA_MEDIA_URI = "extra_media_uri"
-        private const val COLOR_SELECTED_GOLD = 0xFFF5C542.toInt()
-        private const val COLOR_TEXT_UNSELECTED = 0xFF8E8E93.toInt()
-        private const val COLOR_CARD_UNSELECTED = 0xFF2C2C2E.toInt()
-        private const val COLOR_BORDER_UNSELECTED = 0xFF3A3A3C.toInt()
 
         fun createIntent(context: Context, uri: Uri, mimeType: String? = null) =
             Intent(context, IdPhotoActivity::class.java).apply {
@@ -134,6 +130,21 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
                 }
                 putExtra(EXTRA_MEDIA_URI, uri)
             }
+
+        fun getThemeColor(context: Context, attrName: String, fallback: Int = Color.WHITE): Int {
+            val attrId = context.resources.getIdentifier(attrName, "attr", context.packageName)
+                .takeIf { it != 0 }
+                ?: context.resources.getIdentifier(attrName, "attr", "com.google.android.material")
+                .takeIf { it != 0 }
+                ?: context.resources.getIdentifier(attrName, "attr", "androidx.appcompat")
+            if (attrId == 0) return fallback
+            val typedValue = android.util.TypedValue()
+            return if (context.theme.resolveAttribute(attrId, typedValue, true)) {
+                typedValue.data
+            } else {
+                fallback
+            }
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -238,6 +249,9 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
     }
 
     private fun updateCategoryTabsUI(activeGroup: PresetGroup?) {
+        val colorOnSurface = getThemeColor(this, "colorOnSurface", Color.WHITE)
+        val colorOnSurfaceVariant = getThemeColor(this, "colorOnSurfaceVariant", Color.GRAY)
+
         for (i in 0 until categoryTabsContainer.childCount) {
             val child = categoryTabsContainer.getChildAt(i) as? TextView ?: continue
             val categories = listOf(
@@ -248,10 +262,10 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
             )
             val isCurrent = categories.getOrNull(i) == activeGroup
             if (isCurrent) {
-                child.setTextColor(Color.WHITE)
+                child.setTextColor(colorOnSurface)
                 child.setTypeface(null, Typeface.BOLD)
             } else {
-                child.setTextColor(COLOR_TEXT_UNSELECTED)
+                child.setTextColor(colorOnSurfaceVariant)
                 child.setTypeface(null, Typeface.NORMAL)
             }
             child.invalidate()
@@ -410,21 +424,24 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
     }
 
     private fun updateBottomTabUI(tab: IdPhotoBottomTab) {
+        val colorPrimary = getThemeColor(this, "colorPrimary", Color.WHITE)
+        val colorOnSurfaceVariant = getThemeColor(this, "colorOnSurfaceVariant", Color.GRAY)
+
         when (tab) {
             IdPhotoBottomTab.SPECS -> {
                 specsContainer.isVisible = true
                 backgroundContainer.isVisible = false
-                tabSpecsButton.setTextColor(COLOR_SELECTED_GOLD)
+                tabSpecsButton.setTextColor(colorPrimary)
                 tabSpecsButton.setTypeface(null, Typeface.BOLD)
-                tabBackgroundButton.setTextColor(COLOR_TEXT_UNSELECTED)
+                tabBackgroundButton.setTextColor(colorOnSurfaceVariant)
                 tabBackgroundButton.setTypeface(null, Typeface.NORMAL)
             }
             IdPhotoBottomTab.BACKGROUND -> {
                 specsContainer.isVisible = false
                 backgroundContainer.isVisible = true
-                tabSpecsButton.setTextColor(COLOR_TEXT_UNSELECTED)
+                tabSpecsButton.setTextColor(colorOnSurfaceVariant)
                 tabSpecsButton.setTypeface(null, Typeface.NORMAL)
-                tabBackgroundButton.setTextColor(COLOR_SELECTED_GOLD)
+                tabBackgroundButton.setTextColor(colorPrimary)
                 tabBackgroundButton.setTypeface(null, Typeface.BOLD)
             }
         }
@@ -590,16 +607,30 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
             nameText.setText(preset.nameRes)
             pxText.text = "${preset.targetWidthPx}×${preset.targetHeightPx}"
 
+            val context = itemView.context
+            val density = context.resources.displayMetrics.density
+
             if (isSelected) {
-                card.setCardBackgroundColor(COLOR_SELECTED_GOLD)
-                card.setStrokeColor(COLOR_SELECTED_GOLD)
-                nameText.setTextColor(Color.BLACK)
-                pxText.setTextColor(0xFF333333.toInt())
+                val primaryContainer = getThemeColor(context, "colorPrimaryContainer", Color.WHITE)
+                val onPrimaryContainer = getThemeColor(context, "colorOnPrimaryContainer", Color.BLACK)
+                val primary = getThemeColor(context, "colorPrimary", Color.WHITE)
+
+                card.setCardBackgroundColor(primaryContainer)
+                card.strokeWidth = (2 * density).toInt()
+                card.setStrokeColor(primary)
+                nameText.setTextColor(onPrimaryContainer)
+                pxText.setTextColor(onPrimaryContainer)
             } else {
-                card.setCardBackgroundColor(COLOR_CARD_UNSELECTED)
-                card.setStrokeColor(COLOR_BORDER_UNSELECTED)
-                nameText.setTextColor(Color.WHITE)
-                pxText.setTextColor(COLOR_TEXT_UNSELECTED)
+                val surfaceContainer = getThemeColor(context, "colorSurfaceContainerHigh", Color.DKGRAY)
+                val onSurface = getThemeColor(context, "colorOnSurface", Color.WHITE)
+                val onSurfaceVariant = getThemeColor(context, "colorOnSurfaceVariant", Color.GRAY)
+                val outlineVariant = getThemeColor(context, "colorOutlineVariant", Color.GRAY)
+
+                card.setCardBackgroundColor(surfaceContainer)
+                card.strokeWidth = (1 * density).toInt()
+                card.setStrokeColor(outlineVariant)
+                nameText.setTextColor(onSurface)
+                pxText.setTextColor(onSurfaceVariant)
             }
 
             itemView.setOnClickListener { onPresetSelected(preset) }
@@ -651,10 +682,12 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
         private val checkIcon = itemView.findViewById<ImageView>(R.id.colorCheckIcon)
 
         fun bind(item: IdPhotoBgColorItem, isSelected: Boolean) {
+            val context = itemView.context
             val density = card.context.resources.displayMetrics.density
 
             if (item.colorInt == null) {
-                card.setCardBackgroundColor(COLOR_CARD_UNSELECTED)
+                val cardBg = getThemeColor(context, "colorSurfaceContainerHigh", Color.DKGRAY)
+                card.setCardBackgroundColor(cardBg)
                 originalLabel.isVisible = !isSelected
                 originalLabel.setText(item.nameRes)
             } else {
@@ -663,13 +696,15 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
             }
 
             if (isSelected) {
+                val primary = getThemeColor(context, "colorPrimary", Color.WHITE)
                 card.strokeWidth = (2.5f * density).toInt()
-                card.setStrokeColor(COLOR_SELECTED_GOLD)
+                card.setStrokeColor(primary)
                 checkIcon.isVisible = true
                 checkIcon.setColorFilter(if (item.isLight) Color.BLACK else Color.WHITE)
             } else {
+                val outlineVariant = getThemeColor(context, "colorOutlineVariant", Color.GRAY)
                 card.strokeWidth = if (item.isLight) (1f * density).toInt() else 0
-                card.setStrokeColor(0x33FFFFFF)
+                card.setStrokeColor(outlineVariant)
                 checkIcon.isVisible = false
             }
 

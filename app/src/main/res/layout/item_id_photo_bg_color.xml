@@ -19,7 +19,7 @@
         android:layout_gravity="center"
         app:cardCornerRadius="10dp"
         app:cardElevation="0dp"
-        app:strokeColor="@color/id_photo_swatch_stroke"
+        app:strokeColor="?attr/colorOutlineVariant"
         app:strokeWidth="1dp">
 
         <TextView
