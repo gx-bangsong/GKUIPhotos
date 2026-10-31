@@ -19,7 +19,10 @@ import android.os.Environment
 import android.provider.MediaStore
 import android.view.MenuItem
 import android.view.View
+import android.widget.Button
+import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.addCallback
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
@@ -63,14 +66,42 @@ import java.io.ByteArrayOutputStream
  */
 class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
 
+    enum class EditorCategory(val titleRes: Int) {
+        CROP(R.string.editor_tab_crop),
+        ADJUST(R.string.editor_tab_adjust),
+        FILTERS(R.string.editor_tab_filters),
+        MARKUP(R.string.editor_tab_markup),
+        TOOLS(R.string.editor_tab_tools),
+    }
+
+    private val appBarLayout by lazy { findViewById<View>(R.id.appBarLayout) }
     private val toolbar by lazy { findViewById<MaterialToolbar>(R.id.toolbar) }
     private val cropImageView by lazy { findViewById<CropImageView>(R.id.cropImageView) }
-    private val filterChipGroup by lazy { findViewById<ChipGroup>(R.id.filterChipGroup) }
+    private val savingOverlay by lazy { findViewById<View>(R.id.savingOverlay) }
+
+    // Bottom Deck & Strips
+    private val editorBottomDeck by lazy { findViewById<View>(R.id.editorBottomDeck) }
+    private val stripCrop by lazy { findViewById<View>(R.id.stripCrop) }
+    private val stripAdjust by lazy { findViewById<View>(R.id.stripAdjust) }
+    private val stripFilters by lazy { findViewById<View>(R.id.stripFilters) }
+    private val stripMarkup by lazy { findViewById<View>(R.id.stripMarkup) }
+    private val stripTools by lazy { findViewById<View>(R.id.stripTools) }
+
+    // Strip Controls
+    private val rotateButton by lazy { findViewById<Button>(R.id.rotateButton) }
     private val ratioChipGroup by lazy { findViewById<ChipGroup>(R.id.ratioChipGroup) }
-    private val rotateButton by lazy { findViewById<android.widget.Button>(R.id.rotateButton) }
-    private val faceGuideButton by lazy { findViewById<android.widget.Button>(R.id.faceGuideButton) }
-    private val watermarkButton by lazy { findViewById<android.widget.Button>(R.id.watermarkButton) }
-    private val savingOverlay by lazy { findViewById<android.view.View>(R.id.savingOverlay) }
+    private val filterChipGroup by lazy { findViewById<ChipGroup>(R.id.filterChipGroup) }
+    private val faceGuideButton by lazy { findViewById<Button>(R.id.faceGuideButton) }
+    private val watermarkButton by lazy { findViewById<Button>(R.id.watermarkButton) }
+
+    // Tier 2: Category Tabs
+    private val categoryChipGroup by lazy { findViewById<ChipGroup>(R.id.categoryChipGroup) }
+
+    // Tier 3: Action Bar
+    private val cancelButton by lazy { findViewById<Button>(R.id.cancelButton) }
+    private val saveButton by lazy { findViewById<Button>(R.id.saveButton) }
+
+    private var activeCategory: EditorCategory = EditorCategory.CROP
 
     private var sourceUri: Uri? = null
     private var sourceMimeType: String? = null
@@ -120,16 +151,24 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             return
         }
 
-        toolbar.setNavigationOnClickListener { finish() }
-        toolbar.setOnMenuItemClickListener(::onMenuItemSelected)
+        toolbar.setNavigationOnClickListener { handleCancel() }
+        cancelButton.setOnClickListener { handleCancel() }
+        saveButton.setOnClickListener { onSave() }
 
-        val bottomControls = findViewById<View>(R.id.editorBottomControls)
-        bottomControls?.let { v ->
-            ViewCompat.setOnApplyWindowInsetsListener(v) { view, insets ->
-                val navBars = insets.getInsets(WindowInsetsCompat.Type.navigationBars())
-                view.updatePadding(bottom = navBars.bottom + 8)
-                insets
-            }
+        onBackPressedDispatcher.addCallback(this) {
+            handleCancel()
+        }
+
+        ViewCompat.setOnApplyWindowInsetsListener(appBarLayout) { v, insets ->
+            val statusBars = insets.getInsets(WindowInsetsCompat.Type.statusBars())
+            v.updatePadding(top = statusBars.top)
+            insets
+        }
+
+        ViewCompat.setOnApplyWindowInsetsListener(editorBottomDeck) { v, insets ->
+            val navBars = insets.getInsets(WindowInsetsCompat.Type.navigationBars())
+            v.updatePadding(bottom = navBars.bottom)
+            insets
         }
 
         cropImageView.onFramingModified = {
@@ -141,18 +180,18 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             refreshBaseBitmap()
         }
         faceGuideButton.setOnClickListener {
-            val uri = sourceUri ?: return@setOnClickListener
+            val src = sourceUri ?: return@setOnClickListener
             if (isEditorDirty()) {
                 MaterialAlertDialogBuilder(this)
                     .setTitle(R.string.id_photo_title)
                     .setMessage(R.string.id_photo_editor_entry_warning)
                     .setNegativeButton(R.string.cancel, null)
                     .setPositiveButton(R.string.id_photo_editor_entry_continue) { _, _ ->
-                        startActivity(IdPhotoActivity.createIntent(this, uri, sourceMimeType))
+                        startActivity(IdPhotoActivity.createIntent(this, src, sourceMimeType))
                     }
                     .show()
             } else {
-                startActivity(IdPhotoActivity.createIntent(this, uri, sourceMimeType))
+                startActivity(IdPhotoActivity.createIntent(this, src, sourceMimeType))
             }
         }
         watermarkButton.setOnClickListener {
@@ -160,8 +199,10 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         }
         updateWatermarkButtonState()
 
-        setupFilterChips()
         setupRatioChips()
+        setupFilterChips()
+        setupCategoryTabs()
+        switchCategory(EditorCategory.CROP)
 
         lifecycleScope.launch {
             val bmp = withContext(Dispatchers.IO) { loadBitmap(uri) }
@@ -173,6 +214,49 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             baseBitmap = bmp
             cropImageView.aspectRatio = bmp.width.toFloat() / bmp.height.toFloat()
             refreshBaseBitmap()
+        }
+    }
+
+    private fun setupCategoryTabs() {
+        categoryChipGroup.removeAllViews()
+        EditorCategory.values().forEach { category ->
+            val chip = Chip(this).apply {
+                text = getString(category.titleRes)
+                isCheckable = true
+                id = category.ordinal
+                isChecked = category == activeCategory
+            }
+            chip.setOnClickListener {
+                switchCategory(category)
+            }
+            categoryChipGroup.addView(chip)
+        }
+    }
+
+    private fun switchCategory(category: EditorCategory) {
+        activeCategory = category
+        stripCrop.isVisible = category == EditorCategory.CROP
+        stripAdjust.isVisible = category == EditorCategory.ADJUST
+        stripFilters.isVisible = category == EditorCategory.FILTERS
+        stripMarkup.isVisible = category == EditorCategory.MARKUP
+        stripTools.isVisible = category == EditorCategory.TOOLS
+
+        // Crop guides are visible only in CROP mode to give clean inspection in other modes
+        cropImageView.showCropGuides = category == EditorCategory.CROP
+    }
+
+    private fun handleCancel() {
+        if (isEditorDirty()) {
+            MaterialAlertDialogBuilder(this)
+                .setTitle(R.string.editor_discard_title)
+                .setMessage(R.string.editor_discard_message)
+                .setNegativeButton(R.string.cancel, null)
+                .setPositiveButton(R.string.editor_discard_confirm) { _, _ ->
+                    finish()
+                }
+                .show()
+        } else {
+            finish()
         }
     }
 

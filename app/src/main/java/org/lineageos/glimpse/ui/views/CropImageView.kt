@@ -52,6 +52,13 @@ class CropImageView @JvmOverloads constructor(
     /** When true the face-alignment oval is drawn inside the crop rectangle. */
     var showFaceGuide: Boolean = true
 
+    /** When true (default), the dimming scrim, rule-of-thirds grid, and crop borders are drawn. */
+    var showCropGuides: Boolean = true
+        set(value) {
+            field = value
+            invalidate()
+        }
+
     /** Callback invoked whenever the user modifies framing via pan or zoom gestures. */
     var onFramingModified: (() -> Unit)? = null
 
@@ -256,6 +263,8 @@ class CropImageView @JvmOverloads constructor(
     }
 
     private fun drawGuides(canvas: Canvas) {
+        if (!showCropGuides) return
+
         // Dim everything except the crop rectangle. Scrim + erase must share a
         // layer so the CLEAR xfermode actually punches a hole through the scrim.
         val full = RectF(0f, 0f, width.toFloat(), height.toFloat())
