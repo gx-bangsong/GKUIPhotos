@@ -223,6 +223,7 @@
     <!-- ID Photo tool presets and groups -->
     <string name="image_toolbox_id_photo">ID Photo</string>
     <string name="image_toolbox_id_photo_desc">Create standard passport, visa, and exam ID photos</string>
+    <string name="image_toolbox_id_photo_open">Create ID photo</string>
     <string name="id_photo_change_preset">Change preset</string>
     <string name="id_photo_same_ratio_title">Same-ratio presets (switch without resetting crop):</string>
     <string name="id_photo_generate_button">Generate ID photo</string>

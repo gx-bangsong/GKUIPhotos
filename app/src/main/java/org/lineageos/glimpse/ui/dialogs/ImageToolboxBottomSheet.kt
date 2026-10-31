@@ -62,6 +62,7 @@ class ImageToolboxBottomSheet(
     private val compressSection by lazy { findViewById<View>(R.id.compressSection)!! }
     private val convertSection by lazy { findViewById<View>(R.id.convertSection)!! }
     private val editSection by lazy { findViewById<View>(R.id.editSection)!! }
+    private val idPhotoSection by lazy { findViewById<View>(R.id.idPhotoSection)!! }
     private val videoToGifSection by lazy { findViewById<View>(R.id.videoToGifSection)!! }
 
     // Compress controls
@@ -77,6 +78,7 @@ class ImageToolboxBottomSheet(
     private val convertChipGroup by lazy { findViewById<ChipGroup>(R.id.convertChipGroup)!! }
     private val rotateChipGroup by lazy { findViewById<ChipGroup>(R.id.rotateChipGroup)!! }
     private val filterChipGroup by lazy { findViewById<ChipGroup>(R.id.filterChipGroup)!! }
+    private val idPhotoOpenButton by lazy { findViewById<MaterialButton>(R.id.idPhotoOpenButton)!! }
 
     // Modern Video to GIF controls
     private val previewImage by lazy { findViewById<ImageView>(R.id.videoGifPreview) }
@@ -111,9 +113,11 @@ class ImageToolboxBottomSheet(
         }
 
         // Only images expose compress + convert + edit; only videos expose video→GIF.
+        val isSingleImage = medias.size == 1 && medias.first().mediaType == MediaType.IMAGE
         compressSection.isVisible = hasImages
         convertSection.isVisible = hasImages
         editSection.isVisible = hasImages
+        idPhotoSection.isVisible = isSingleImage
         videoToGifSection.isVisible = isSingleVideo
 
         if (hasImages) {
@@ -121,6 +125,13 @@ class ImageToolboxBottomSheet(
             setupConvertChips()
             setupRotateChips()
             setupFilterChips()
+        }
+
+        if (isSingleImage) {
+            idPhotoOpenButton.setOnClickListener {
+                dismiss()
+                IdPhotoBottomSheet(context, lifecycleOwner, medias.first(), onComplete).show()
+            }
         }
 
         if (isSingleVideo) {

@@ -154,6 +154,7 @@
     <!-- ID Photo tool presets and groups -->
     <string name="image_toolbox_id_photo">證件照製作</string>
     <string name="image_toolbox_id_photo_desc">一鍵製作標準寸照、官方證件照、出國簽證與各類考試照</string>
+    <string name="image_toolbox_id_photo_open">製作證件照</string>
     <string name="id_photo_change_preset">更換規格</string>
     <string name="id_photo_same_ratio_title">同比例規格（切換不重設取景）：</string>
     <string name="id_photo_generate_button">產生證件照</string>

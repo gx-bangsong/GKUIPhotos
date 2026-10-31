@@ -287,4 +287,25 @@ class CropImageView @JvmOverloads constructor(
         var bottom = max(srcCorners[1], srcCorners[3]).toInt().coerceIn(top + 1, bmp.height)
         return Bitmap.createBitmap(bmp, left, top, right - left, bottom - top)
     }
+
+    /**
+     * Computes the normalized crop rectangle [0f..1f] relative to the source bitmap.
+     * Used by full-resolution pipelines such as [IdPhotoGenerator].
+     */
+    fun getNormalizedCropRect(): RectF? {
+        val bmp = bitmap ?: return null
+        computeCropRect()
+        drawMatrix.invert(inverseMatrix)
+        val srcCorners = floatArrayOf(
+            cropRect.left, cropRect.top,
+            cropRect.right, cropRect.bottom,
+        )
+        inverseMatrix.mapPoints(srcCorners)
+        val minX = min(srcCorners[0], srcCorners[2]).coerceIn(0f, bmp.width.toFloat())
+        val minY = min(srcCorners[1], srcCorners[3]).coerceIn(0f, bmp.height.toFloat())
+        val maxX = max(srcCorners[0], srcCorners[2]).coerceIn(0f, bmp.width.toFloat())
+        val maxY = max(srcCorners[1], srcCorners[3]).coerceIn(0f, bmp.height.toFloat())
+        if (maxX <= minX || maxY <= minY) return null
+        return RectF(minX / bmp.width, minY / bmp.height, maxX / bmp.width, maxY / bmp.height)
+    }
 }
