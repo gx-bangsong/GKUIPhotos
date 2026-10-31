@@ -43,6 +43,8 @@ import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.progressindicator.CircularProgressIndicator
+import com.google.android.material.textfield.TextInputEditText
+import com.google.android.material.textfield.TextInputLayout
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -105,21 +107,51 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
 
     private var previousPresetRatio: Float? = null
 
-    private val railAdapter = PresetRailAdapter { preset ->
-        onPresetSelectedLive(preset)
-    }
+    private val railAdapter = PresetRailAdapter(
+        onPresetSelected = { preset ->
+            if (preset.id == CUSTOM_ADD_PRESET.id) {
+                showCustomSizeDialog()
+            } else {
+                onPresetSelectedLive(preset)
+            }
+        },
+        onCustomLongPressed = { preset ->
+            showDeleteCustomPresetDialog(preset)
+        },
+    )
 
     private val bgColorAdapter = BackgroundColorAdapter { colorInt ->
         viewModel.selectBgColor(colorInt)
     }
 
-    private val catalogPickerAdapter = IdPhotoCatalogGridAdapter { preset ->
-        onPresetSelectedLive(preset)
-        viewModel.setPickerOpen(false)
-    }
+    private val catalogPickerAdapter = IdPhotoCatalogGridAdapter(
+        onPresetSelected = { preset ->
+            if (preset.id == CUSTOM_ADD_PRESET.id) {
+                viewModel.setPickerOpen(false)
+                showCustomSizeDialog()
+            } else {
+                onPresetSelectedLive(preset)
+                viewModel.setPickerOpen(false)
+            }
+        },
+        onCustomLongPressed = { preset ->
+            viewModel.setPickerOpen(false)
+            showDeleteCustomPresetDialog(preset)
+        },
+    )
 
     companion object {
         const val EXTRA_MEDIA_URI = "extra_media_uri"
+
+        val CUSTOM_ADD_PRESET = IdPhotoPreset(
+            id = "custom_action_add",
+            nameRes = R.string.id_photo_custom_add,
+            widthMm = 0,
+            heightMm = 0,
+            dpi = 300,
+            group = PresetGroup.COMMON,
+            specSource = "",
+        )
 
         fun createIntent(context: Context, uri: Uri, mimeType: String? = null) =
             Intent(context, IdPhotoActivity::class.java).apply {
@@ -399,7 +431,8 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
                         } else {
                             IdPhotoCatalog.getByGroup(group)
                         }
-                        catalogPickerAdapter.submitList(list)
+                        val customPresets = IdPhotoCustomPresetManager.getSavedCustomPresets(this@IdPhotoActivity)
+                        catalogPickerAdapter.submitList(list + customPresets + listOf(CUSTOM_ADD_PRESET))
                     }
                 }
             }
@@ -455,7 +488,11 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
 
         cropImageView.applyPresetRatio(preset.aspectRatio, oldRatio)
 
-        val nameStr = getString(preset.nameRes)
+        val nameStr = if (preset.id.startsWith("custom_")) {
+            "${getString(R.string.id_photo_custom_title)} ${preset.widthMm}×${preset.heightMm}"
+        } else {
+            getString(preset.nameRes)
+        }
         specBadgeText.text = "$nameStr · ${preset.targetWidthPx}×${preset.targetHeightPx} px · ${preset.dpi} DPI (${preset.widthMm}×${preset.heightMm}mm)"
         toolbar.subtitle = "$nameStr · ${preset.targetWidthPx}×${preset.targetHeightPx} px"
 
@@ -463,9 +500,9 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
     }
 
     private fun updateRailItemsForGroup(group: PresetGroup?, selected: IdPhotoPreset) {
-        val railItems = if (group != null) {
+        val baseItems = if (group != null) {
             val groupPresets = IdPhotoCatalog.getByGroup(group)
-            if (groupPresets.none { it.id == selected.id }) {
+            if (groupPresets.none { it.id == selected.id } && !selected.id.startsWith("custom_")) {
                 listOf(selected) + groupPresets
             } else {
                 groupPresets
@@ -474,12 +511,79 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
             IdPhotoCatalog.presets
         }
 
+        val customPresets = IdPhotoCustomPresetManager.getSavedCustomPresets(this)
+        val railItems = baseItems + customPresets + listOf(CUSTOM_ADD_PRESET)
+
         railAdapter.setItems(railItems, selected)
 
         val activeIndex = railItems.indexOfFirst { it.id == selected.id }
         if (activeIndex >= 0) {
             presetRailRecyclerView.smoothScrollToPosition(activeIndex)
         }
+    }
+
+    private fun showCustomSizeDialog() {
+        val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_id_photo_custom_size, null)
+        val chipGroup = dialogView.findViewById<ChipGroup>(R.id.customModeChipGroup)
+        val widthInput = dialogView.findViewById<TextInputEditText>(R.id.customWidthEditText)
+        val heightInput = dialogView.findViewById<TextInputEditText>(R.id.customHeightEditText)
+        val dpiInput = dialogView.findViewById<TextInputEditText>(R.id.customDpiEditText)
+        val widthLayout = dialogView.findViewById<TextInputLayout>(R.id.customWidthInputLayout)
+        val heightLayout = dialogView.findViewById<TextInputLayout>(R.id.customHeightInputLayout)
+        val dpiLayout = dialogView.findViewById<TextInputLayout>(R.id.customDpiInputLayout)
+
+        var isPxMode = false
+
+        chipGroup.setOnCheckedStateChangeListener { _, checkedIds ->
+            isPxMode = checkedIds.contains(R.id.chipModePx)
+            if (isPxMode) {
+                widthLayout.suffixText = "px"
+                heightLayout.suffixText = "px"
+                dpiLayout.isVisible = false
+            } else {
+                widthLayout.suffixText = "mm"
+                heightLayout.suffixText = "mm"
+                dpiLayout.isVisible = true
+            }
+        }
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.id_photo_custom_dialog_title)
+            .setView(dialogView)
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                val w = widthInput.text?.toString()?.toFloatOrNull() ?: 0f
+                val h = heightInput.text?.toString()?.toFloatOrNull() ?: 0f
+                val dpi = dpiInput.text?.toString()?.toIntOrNull() ?: 300
+
+                val errorRes = IdPhotoCustomPresetManager.validate(isPxMode, w, h, dpi)
+                if (errorRes != null) {
+                    Toast.makeText(this, errorRes, Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+
+                val customPreset = IdPhotoCustomPresetManager.createPreset(isPxMode, w, h, dpi)
+                IdPhotoCustomPresetManager.saveCustomPreset(this, customPreset)
+                onPresetSelectedLive(customPreset)
+                viewModel.setPickerOpen(false)
+            }
+            .show()
+    }
+
+    private fun showDeleteCustomPresetDialog(preset: IdPhotoPreset) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.id_photo_custom_delete_confirm)
+            .setMessage("${preset.widthMm}×${preset.heightMm} (${preset.targetWidthPx}×${preset.targetHeightPx} px)")
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.id_photo_custom_delete) { _, _ ->
+                IdPhotoCustomPresetManager.deleteCustomPreset(this, preset.id)
+                if (viewModel.selectedPreset.value.id == preset.id) {
+                    onPresetSelectedLive(IdPhotoCatalog.PRESET_ONE_INCH)
+                } else {
+                    updateRailItemsForGroup(viewModel.selectedRailGroup.value, viewModel.selectedPreset.value)
+                }
+            }
+            .show()
     }
 
     private fun onPresetSelectedLive(preset: IdPhotoPreset) {
@@ -564,11 +668,10 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
 
     /**
      * Compact horizontal rail adapter for live preset switching.
-     * Selected card has warm golden yellow background (#F5C542) with black text.
-     * Inactive cards have dark gray background (#2C2C2E) with white text.
      */
     private class PresetRailAdapter(
         private val onPresetSelected: (IdPhotoPreset) -> Unit,
+        private val onCustomLongPressed: (IdPhotoPreset) -> Unit,
     ) : RecyclerView.Adapter<PresetRailViewHolder>() {
 
         private var items: List<IdPhotoPreset> = emptyList()
@@ -583,7 +686,7 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): PresetRailViewHolder {
             val view = LayoutInflater.from(parent.context)
                 .inflate(R.layout.item_id_photo_rail_chip, parent, false)
-            return PresetRailViewHolder(view, onPresetSelected)
+            return PresetRailViewHolder(view, onPresetSelected, onCustomLongPressed)
         }
 
         override fun onBindViewHolder(holder: PresetRailViewHolder, position: Int) {
@@ -597,6 +700,7 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
     private class PresetRailViewHolder(
         itemView: View,
         private val onPresetSelected: (IdPhotoPreset) -> Unit,
+        private val onCustomLongPressed: (IdPhotoPreset) -> Unit,
     ) : RecyclerView.ViewHolder(itemView) {
 
         private val card = itemView.findViewById<MaterialCardView>(R.id.railCardView)
@@ -604,11 +708,39 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
         private val pxText = itemView.findViewById<TextView>(R.id.railChipPx)
 
         fun bind(preset: IdPhotoPreset, isSelected: Boolean) {
-            nameText.setText(preset.nameRes)
-            pxText.text = "${preset.targetWidthPx}×${preset.targetHeightPx}"
-
             val context = itemView.context
             val density = context.resources.displayMetrics.density
+
+            if (preset.id == CUSTOM_ADD_PRESET.id) {
+                nameText.setText(preset.nameRes)
+                pxText.text = context.getString(R.string.id_photo_custom_dialog_title)
+
+                val surfaceContainer = getThemeColor(context, "colorSurfaceContainerHigh", Color.DKGRAY)
+                val primary = getThemeColor(context, "colorPrimary", Color.WHITE)
+
+                card.setCardBackgroundColor(surfaceContainer)
+                card.strokeWidth = (1 * density).toInt()
+                card.setStrokeColor(primary)
+                nameText.setTextColor(primary)
+                pxText.setTextColor(primary)
+
+                itemView.setOnClickListener { onPresetSelected(preset) }
+                itemView.setOnLongClickListener(null)
+                return
+            }
+
+            if (preset.id.startsWith("custom_")) {
+                nameText.text = "${context.getString(R.string.id_photo_custom_title)} ${preset.widthMm}×${preset.heightMm}"
+                pxText.text = "${preset.targetWidthPx}×${preset.targetHeightPx}"
+                itemView.setOnLongClickListener {
+                    onCustomLongPressed(preset)
+                    true
+                }
+            } else {
+                nameText.setText(preset.nameRes)
+                pxText.text = "${preset.targetWidthPx}×${preset.targetHeightPx}"
+                itemView.setOnLongClickListener(null)
+            }
 
             if (isSelected) {
                 val primaryContainer = getThemeColor(context, "colorPrimaryContainer", Color.WHITE)
@@ -717,6 +849,7 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
      */
     private class IdPhotoCatalogGridAdapter(
         private val onPresetSelected: (IdPhotoPreset) -> Unit,
+        private val onCustomLongPressed: (IdPhotoPreset) -> Unit,
     ) : RecyclerView.Adapter<IdPhotoCatalogGridViewHolder>() {
 
         private var items: List<IdPhotoPreset> = emptyList()
@@ -729,7 +862,7 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): IdPhotoCatalogGridViewHolder {
             val view = LayoutInflater.from(parent.context)
                 .inflate(R.layout.item_id_photo_preset, parent, false)
-            return IdPhotoCatalogGridViewHolder(view, onPresetSelected)
+            return IdPhotoCatalogGridViewHolder(view, onPresetSelected, onCustomLongPressed)
         }
 
         override fun onBindViewHolder(holder: IdPhotoCatalogGridViewHolder, position: Int) {
@@ -742,6 +875,7 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
     private class IdPhotoCatalogGridViewHolder(
         itemView: View,
         private val onPresetSelected: (IdPhotoPreset) -> Unit,
+        private val onCustomLongPressed: (IdPhotoPreset) -> Unit,
     ) : RecyclerView.ViewHolder(itemView) {
 
         private val nameText = itemView.findViewById<TextView>(R.id.presetNameText)
@@ -749,10 +883,32 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
         private val usageText = itemView.findViewById<TextView>(R.id.presetUsageText)
 
         fun bind(preset: IdPhotoPreset) {
-            nameText.setText(preset.nameRes)
-            specText.text = "${preset.widthMm}x${preset.heightMm}mm · ${preset.targetWidthPx}x${preset.targetHeightPx} px · ${preset.dpi} DPI"
-            usageText.text = preset.description
-            itemView.setOnClickListener { onPresetSelected(preset) }
+            val context = itemView.context
+            if (preset.id == CUSTOM_ADD_PRESET.id) {
+                nameText.setText(preset.nameRes)
+                specText.text = context.getString(R.string.id_photo_custom_dialog_title)
+                usageText.text = ""
+                itemView.setOnClickListener { onPresetSelected(preset) }
+                itemView.setOnLongClickListener(null)
+                return
+            }
+
+            if (preset.id.startsWith("custom_")) {
+                nameText.text = "${context.getString(R.string.id_photo_custom_title)} ${preset.widthMm}×${preset.heightMm}"
+                specText.text = "${preset.widthMm}x${preset.heightMm}mm · ${preset.targetWidthPx}x${preset.targetHeightPx} px · ${preset.dpi} DPI"
+                usageText.text = preset.description
+                itemView.setOnClickListener { onPresetSelected(preset) }
+                itemView.setOnLongClickListener {
+                    onCustomLongPressed(preset)
+                    true
+                }
+            } else {
+                nameText.setText(preset.nameRes)
+                specText.text = "${preset.widthMm}x${preset.heightMm}mm · ${preset.targetWidthPx}x${preset.targetHeightPx} px · ${preset.dpi} DPI"
+                usageText.text = preset.description
+                itemView.setOnClickListener { onPresetSelected(preset) }
+                itemView.setOnLongClickListener(null)
+            }
         }
     }
 }

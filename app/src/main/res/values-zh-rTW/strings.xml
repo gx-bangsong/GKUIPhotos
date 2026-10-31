@@ -167,6 +167,17 @@
     <string name="id_photo_bg_light_gray">官方淺灰</string>
     <string name="id_photo_matting_refusal">偵測到背景色彩不均勻，目前僅支援純色背景證件照換底。已為您保留原背景繼續產生。</string>
     <string name="id_photo_matting_refusal_separability">人物與背景顏色過於接近，無法安全換底。已為您保留原背景繼續產生。</string>
+    <string name="id_photo_custom_title">自訂</string>
+    <string name="id_photo_custom_add">+ 自訂</string>
+    <string name="id_photo_custom_dialog_title">自訂尺寸</string>
+    <string name="id_photo_custom_mode_mm">物理尺寸 (mm)</string>
+    <string name="id_photo_custom_mode_px">像素尺寸 (px)</string>
+    <string name="id_photo_custom_width">寬度</string>
+    <string name="id_photo_custom_height">高度</string>
+    <string name="id_photo_custom_dpi">DPI (預設 300)</string>
+    <string name="id_photo_custom_error_invalid">請輸入有效數值（寬/高 &gt; 0，高寬比在 0.3~3.0 之間）</string>
+    <string name="id_photo_custom_delete_confirm">確認刪除此自訂尺寸？</string>
+    <string name="id_photo_custom_delete">刪除</string>
     <string name="id_photo_editor_entry_warning">證件照將基於原圖製作，目前未儲存的編輯不會包含在內。</string>
     <string name="id_photo_editor_entry_continue">繼續</string>
     <string name="id_photo_discard_title">放棄修改？</string>

@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+     SPDX-FileCopyrightText: The LineageOS Project
+     SPDX-License-Identifier: Apache-2.0
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="20dp">
+
+    <!-- Mode Selector Chips (mm vs px) -->
+    <com.google.android.material.chip.ChipGroup
+        android:id="@+id/customModeChipGroup"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal"
+        app:selectionRequired="true"
+        app:singleLine="true"
+        app:singleSelection="true">
+
+        <com.google.android.material.chip.Chip
+            android:id="@+id/chipModeMm"
+            style="@style/Widget.Material3.Chip.Filter"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:checked="true"
+            android:text="@string/id_photo_custom_mode_mm" />
+
+        <com.google.android.material.chip.Chip
+            android:id="@+id/chipModePx"
+            style="@style/Widget.Material3.Chip.Filter"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/id_photo_custom_mode_px" />
+    </com.google.android.material.chip.ChipGroup>
+
+    <!-- Width Input -->
+    <com.google.android.material.textfield.TextInputLayout
+        android:id="@+id/customWidthInputLayout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:hint="@string/id_photo_custom_width"
+        app:suffixText="mm">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/customWidthEditText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="numberDecimal"
+            android:maxLines="1" />
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <!-- Height Input -->
+    <com.google.android.material.textfield.TextInputLayout
+        android:id="@+id/customHeightInputLayout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:hint="@string/id_photo_custom_height"
+        app:suffixText="mm">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/customHeightEditText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="numberDecimal"
+            android:maxLines="1" />
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <!-- DPI Input (Hidden in px mode) -->
+    <com.google.android.material.textfield.TextInputLayout
+        android:id="@+id/customDpiInputLayout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:hint="@string/id_photo_custom_dpi">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/customDpiEditText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="number"
+            android:maxLines="1"
+            android:text="300" />
+    </com.google.android.material.textfield.TextInputLayout>
+
+</LinearLayout>
