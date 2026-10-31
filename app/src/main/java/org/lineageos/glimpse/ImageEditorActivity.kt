@@ -39,6 +39,7 @@ import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.slider.Slider
 import com.google.android.material.textfield.TextInputEditText
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -47,6 +48,8 @@ import org.lineageos.glimpse.ext.editSaveBehavior
 import org.lineageos.glimpse.ext.createWriteRequest
 import org.lineageos.glimpse.ui.views.CropImageView
 import org.lineageos.glimpse.utils.EditSaveBehavior
+import org.lineageos.glimpse.utils.media.AdjustParameters
+import org.lineageos.glimpse.utils.media.ImageAdjuster
 import org.lineageos.glimpse.utils.media.ImageFilter
 import org.lineageos.glimpse.utils.media.ImageToolbox
 import java.io.ByteArrayOutputStream
@@ -74,6 +77,13 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         TOOLS(R.string.editor_tab_tools),
     }
 
+    enum class AdjustParam(val labelRes: Int, val isBipolar: Boolean) {
+        SATURATION(R.string.editor_adjust_saturation, true),
+        CONTRAST(R.string.editor_adjust_contrast, true),
+        TEMPERATURE(R.string.editor_adjust_temperature, true),
+        SHARPEN(R.string.editor_adjust_sharpen, false),
+    }
+
     private val appBarLayout by lazy { findViewById<View>(R.id.appBarLayout) }
     private val toolbar by lazy { findViewById<MaterialToolbar>(R.id.toolbar) }
     private val cropImageView by lazy { findViewById<CropImageView>(R.id.cropImageView) }
@@ -87,9 +97,18 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
     private val stripMarkup by lazy { findViewById<View>(R.id.stripMarkup) }
     private val stripTools by lazy { findViewById<View>(R.id.stripTools) }
 
-    // Strip Controls
+    // Strip Controls: Crop
     private val rotateButton by lazy { findViewById<Button>(R.id.rotateButton) }
     private val ratioChipGroup by lazy { findViewById<ChipGroup>(R.id.ratioChipGroup) }
+
+    // Strip Controls: Adjust
+    private val adjustParamChipGroup by lazy { findViewById<ChipGroup>(R.id.adjustParamChipGroup) }
+    private val adjustSliderRow by lazy { findViewById<View>(R.id.adjustSliderRow) }
+    private val adjustSlider by lazy { findViewById<Slider>(R.id.adjustSlider) }
+    private val adjustValueText by lazy { findViewById<TextView>(R.id.adjustValueText) }
+    private val adjustResetButton by lazy { findViewById<Button>(R.id.adjustResetButton) }
+
+    // Strip Controls: Filters & Tools
     private val filterChipGroup by lazy { findViewById<ChipGroup>(R.id.filterChipGroup) }
     private val faceGuideButton by lazy { findViewById<Button>(R.id.faceGuideButton) }
     private val watermarkButton by lazy { findViewById<Button>(R.id.watermarkButton) }
@@ -102,6 +121,8 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
     private val saveButton by lazy { findViewById<Button>(R.id.saveButton) }
 
     private var activeCategory: EditorCategory = EditorCategory.CROP
+    private var activeAdjustParam: AdjustParam? = null
+    private var adjustParameters = AdjustParameters()
 
     private var sourceUri: Uri? = null
     private var sourceMimeType: String? = null
@@ -200,6 +221,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         updateWatermarkButtonState()
 
         setupRatioChips()
+        setupAdjustControls()
         setupFilterChips()
         setupCategoryTabs()
         switchCategory(EditorCategory.CROP)
@@ -265,7 +287,8 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         val hasFilter = currentFilter != ImageFilter.NONE
         val hasWatermark = !cropImageView.watermarkText.isNullOrBlank()
         val hasRatioChange = ratioChipGroup.checkedChipId != 0
-        return hasRotation || hasFilter || hasWatermark || hasRatioChange || isFramingModified
+        val hasAdjustments = !adjustParameters.isDefault
+        return hasRotation || hasFilter || hasWatermark || hasRatioChange || isFramingModified || hasAdjustments
     }
 
     private fun onMenuItemSelected(item: MenuItem): Boolean {
@@ -274,6 +297,75 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             return true
         }
         return false
+    }
+
+    private fun setupAdjustControls() {
+        adjustParamChipGroup.removeAllViews()
+        AdjustParam.values().forEachIndexed { index, param ->
+            val chip = Chip(this).apply {
+                text = getString(param.labelRes)
+                isCheckable = true
+                id = index
+            }
+            chip.setOnClickListener {
+                selectAdjustParam(param)
+            }
+            adjustParamChipGroup.addView(chip)
+        }
+
+        adjustSlider.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                val param = activeAdjustParam ?: return@addOnChangeListener
+                val intVal = value.toInt()
+                adjustParameters = when (param) {
+                    AdjustParam.SATURATION -> adjustParameters.copy(saturation = intVal)
+                    AdjustParam.CONTRAST -> adjustParameters.copy(contrast = intVal)
+                    AdjustParam.TEMPERATURE -> adjustParameters.copy(temperature = intVal)
+                    AdjustParam.SHARPEN -> adjustParameters.copy(sharpen = intVal)
+                }
+                updateAdjustValueText(intVal, param.isBipolar)
+                refreshBaseBitmap()
+            }
+        }
+
+        adjustResetButton.setOnClickListener {
+            val param = activeAdjustParam ?: return@setOnClickListener
+            adjustParameters = when (param) {
+                AdjustParam.SATURATION -> adjustParameters.copy(saturation = 0)
+                AdjustParam.CONTRAST -> adjustParameters.copy(contrast = 0)
+                AdjustParam.TEMPERATURE -> adjustParameters.copy(temperature = 0)
+                AdjustParam.SHARPEN -> adjustParameters.copy(sharpen = 0)
+            }
+            adjustSlider.value = 0f
+            updateAdjustValueText(0, param.isBipolar)
+            refreshBaseBitmap()
+        }
+    }
+
+    private fun selectAdjustParam(param: AdjustParam) {
+        activeAdjustParam = param
+        adjustSliderRow.isVisible = true
+
+        val currentVal = when (param) {
+            AdjustParam.SATURATION -> adjustParameters.saturation
+            AdjustParam.CONTRAST -> adjustParameters.contrast
+            AdjustParam.TEMPERATURE -> adjustParameters.temperature
+            AdjustParam.SHARPEN -> adjustParameters.sharpen
+        }
+
+        if (param.isBipolar) {
+            adjustSlider.valueFrom = -100f
+            adjustSlider.valueTo = 100f
+        } else {
+            adjustSlider.valueFrom = 0f
+            adjustSlider.valueTo = 100f
+        }
+        adjustSlider.value = currentVal.toFloat().coerceIn(adjustSlider.valueFrom, adjustSlider.valueTo)
+        updateAdjustValueText(currentVal, param.isBipolar)
+    }
+
+    private fun updateAdjustValueText(valInt: Int, isBipolar: Boolean) {
+        adjustValueText.text = if (isBipolar && valInt > 0) "+$valInt" else "$valInt"
     }
 
     private fun setupFilterChips() {
@@ -328,20 +420,35 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         }
     }
 
-    /** Rebuild the displayed (rotated + filtered) bitmap on the crop view. */
+    /** Rebuild the displayed (rotated + filtered + adjusted) bitmap on the crop view. */
     private fun refreshBaseBitmap() {
         val bmp = baseBitmap ?: return
         lifecycleScope.launch {
             val displayed = withContext(Dispatchers.Default) {
                 val rotated = rotate(bmp, rotation)
-                applyFilter(rotated, currentFilter)
+                val filtered = applyFilter(rotated, currentFilter)
+                if (filtered !== rotated && rotated !== bmp) rotated.recycle()
+                val adjusted = ImageAdjuster.applyAdjustments(filtered, adjustParameters)
+                if (adjusted !== filtered && filtered !== bmp) filtered.recycle()
+                adjusted
             }
             cropImageView.setBitmap(displayed)
         }
     }
 
     private fun onSave() {
-        val result = cropImageView.crop() ?: baseBitmap ?: return
+        val cropped = cropImageView.crop()
+        val result = if (cropped != null) {
+            cropped
+        } else {
+            val bmp = baseBitmap ?: return
+            val rotated = rotate(bmp, rotation)
+            val filtered = applyFilter(rotated, currentFilter)
+            if (filtered !== rotated && rotated !== bmp) rotated.recycle()
+            val adjusted = ImageAdjuster.applyAdjustments(filtered, adjustParameters)
+            if (adjusted !== filtered && filtered !== bmp) filtered.recycle()
+            adjusted
+        }
         val finalResult = cropImageView.watermarkText?.takeIf { it.isNotBlank() }?.let {
             ImageToolbox.applyWatermark(result, it)
         } ?: result
