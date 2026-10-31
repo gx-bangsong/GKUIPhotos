@@ -142,9 +142,16 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
 
         val rootLayout = findViewById<View>(R.id.idPhotoRootLayout)
         ViewCompat.setOnApplyWindowInsetsListener(rootLayout) { _, insets ->
+            val statusBars = insets.getInsets(WindowInsetsCompat.Type.statusBars())
             val navBars = insets.getInsets(WindowInsetsCompat.Type.navigationBars())
+            val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+            val bottomInset = maxOf(navBars.bottom, ime.bottom)
+
             bottomControls.updatePadding(bottom = navBars.bottom + 8)
-            catalogPickerOverlay.updatePadding(bottom = navBars.bottom + 16)
+            catalogPickerOverlay.updatePadding(
+                top = statusBars.top,
+                bottom = bottomInset + 16,
+            )
             insets
         }
 
