@@ -198,6 +198,16 @@
     <string name="editor_markup_clear">清除</string>
     <string name="editor_markup_text_hint">点击编辑文本</string>
     <string name="editor_markup_text_bg">背景底色</string>
+    <string name="editor_shape_arrow">箭头</string>
+    <string name="editor_shape_rect">矩形</string>
+    <string name="editor_shape_circle">圆形</string>
+    <string name="editor_shape_line">直线</string>
+    <string name="editor_size_fine">细</string>
+    <string name="editor_size_medium">中</string>
+    <string name="editor_size_bold">粗</string>
+    <string name="editor_mosaic_low">8px</string>
+    <string name="editor_mosaic_medium">16px</string>
+    <string name="editor_mosaic_high">24px</string>
     <string name="id_photo_editor_entry_warning">证件照将基于原图制作，当前未保存的编辑不会包含在内。</string>
     <string name="id_photo_editor_entry_continue">继续</string>
     <string name="id_photo_discard_title">放弃修改？</string>

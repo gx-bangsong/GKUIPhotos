@@ -14,12 +14,15 @@ import android.graphics.ColorMatrixColorFilter
 import android.graphics.Matrix
 import android.graphics.Paint
 import android.net.Uri
+import android.graphics.Color
 import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
 import android.view.MenuItem
 import android.view.View
 import android.widget.Button
+import android.widget.HorizontalScrollView
+import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.addCallback
@@ -36,6 +39,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.preference.PreferenceManager
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.bottomsheet.BottomSheetDialog
+import com.google.android.material.card.MaterialCardView
 import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -46,7 +50,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.lineageos.glimpse.ext.editSaveBehavior
 import org.lineageos.glimpse.ext.createWriteRequest
+import org.lineageos.glimpse.ui.views.AnnotationOverlayView
 import org.lineageos.glimpse.ui.views.CropImageView
+import org.lineageos.glimpse.ui.views.MarkupTool
+import org.lineageos.glimpse.ui.views.ShapeType
 import org.lineageos.glimpse.utils.EditSaveBehavior
 import org.lineageos.glimpse.utils.media.AdjustParameters
 import org.lineageos.glimpse.utils.media.ImageAdjuster
@@ -107,6 +114,13 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
     private val adjustSlider by lazy { findViewById<Slider>(R.id.adjustSlider) }
     private val adjustValueText by lazy { findViewById<TextView>(R.id.adjustValueText) }
     private val adjustResetButton by lazy { findViewById<Button>(R.id.adjustResetButton) }
+
+    // Strip Controls: Markup
+    private val annotationOverlayView by lazy { findViewById<AnnotationOverlayView>(R.id.annotationOverlayView) }
+    private val markupToolChipGroup by lazy { findViewById<ChipGroup>(R.id.markupToolChipGroup) }
+    private val markupUndoButton by lazy { findViewById<Button>(R.id.markupUndoButton) }
+    private val markupOptionsScroll by lazy { findViewById<HorizontalScrollView>(R.id.markupOptionsScroll) }
+    private val markupOptionsContent by lazy { findViewById<LinearLayout>(R.id.markupOptionsContent) }
 
     // Strip Controls: Filters & Tools
     private val filterChipGroup by lazy { findViewById<ChipGroup>(R.id.filterChipGroup) }
@@ -220,9 +234,15 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         }
         updateWatermarkButtonState()
 
+        annotationOverlayView.cropRectProvider = { cropImageView.getCropRect() }
+        annotationOverlayView.onAnnotationChanged = {
+            markupUndoButton.isEnabled = annotationOverlayView.hasAnnotations()
+        }
+
         setupRatioChips()
         setupAdjustControls()
         setupFilterChips()
+        setupMarkupControls()
         setupCategoryTabs()
         switchCategory(EditorCategory.CROP)
 
@@ -265,6 +285,13 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
 
         // Crop guides are visible only in CROP mode to give clean inspection in other modes
         cropImageView.showCropGuides = category == EditorCategory.CROP
+
+        // If not in markup mode, disable active annotation tool
+        if (category != EditorCategory.MARKUP) {
+            annotationOverlayView.activeTool = MarkupTool.NONE
+            markupToolChipGroup.clearCheck()
+            markupOptionsScroll.isVisible = false
+        }
     }
 
     private fun handleCancel() {
@@ -288,7 +315,8 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         val hasWatermark = !cropImageView.watermarkText.isNullOrBlank()
         val hasRatioChange = ratioChipGroup.checkedChipId != 0
         val hasAdjustments = !adjustParameters.isDefault
-        return hasRotation || hasFilter || hasWatermark || hasRatioChange || isFramingModified || hasAdjustments
+        val hasAnnotations = annotationOverlayView.hasAnnotations()
+        return hasRotation || hasFilter || hasWatermark || hasRatioChange || isFramingModified || hasAdjustments || hasAnnotations
     }
 
     private fun onMenuItemSelected(item: MenuItem): Boolean {
@@ -366,6 +394,158 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
 
     private fun updateAdjustValueText(valInt: Int, isBipolar: Boolean) {
         adjustValueText.text = if (isBipolar && valInt > 0) "+$valInt" else "$valInt"
+    }
+
+    private fun setupMarkupControls() {
+        markupToolChipGroup.removeAllViews()
+
+        val tools = listOf(
+            MarkupTool.DOODLE to R.string.editor_markup_doodle,
+            MarkupTool.SHAPES to R.string.editor_markup_shapes,
+            MarkupTool.TEXT to R.string.editor_markup_text,
+            MarkupTool.MOSAIC to R.string.editor_markup_mosaic,
+        )
+
+        tools.forEachIndexed { index, (tool, labelRes) ->
+            val chip = Chip(this).apply {
+                text = getString(labelRes)
+                isCheckable = true
+                id = index
+            }
+            chip.setOnClickListener {
+                if (annotationOverlayView.activeTool == tool) {
+                    annotationOverlayView.activeTool = MarkupTool.NONE
+                    markupToolChipGroup.clearCheck()
+                    markupOptionsScroll.isVisible = false
+                } else {
+                    annotationOverlayView.activeTool = tool
+                    showMarkupToolOptions(tool)
+                }
+            }
+            markupToolChipGroup.addView(chip)
+        }
+
+        markupUndoButton.setOnClickListener {
+            annotationOverlayView.undo()
+        }
+    }
+
+    private fun showMarkupToolOptions(tool: MarkupTool) {
+        markupOptionsContent.removeAllViews()
+        markupOptionsScroll.isVisible = true
+
+        val sizes = listOf(
+            4f to R.string.editor_size_fine,
+            8f to R.string.editor_size_medium,
+            16f to R.string.editor_size_bold,
+        )
+
+        when (tool) {
+            MarkupTool.DOODLE -> {
+                addStrokeSizeSelector(sizes)
+                addColorPalette()
+            }
+            MarkupTool.SHAPES -> {
+                addShapeTypeSelector()
+                addStrokeSizeSelector(sizes)
+                addColorPalette()
+            }
+            MarkupTool.TEXT -> {
+                // Prepared for Commit 4
+            }
+            MarkupTool.MOSAIC -> {
+                // Prepared for Commit 5
+            }
+            MarkupTool.NONE -> {
+                markupOptionsScroll.isVisible = false
+            }
+        }
+    }
+
+    private fun addShapeTypeSelector() {
+        val shapeTypes = listOf(
+            ShapeType.ARROW to R.string.editor_shape_arrow,
+            ShapeType.RECTANGLE to R.string.editor_shape_rect,
+            ShapeType.ELLIPSE to R.string.editor_shape_circle,
+            ShapeType.LINE to R.string.editor_shape_line,
+        )
+        val chipGroup = ChipGroup(this).apply {
+            isSingleSelection = true
+            isSingleLine = true
+            isSelectionRequired = true
+        }
+        shapeTypes.forEachIndexed { index, (st, labelRes) ->
+            val chip = Chip(this).apply {
+                text = getString(labelRes)
+                isCheckable = true
+                id = index
+                isChecked = st == annotationOverlayView.selectedShapeType
+            }
+            chip.setOnClickListener {
+                annotationOverlayView.selectedShapeType = st
+            }
+            chipGroup.addView(chip)
+        }
+        markupOptionsContent.addView(chipGroup)
+    }
+
+    private fun addStrokeSizeSelector(sizes: List<Pair<Float, Int>>) {
+        val chipGroup = ChipGroup(this).apply {
+            isSingleSelection = true
+            isSingleLine = true
+            isSelectionRequired = true
+            setPadding(12, 0, 12, 0)
+        }
+        sizes.forEachIndexed { index, (sizePx, labelRes) ->
+            val chip = Chip(this).apply {
+                text = getString(labelRes)
+                isCheckable = true
+                id = index
+                isChecked = kotlin.math.abs(sizePx - annotationOverlayView.activeStrokeWidth) < 1f
+            }
+            chip.setOnClickListener {
+                annotationOverlayView.activeStrokeWidth = sizePx
+            }
+            chipGroup.addView(chip)
+        }
+        markupOptionsContent.addView(chipGroup)
+    }
+
+    private fun addColorPalette() {
+        val colors = listOf(
+            Color.parseColor("#F44336"), // Red
+            Color.WHITE,
+            Color.BLACK,
+            Color.parseColor("#FFEB3B"), // Yellow
+            Color.parseColor("#2196F3"), // Blue
+            Color.parseColor("#4CAF50"), // Green
+        )
+        val paletteContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            setPadding(8, 0, 8, 0)
+        }
+
+        colors.forEach { c ->
+            val card = MaterialCardView(this).apply {
+                radius = 14f * resources.displayMetrics.density
+                cardElevation = 0f
+                strokeWidth = if (c == Color.WHITE || c == Color.BLACK) (1.5f * resources.displayMetrics.density).toInt() else 0
+                strokeColor = Color.DKGRAY
+                setCardBackgroundColor(c)
+                val size = (28f * resources.displayMetrics.density).toInt()
+                val lp = LinearLayout.LayoutParams(size, size).apply {
+                    setMargins(6, 0, 6, 0)
+                }
+                layoutParams = lp
+                isClickable = true
+                setOnClickListener {
+                    annotationOverlayView.activeColor = c
+                }
+            }
+            paletteContainer.addView(card)
+        }
+        markupOptionsContent.addView(paletteContainer)
     }
 
     private fun setupFilterChips() {
@@ -449,13 +629,24 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             if (adjusted !== filtered && filtered !== bmp) filtered.recycle()
             adjusted
         }
-        val finalResult = cropImageView.watermarkText?.takeIf { it.isNotBlank() }?.let {
-            ImageToolbox.applyWatermark(result, it)
-        } ?: result
+        val finalResult = if (annotationOverlayView.hasAnnotations()) {
+            val canvasBmp = Bitmap.createBitmap(result.width, result.height, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(canvasBmp)
+            canvas.drawBitmap(result, 0f, 0f, null)
+            annotationOverlayView.rasterize(canvas, cropImageView.getCropRect())
+            if (result !== baseBitmap && result !== cropped) result.recycle()
+            canvasBmp
+        } else {
+            result
+        }
+
+        val watermarkedResult = cropImageView.watermarkText?.takeIf { it.isNotBlank() }?.let {
+            ImageToolbox.applyWatermark(finalResult, it)
+        } ?: finalResult
         showSaving()
         lifecycleScope.launch {
             val bytes = withContext(Dispatchers.Default) {
-                encode(finalResult, sourceMimeType ?: "image/jpeg")
+                encode(watermarkedResult, sourceMimeType ?: "image/jpeg")
             }
             val behavior = PreferenceManager.getDefaultSharedPreferences(this@ImageEditorActivity)
                 .editSaveBehavior

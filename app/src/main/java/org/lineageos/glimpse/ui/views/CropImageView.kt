@@ -139,6 +139,13 @@ class CropImageView @JvmOverloads constructor(
         invalidate()
     }
 
+    fun getCropRect(): RectF {
+        computeCropRect()
+        return RectF(cropRect)
+    }
+
+    fun getDisplayBitmap(): Bitmap? = bitmap
+
     /**
      * Applies a new preset aspect ratio live.
      * If [oldRatio] shares the same aspect ratio (< 0.005 difference), current pan and zoom

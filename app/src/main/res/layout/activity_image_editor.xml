@@ -39,6 +39,16 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/appBarLayout" />
 
+    <!-- Annotation / Markup Layer -->
+    <org.lineageos.glimpse.ui.views.AnnotationOverlayView
+        android:id="@+id/annotationOverlayView"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        app:layout_constraintBottom_toTopOf="@id/editorBottomDeck"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/appBarLayout" />
+
     <!-- Saving Overlay -->
     <FrameLayout
         android:id="@+id/savingOverlay"
@@ -191,7 +201,7 @@
                     app:singleSelection="true" />
             </HorizontalScrollView>
 
-            <!-- Strip: 标注 (Markup) - Placeholder for Commits 3-5 -->
+            <!-- Strip: 标注 (Markup) -->
             <LinearLayout
                 android:id="@+id/stripMarkup"
                 android:layout_width="match_parent"
@@ -204,22 +214,53 @@
                     android:layout_height="wrap_content"
                     android:scrollbars="none">
 
-                    <com.google.android.material.chip.ChipGroup
-                        android:id="@+id/markupToolChipGroup"
+                    <LinearLayout
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        app:singleLine="true"
-                        app:singleSelection="true" />
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <com.google.android.material.chip.ChipGroup
+                            android:id="@+id/markupToolChipGroup"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            app:selectionRequired="false"
+                            app:singleLine="true"
+                            app:singleSelection="true" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/markupUndoButton"
+                            style="?attr/materialButtonOutlinedStyle"
+                            android:layout_width="wrap_content"
+                            android:layout_height="32dp"
+                            android:layout_marginStart="8dp"
+                            android:paddingHorizontal="10dp"
+                            android:paddingVertical="0dp"
+                            android:text="@string/editor_markup_undo"
+                            android:textColor="@android:color/white"
+                            android:textSize="11sp"
+                            app:icon="@drawable/ic_restore_from_trash"
+                            app:iconTint="@android:color/white"
+                            app:strokeColor="?attr/colorOutlineVariant" />
+                    </LinearLayout>
                 </HorizontalScrollView>
 
-                <LinearLayout
-                    android:id="@+id/markupOptionsRow"
+                <!-- Contextual options for active markup tool -->
+                <HorizontalScrollView
+                    android:id="@+id/markupOptionsScroll"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal"
-                    android:visibility="gone" />
+                    android:scrollbars="none"
+                    android:visibility="gone">
+
+                    <LinearLayout
+                        android:id="@+id/markupOptionsContent"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal" />
+                </HorizontalScrollView>
             </LinearLayout>
 
             <!-- Strip: 工具 (Tools) -->
