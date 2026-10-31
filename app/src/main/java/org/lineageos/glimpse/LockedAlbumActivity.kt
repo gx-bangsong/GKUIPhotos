@@ -5,6 +5,8 @@
 
 package org.lineageos.glimpse
 
+import android.app.Activity
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
@@ -56,19 +58,60 @@ class LockedAlbumActivity : AppCompatActivity(R.layout.activity_locked_album) {
 
     private var vaultItems = listOf<VaultItem>()
     private val selectedItems = mutableSetOf<String>()
-    private var isLaunchingPicker = false
+    private var isLaunchingSystemFlow = false
+    private var pendingConsentStaged: List<Pair<VaultItem, Uri>>? = null
 
     private val deleteRequestLauncher =
-        registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) {
-            loadVault()
+        registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
+            isLaunchingSystemFlow = false
+            val staged = pendingConsentStaged
+            pendingConsentStaged = null
+
+            if (result.resultCode == Activity.RESULT_OK) {
+                val count = staged?.size ?: 0
+                if (count > 0) {
+                    Toast.makeText(
+                        this,
+                        getString(R.string.privacy_locked_import_success, count),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+                loadVault()
+            } else {
+                // User denied or dismissed consent dialog: ROLLBACK
+                staged?.let { items ->
+                    lifecycleScope.launch(Dispatchers.IO) {
+                        LockedVaultRepository.deleteItems(this@LockedAlbumActivity, items.map { it.first })
+                        withContext(Dispatchers.Main) {
+                            loadVault()
+                        }
+                    }
+                }
+                Toast.makeText(
+                    this,
+                    R.string.privacy_locked_move_canceled,
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
         }
 
-    private val pickMediaLauncher = registerForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris: List<Uri> ->
-        isLaunchingPicker = false
-        if (uris.isNotEmpty()) {
-            importUris(uris)
+    private val pickMediaLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            isLaunchingSystemFlow = false
+            if (result.resultCode == Activity.RESULT_OK && result.data != null) {
+                val data = result.data!!
+                val uris = mutableListOf<Uri>()
+                data.clipData?.let { clipData ->
+                    for (i in 0 until clipData.itemCount) {
+                        clipData.getItemAt(i).uri?.let { uris.add(it) }
+                    }
+                } ?: data.data?.let { uris.add(it) }
+
+                if (uris.isNotEmpty()) {
+                    importUris(uris)
+                }
+            }
         }
-    }
 
     private val adapter by lazy { VaultAdapter() }
 
@@ -113,7 +156,7 @@ class LockedAlbumActivity : AppCompatActivity(R.layout.activity_locked_album) {
 
     override fun onStop() {
         super.onStop()
-        if (!isLaunchingPicker) {
+        if (!isLaunchingSystemFlow) {
             PrivacyLockManager.lockSession()
         }
     }
@@ -124,44 +167,105 @@ class LockedAlbumActivity : AppCompatActivity(R.layout.activity_locked_album) {
     }
 
     private fun launchPickMedia() {
-        isLaunchingPicker = true
-        pickMediaLauncher.launch("image/*")
+        isLaunchingSystemFlow = true
+        val intent = Intent(this, PickerActivity::class.java).apply {
+            action = Intent.ACTION_GET_CONTENT
+            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+            type = "*/*"
+        }
+        pickMediaLauncher.launch(intent)
     }
 
     private fun importUris(uris: List<Uri>) {
         lifecycleScope.launch {
-            var successCount = 0
-            val pendingConsentUris = mutableListOf<Uri>()
-            withContext(Dispatchers.IO) {
-                uris.forEach { uri ->
-                    if (LockedVaultRepository.importToVault(this@LockedAlbumActivity, uri) != null) {
-                        successCount++
-                        val deleted = runCatching {
-                            contentResolver.delete(uri, null, null) > 0
-                        }.getOrDefault(false)
-                        if (!deleted) {
-                            pendingConsentUris.add(uri)
-                        }
+            val resolvedUris = withContext(Dispatchers.IO) {
+                uris.mapNotNull { uri ->
+                    LockedVaultRepository.resolveToMediaStoreUri(this@LockedAlbumActivity, uri)?.let {
+                        uri to it
                     }
                 }
             }
-            if (pendingConsentUris.isNotEmpty()) {
-                runCatching {
-                    deleteRequestLauncher.launch(
-                        contentResolver.createDeleteRequest(*pendingConsentUris.toTypedArray())
-                    )
-                }.onFailure {
-                    loadVault()
-                }
-            } else {
-                loadVault()
-            }
-            if (successCount > 0) {
+
+            if (resolvedUris.isEmpty()) {
                 Toast.makeText(
                     this@LockedAlbumActivity,
-                    getString(R.string.privacy_locked_import_success, successCount),
+                    R.string.privacy_locked_move_failed,
                     Toast.LENGTH_SHORT
                 ).show()
+                return@launch
+            }
+
+            val staged = withContext(Dispatchers.IO) {
+                resolvedUris.mapNotNull { (originalUri, mediaStoreUri) ->
+                    LockedVaultRepository.importToVault(this@LockedAlbumActivity, originalUri)?.let { vaultItem ->
+                        vaultItem to mediaStoreUri
+                    }
+                }
+            }
+
+            if (staged.isEmpty()) {
+                Toast.makeText(
+                    this@LockedAlbumActivity,
+                    R.string.privacy_locked_move_failed,
+                    Toast.LENGTH_SHORT
+                ).show()
+                return@launch
+            }
+
+            val mediaStoreUris = staged.map { it.second }
+            val canDirectDelete = withContext(Dispatchers.IO) {
+                LockedVaultRepository.canDirectDelete(this@LockedAlbumActivity, mediaStoreUris)
+            }
+
+            if (canDirectDelete) {
+                val deletedCount = withContext(Dispatchers.IO) {
+                    var count = 0
+                    staged.forEach { (item, mediaStoreUri) ->
+                        val deleted = runCatching {
+                            contentResolver.delete(mediaStoreUri, null, null) > 0
+                        }.getOrDefault(false)
+                        if (deleted) {
+                            count++
+                        } else {
+                            LockedVaultRepository.deleteItem(this@LockedAlbumActivity, item)
+                        }
+                    }
+                    count
+                }
+                if (deletedCount > 0) {
+                    Toast.makeText(
+                        this@LockedAlbumActivity,
+                        getString(R.string.privacy_locked_import_success, deletedCount),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                } else {
+                    Toast.makeText(
+                        this@LockedAlbumActivity,
+                        R.string.privacy_locked_move_failed,
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+                loadVault()
+            } else {
+                runCatching {
+                    val request = contentResolver.createDeleteRequest(*mediaStoreUris.toTypedArray())
+                    pendingConsentStaged = staged
+                    isLaunchingSystemFlow = true
+                    deleteRequestLauncher.launch(request)
+                }.onFailure {
+                    withContext(Dispatchers.IO) {
+                        LockedVaultRepository.deleteItems(
+                            this@LockedAlbumActivity,
+                            staged.map { it.first }
+                        )
+                    }
+                    Toast.makeText(
+                        this@LockedAlbumActivity,
+                        R.string.privacy_locked_move_failed,
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    loadVault()
+                }
             }
         }
     }
@@ -195,9 +299,7 @@ class LockedAlbumActivity : AppCompatActivity(R.layout.activity_locked_album) {
 
         lifecycleScope.launch {
             withContext(Dispatchers.IO) {
-                toDelete.forEach { item ->
-                    LockedVaultRepository.deleteItem(this@LockedAlbumActivity, item)
-                }
+                LockedVaultRepository.deleteItems(this@LockedAlbumActivity, toDelete)
             }
             clearSelection()
             loadVault()

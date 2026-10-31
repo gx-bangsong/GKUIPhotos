@@ -318,6 +318,8 @@
     <string name="privacy_locked_unlock_public">Unlock to public</string>
     <string name="privacy_locked_delete">Delete permanently</string>
     <string name="privacy_locked_import_success">Moved %d items to locked album</string>
+    <string name="privacy_locked_move_canceled">Move canceled; original media kept</string>
+    <string name="privacy_locked_move_failed">Failed to move media to locked album</string>
     <string name="privacy_locked_unlocked_success">Restored %d items to Pictures/Glimpse</string>
     <string name="privacy_locked_unlocked_toast">Restored to Pictures/Glimpse</string>
     <string name="privacy_locked_deleted_success">Permanently deleted %d items</string>

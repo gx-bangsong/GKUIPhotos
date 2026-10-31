@@ -215,41 +215,78 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
                     R.id.lockMedia -> {
                         PrivacyPinDialog(requireContext()) {
                             viewLifecycleOwner.lifecycleScope.launch {
-                                var count = 0
-                                val needsConsentUris = mutableListOf<Uri>()
-                                withContext(Dispatchers.IO) {
-                                    selection.forEach { media ->
-                                        if (LockedVaultRepository.importToVault(requireContext(), media.uri) != null) {
-                                            count++
-                                            val deleted = runCatching {
-                                                requireContext().contentResolver.delete(media.uri, null, null) > 0
-                                            }.getOrDefault(false)
-                                            if (!deleted) {
-                                                needsConsentUris.add(media.uri)
-                                            }
+                                val context = requireContext()
+                                val staged = withContext(Dispatchers.IO) {
+                                    selection.mapNotNull { media ->
+                                        LockedVaultRepository.importToVault(context, media.uri)?.let {
+                                            it to media.uri
                                         }
                                     }
                                 }
-                                if (needsConsentUris.isNotEmpty()) {
-                                    lastProcessedSelection = selection
-                                    runCatching {
-                                        lockDeleteForeverContract.launch(
-                                            requireContext().contentResolver.createDeleteRequest(
-                                                *needsConsentUris.toTypedArray()
-                                            )
-                                        )
-                                    }.onFailure {
-                                        selectionTracker?.clearSelection()
-                                    }
-                                } else {
-                                    selectionTracker?.clearSelection()
-                                }
-                                if (count > 0) {
+
+                                if (staged.isEmpty()) {
                                     Toast.makeText(
-                                        requireContext(),
-                                        getString(R.string.privacy_locked_import_success, count),
+                                        context,
+                                        R.string.privacy_locked_move_failed,
                                         Toast.LENGTH_SHORT
                                     ).show()
+                                    selectionTracker?.clearSelection()
+                                    return@launch
+                                }
+
+                                val canDirectDelete = withContext(Dispatchers.IO) {
+                                    LockedVaultRepository.canDirectDelete(context, staged.map { it.second })
+                                }
+
+                                if (canDirectDelete) {
+                                    val deletedCount = withContext(Dispatchers.IO) {
+                                        var count = 0
+                                        staged.forEach { (item, uri) ->
+                                            val deleted = runCatching {
+                                                context.contentResolver.delete(uri, null, null) > 0
+                                            }.getOrDefault(false)
+                                            if (deleted) {
+                                                count++
+                                            } else {
+                                                LockedVaultRepository.deleteItem(context, item)
+                                            }
+                                        }
+                                        count
+                                    }
+
+                                    if (deletedCount > 0) {
+                                        Toast.makeText(
+                                            context,
+                                            getString(R.string.privacy_locked_import_success, deletedCount),
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    } else {
+                                        Toast.makeText(
+                                            context,
+                                            R.string.privacy_locked_move_failed,
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                    selectionTracker?.clearSelection()
+                                } else {
+                                    val uris = staged.map { it.second }.toTypedArray()
+                                    runCatching {
+                                        val intentSenderRequest =
+                                            context.contentResolver.createDeleteRequest(*uris)
+                                        pendingLockMoveStaged = staged
+                                        lastProcessedSelection = selection
+                                        lockDeleteForeverContract.launch(intentSenderRequest)
+                                    }.onFailure {
+                                        withContext(Dispatchers.IO) {
+                                            LockedVaultRepository.deleteItems(context, staged.map { it.first })
+                                        }
+                                        Toast.makeText(
+                                            context,
+                                            R.string.privacy_locked_move_failed,
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                        selectionTracker?.clearSelection()
+                                    }
                                 }
                             }
                         }.show(forcePrompt = true)
@@ -296,9 +333,36 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
             selectionTracker?.clearSelection()
         }
 
+    private var pendingLockMoveStaged: List<Pair<LockedVaultRepository.VaultItem, Uri>>? = null
+
     private val lockDeleteForeverContract =
-        registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) {
+        registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
+            val staged = pendingLockMoveStaged
+            pendingLockMoveStaged = null
             lastProcessedSelection = null
+
+            if (result.resultCode == Activity.RESULT_OK) {
+                val count = staged?.size ?: 0
+                if (count > 0) {
+                    Toast.makeText(
+                        requireContext(),
+                        getString(R.string.privacy_locked_import_success, count),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            } else {
+                // User denied or dismissed consent dialog: ROLLBACK
+                staged?.let { items ->
+                    viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+                        LockedVaultRepository.deleteItems(requireContext(), items.map { it.first })
+                    }
+                }
+                Toast.makeText(
+                    requireContext(),
+                    R.string.privacy_locked_move_canceled,
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
             selectionTracker?.clearSelection()
         }
 

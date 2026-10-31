@@ -255,6 +255,8 @@
     <string name="privacy_locked_unlock_public">移出私密</string>
     <string name="privacy_locked_delete">永久刪除</string>
     <string name="privacy_locked_import_success">已將 %d 項移入私密相簿</string>
+    <string name="privacy_locked_move_canceled">已取消移入私密相簿，原圖已保留</string>
+    <string name="privacy_locked_move_failed">移入私密相簿失敗</string>
     <string name="privacy_locked_unlocked_success">已將 %d 項移出至公開相簿</string>
     <string name="privacy_locked_unlocked_toast">已移出到公開相簿</string>
     <string name="privacy_locked_deleted_success">已永久刪除 %d 項</string>
