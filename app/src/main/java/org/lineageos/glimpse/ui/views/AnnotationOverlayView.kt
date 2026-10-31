@@ -6,12 +6,15 @@
 package org.lineageos.glimpse.ui.views
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapShader
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.DashPathEffect
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
+import android.graphics.Shader
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
@@ -178,6 +181,16 @@ sealed interface AnnotationItem {
             canvas.drawText(text, bounds.centerX(), baseline, paint)
         }
     }
+
+    data class Mosaic(
+        val path: Path,
+        val brushSize: Float,
+        val cellSize: Int,
+    ) : AnnotationItem {
+        override fun draw(canvas: Canvas) {
+            // Drawn via mosaic shader in AnnotationOverlayView
+        }
+    }
 }
 
 class AnnotationOverlayView @JvmOverloads constructor(
@@ -203,9 +216,13 @@ class AnnotationOverlayView @JvmOverloads constructor(
     var activeColor: Int = Color.RED
     var activeStrokeWidth: Float = 8f
     var hasTextBackgroundPill: Boolean = true
+    var activeMosaicCellSize: Int = 16
+    var activeMosaicBrushSize: Float = 32f
 
     var onAnnotationChanged: (() -> Unit)? = null
     var onTextEditRequested: ((AnnotationItem.Text) -> Unit)? = null
+    var cropRectProvider: (() -> RectF)? = null
+    var displayBitmapProvider: (() -> Bitmap?)? = null
 
     val annotations = mutableListOf<AnnotationItem>()
 
@@ -213,6 +230,14 @@ class AnnotationOverlayView @JvmOverloads constructor(
     private var currentDoodlePath: Path? = null
     private var lastDoodleX = 0f
     private var lastDoodleY = 0f
+
+    // Current mosaic stroke in progress
+    private var currentMosaicPath: Path? = null
+    private var lastMosaicX = 0f
+    private var lastMosaicY = 0f
+
+    // Mosaic shader cache
+    private val mosaicShaderCache = mutableMapOf<Int, BitmapShader>()
 
     // Active uncommitted shape with handles
     var activeShape: AnnotationItem.Shape? = null
@@ -260,7 +285,27 @@ class AnnotationOverlayView @JvmOverloads constructor(
         pathEffect = DashPathEffect(floatArrayOf(10f, 10f), 0f)
     }
 
-    var cropRectProvider: (() -> RectF)? = null
+    fun invalidateMosaicCache() {
+        mosaicShaderCache.clear()
+        invalidate()
+    }
+
+    private fun getOrCreateMosaicShader(cellSize: Int): BitmapShader? {
+        val cached = mosaicShaderCache[cellSize]
+        if (cached != null) return cached
+
+        val bmp = displayBitmapProvider?.invoke() ?: return null
+        val cs = cellSize.coerceAtLeast(2)
+        val sW = max(1, bmp.width / cs)
+        val sH = max(1, bmp.height / cs)
+        val sBmp = Bitmap.createScaledBitmap(bmp, sW, sH, false)
+        val mBmp = Bitmap.createScaledBitmap(sBmp, bmp.width, bmp.height, false)
+        if (sBmp !== mBmp && sBmp !== bmp) sBmp.recycle()
+
+        val shader = BitmapShader(mBmp, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
+        mosaicShaderCache[cellSize] = shader
+        return shader
+    }
 
     fun commitActiveShape() {
         val s = activeShape ?: return
@@ -344,7 +389,22 @@ class AnnotationOverlayView @JvmOverloads constructor(
 
         // 1. Draw committed annotations
         for (item in annotations) {
-            item.draw(canvas)
+            if (item is AnnotationItem.Mosaic) {
+                val shader = getOrCreateMosaicShader(item.cellSize)
+                if (shader != null) {
+                    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                        this.shader = shader
+                        style = Paint.Style.STROKE
+                        strokeCap = Paint.Cap.ROUND
+                        strokeJoin = Paint.Join.ROUND
+                        strokeWidth = item.brushSize
+                        isFilterBitmap = false
+                    }
+                    canvas.drawPath(item.path, paint)
+                }
+            } else {
+                item.draw(canvas)
+            }
         }
 
         // 2. Draw active doodle in progress
@@ -359,14 +419,30 @@ class AnnotationOverlayView @JvmOverloads constructor(
             canvas.drawPath(path, paint)
         }
 
-        // 3. Draw active shape and handles
+        // 3. Draw active mosaic in progress
+        currentMosaicPath?.let { path ->
+            val shader = getOrCreateMosaicShader(activeMosaicCellSize)
+            if (shader != null) {
+                val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    this.shader = shader
+                    style = Paint.Style.STROKE
+                    strokeCap = Paint.Cap.ROUND
+                    strokeJoin = Paint.Join.ROUND
+                    strokeWidth = activeMosaicBrushSize
+                    isFilterBitmap = false
+                }
+                canvas.drawPath(path, paint)
+            }
+        }
+
+        // 4. Draw active shape and handles
         activeShape?.let { shape ->
             shape.draw(canvas)
             drawHandle(canvas, shape.startX, shape.startY)
             drawHandle(canvas, shape.endX, shape.endY)
         }
 
-        // 4. Draw active text with bounding outline and resize handle
+        // 5. Draw active text with bounding outline and resize handle
         activeText?.let { t ->
             t.draw(canvas)
             val textBounds = RectF()
@@ -573,6 +649,43 @@ class AnnotationOverlayView @JvmOverloads constructor(
                 return true
             }
 
+            MarkupTool.MOSAIC -> {
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> {
+                        val path = Path().apply { moveTo(x, y) }
+                        currentMosaicPath = path
+                        lastMosaicX = x
+                        lastMosaicY = y
+                        invalidate()
+                        return true
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        currentMosaicPath?.let { path ->
+                            val dx = kotlin.math.abs(x - lastMosaicX)
+                            val dy = kotlin.math.abs(y - lastMosaicY)
+                            if (dx >= 2 || dy >= 2) {
+                                path.quadTo(lastMosaicX, lastMosaicY, (x + lastMosaicX) / 2f, (y + lastMosaicY) / 2f)
+                                lastMosaicX = x
+                                lastMosaicY = y
+                                invalidate()
+                            }
+                        }
+                        return true
+                    }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        currentMosaicPath?.let { path ->
+                            path.lineTo(x, y)
+                            annotations.add(AnnotationItem.Mosaic(path, activeMosaicBrushSize, activeMosaicCellSize))
+                            currentMosaicPath = null
+                            onAnnotationChanged?.invoke()
+                            invalidate()
+                        }
+                        return true
+                    }
+                    else -> return false
+                }
+            }
+
             else -> return false
         }
     }
@@ -580,7 +693,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
     /**
      * Rasterize all annotations onto a target canvas mapped relative to the visible crop rectangle.
      */
-    fun rasterize(canvas: Canvas, cropRect: RectF) {
+    fun rasterize(canvas: Canvas, cropRect: RectF, exportBitmap: Bitmap? = null) {
         commitActiveShape()
         commitActiveText()
         if (annotations.isEmpty()) return
@@ -592,8 +705,39 @@ class AnnotationOverlayView @JvmOverloads constructor(
         canvas.scale(scaleX, scaleY)
         canvas.translate(-cropRect.left, -cropRect.top)
 
+        // Precompute export mosaic shaders if exportBitmap is provided
+        val exportShaders = mutableMapOf<Int, BitmapShader>()
+        val mosaicItems = annotations.filterIsInstance<AnnotationItem.Mosaic>()
+        if (exportBitmap != null && mosaicItems.isNotEmpty()) {
+            val cellSizes = mosaicItems.map { it.cellSize }.distinct()
+            for (cs in cellSizes) {
+                val clampedCs = cs.coerceAtLeast(2)
+                val sW = max(1, exportBitmap.width / clampedCs)
+                val sH = max(1, exportBitmap.height / clampedCs)
+                val sBmp = Bitmap.createScaledBitmap(exportBitmap, sW, sH, false)
+                val mBmp = Bitmap.createScaledBitmap(sBmp, exportBitmap.width, exportBitmap.height, false)
+                if (sBmp !== mBmp && sBmp !== exportBitmap) sBmp.recycle()
+                exportShaders[cs] = BitmapShader(mBmp, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
+            }
+        }
+
         for (item in annotations) {
-            item.draw(canvas)
+            if (item is AnnotationItem.Mosaic) {
+                val shader = exportShaders[item.cellSize] ?: getOrCreateMosaicShader(item.cellSize)
+                if (shader != null) {
+                    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                        this.shader = shader
+                        style = Paint.Style.STROKE
+                        strokeCap = Paint.Cap.ROUND
+                        strokeJoin = Paint.Join.ROUND
+                        strokeWidth = item.brushSize
+                        isFilterBitmap = false
+                    }
+                    canvas.drawPath(item.path, paint)
+                }
+            } else {
+                item.draw(canvas)
+            }
         }
 
         canvas.restore()

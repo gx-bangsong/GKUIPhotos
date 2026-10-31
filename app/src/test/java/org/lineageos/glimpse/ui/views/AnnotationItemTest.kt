@@ -94,4 +94,18 @@ class AnnotationItemTest {
         textItem.scale = 2.0f
         assertEquals(64f, textItem.effectiveTextSize, 0.01f)
     }
+
+    @Test
+    fun testMosaicAnnotation() {
+        val path = Path()
+        val mosaic = AnnotationItem.Mosaic(
+            path = path,
+            brushSize = 32f,
+            cellSize = 16,
+        )
+
+        assertEquals(32f, mosaic.brushSize, 0.01f)
+        assertEquals(16, mosaic.cellSize)
+        assertEquals(path, mosaic.path)
+    }
 }

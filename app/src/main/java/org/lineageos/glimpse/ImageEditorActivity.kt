@@ -237,6 +237,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         updateWatermarkButtonState()
 
         annotationOverlayView.cropRectProvider = { cropImageView.getCropRect() }
+        annotationOverlayView.displayBitmapProvider = { cropImageView.getDisplayBitmap() }
         annotationOverlayView.onAnnotationChanged = {
             markupUndoButton.isEnabled = annotationOverlayView.hasAnnotations()
         }
@@ -491,7 +492,57 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                 }
             }
             MarkupTool.MOSAIC -> {
-                // Prepared for Commit 5
+                // 1. Cell sizes: 8px (low), 16px (medium), 24px (high)
+                val cellSizes = listOf(
+                    8 to R.string.editor_mosaic_low,
+                    16 to R.string.editor_mosaic_medium,
+                    24 to R.string.editor_mosaic_high,
+                )
+                val cellGroup = ChipGroup(this).apply {
+                    isSingleSelection = true
+                    isSingleLine = true
+                    isSelectionRequired = true
+                }
+                cellSizes.forEachIndexed { index, (cs, labelRes) ->
+                    val chip = Chip(this).apply {
+                        text = getString(labelRes)
+                        isCheckable = true
+                        id = index
+                        isChecked = cs == annotationOverlayView.activeMosaicCellSize
+                    }
+                    chip.setOnClickListener {
+                        annotationOverlayView.activeMosaicCellSize = cs
+                    }
+                    cellGroup.addView(chip)
+                }
+                markupOptionsContent.addView(cellGroup)
+
+                // 2. Brush sizes: 16dp, 32dp, 48dp
+                val density = resources.displayMetrics.density
+                val brushSizes = listOf(
+                    16f * density to R.string.editor_size_fine,
+                    32f * density to R.string.editor_size_medium,
+                    48f * density to R.string.editor_size_bold,
+                )
+                val brushGroup = ChipGroup(this).apply {
+                    isSingleSelection = true
+                    isSingleLine = true
+                    isSelectionRequired = true
+                    setPadding(12, 0, 12, 0)
+                }
+                brushSizes.forEachIndexed { index, (bs, labelRes) ->
+                    val chip = Chip(this).apply {
+                        text = getString(labelRes)
+                        isCheckable = true
+                        id = index
+                        isChecked = kotlin.math.abs(bs - annotationOverlayView.activeMosaicBrushSize) < 2f
+                    }
+                    chip.setOnClickListener {
+                        annotationOverlayView.activeMosaicBrushSize = bs
+                    }
+                    brushGroup.addView(chip)
+                }
+                markupOptionsContent.addView(brushGroup)
             }
             MarkupTool.NONE -> {
                 markupOptionsScroll.isVisible = false
@@ -686,6 +737,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                 adjusted
             }
             cropImageView.setBitmap(displayed)
+            annotationOverlayView.invalidateMosaicCache()
         }
     }
 
@@ -706,7 +758,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             val canvasBmp = Bitmap.createBitmap(result.width, result.height, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(canvasBmp)
             canvas.drawBitmap(result, 0f, 0f, null)
-            annotationOverlayView.rasterize(canvas, cropImageView.getCropRect())
+            annotationOverlayView.rasterize(canvas, cropImageView.getCropRect(), result)
             if (result !== baseBitmap && result !== cropped) result.recycle()
             canvasBmp
         } else {
