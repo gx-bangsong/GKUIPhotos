@@ -407,18 +407,16 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
             nameText.setText(preset.nameRes)
             pxText.text = "${preset.targetWidthPx}×${preset.targetHeightPx}"
 
-            val primaryColor = MaterialColors.getColor(card, com.google.android.material.R.attr.colorPrimary)
-            val outlineColor = MaterialColors.getColor(card, com.google.android.material.R.attr.colorOutlineVariant)
-            val primaryContainer = MaterialColors.getColor(card, com.google.android.material.R.attr.colorPrimaryContainer)
-            val surfaceColor = MaterialColors.getColor(card, com.google.android.material.R.attr.colorSurface)
-            val onPrimaryContainer = MaterialColors.getColor(card, com.google.android.material.R.attr.colorOnPrimaryContainer)
-            val onSurfaceColor = MaterialColors.getColor(card, com.google.android.material.R.attr.colorOnSurface)
-            val onSurfaceVariant = MaterialColors.getColor(card, com.google.android.material.R.attr.colorOnSurfaceVariant)
+            val primaryColor = MaterialColors.getColor(card, R.attr.colorPrimary)
+            val outlineColor = MaterialColors.getColor(card, R.attr.colorOutlineVariant)
+            val surfaceColor = MaterialColors.getColor(card, R.attr.colorSurface)
+            val onSurfaceColor = MaterialColors.getColor(card, R.attr.colorOnSurface)
+            val onSurfaceVariant = MaterialColors.getColor(card, R.attr.colorOnSurfaceVariant)
 
             card.strokeColor = if (isSelected) primaryColor else outlineColor
-            card.setCardBackgroundColor(if (isSelected) primaryContainer else surfaceColor)
-            nameText.setTextColor(if (isSelected) onPrimaryContainer else onSurfaceColor)
-            pxText.setTextColor(if (isSelected) onPrimaryContainer else onSurfaceVariant)
+            card.setCardBackgroundColor(if (isSelected) primaryColor else surfaceColor)
+            nameText.setTextColor(if (isSelected) android.graphics.Color.WHITE else onSurfaceColor)
+            pxText.setTextColor(if (isSelected) android.graphics.Color.argb(210, 255, 255, 255) else onSurfaceVariant)
 
             itemView.setOnClickListener { onPresetSelected(preset) }
         }
