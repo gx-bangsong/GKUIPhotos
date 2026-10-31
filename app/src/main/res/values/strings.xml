@@ -224,7 +224,8 @@
     <string name="image_toolbox_id_photo_desc">Create standard passport, visa, and exam ID photos</string>
     <string name="cancel">Cancel</string>
     <string name="id_photo_all_specs">All specs</string>
-    <string name="id_photo_tab_spec">Size</string>
+    <string name="id_photo_tab_spec">Specs</string>
+    <string name="id_photo_tab_background">Background</string>
     <string name="id_photo_discard_title">Discard changes?</string>
     <string name="id_photo_discard_message">Your ID photo has not been saved. Exit anyway?</string>
     <string name="id_photo_discard_confirm">Discard</string>

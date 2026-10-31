@@ -135,8 +135,8 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             refreshBaseBitmap()
         }
         faceGuideButton.setOnClickListener {
-            cropImageView.showFaceGuide = !cropImageView.showFaceGuide
-            cropImageView.invalidate()
+            val uri = sourceUri ?: return@setOnClickListener
+            startActivity(IdPhotoActivity.createIntent(this, uri, sourceMimeType))
         }
         watermarkButton.setOnClickListener {
             showPrivacyWatermarkDialog()

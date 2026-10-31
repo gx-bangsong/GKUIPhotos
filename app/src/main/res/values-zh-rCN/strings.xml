@@ -151,7 +151,8 @@
     <string name="image_toolbox_id_photo_desc">一键制作标准寸照、官方证件照、出国签证与各类考试照</string>
     <string name="cancel">取消</string>
     <string name="id_photo_all_specs">全部规格</string>
-    <string name="id_photo_tab_spec">尺寸规格</string>
+    <string name="id_photo_tab_spec">规格</string>
+    <string name="id_photo_tab_background">背景</string>
     <string name="id_photo_discard_title">放弃修改？</string>
     <string name="id_photo_discard_message">当前证件照未保存，退出将丢失修改。</string>
     <string name="id_photo_discard_confirm">放弃</string>

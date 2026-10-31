@@ -9,6 +9,7 @@ import android.app.Application
 import android.content.ContentResolver
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Color
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
@@ -23,6 +24,16 @@ import org.lineageos.glimpse.models.idphoto.IdPhotoCatalog
 import org.lineageos.glimpse.models.idphoto.IdPhotoPreset
 import org.lineageos.glimpse.models.idphoto.PresetGroup
 
+enum class IdPhotoBottomTab {
+    SPECS,
+    BACKGROUND,
+}
+
+data class IdPhotoBgColorItem(
+    val colorInt: Int,
+    val isLight: Boolean = false,
+)
+
 /**
  * Shared ViewModel for [org.lineageos.glimpse.IdPhotoActivity].
  * Survives configuration changes and process death via [SavedStateHandle].
@@ -36,12 +47,24 @@ class IdPhotoViewModel(
         private const val KEY_SOURCE_URI = "idphoto_source_uri"
         private const val KEY_PRESET_ID = "idphoto_preset_id"
         private const val KEY_GROUP_NAME = "idphoto_group_name"
+        private const val KEY_RAIL_GROUP_NAME = "idphoto_rail_group_name"
+        private const val KEY_BOTTOM_TAB = "idphoto_bottom_tab"
+        private const val KEY_BG_COLOR = "idphoto_bg_color"
         private const val KEY_PICKER_OPEN = "idphoto_picker_open"
         private const val KEY_SCALE = "idphoto_framing_scale"
         private const val KEY_TX = "idphoto_framing_tx"
         private const val KEY_TY = "idphoto_framing_ty"
         private const val KEY_HAS_TRANSFORM = "idphoto_has_transform"
         private const val KEY_MODIFIED = "idphoto_framing_modified"
+
+        val STANDARD_BG_COLORS = listOf(
+            IdPhotoBgColorItem(Color.WHITE, isLight = true),
+            IdPhotoBgColorItem(0xFF64C5FF.toInt()), // Sky blue
+            IdPhotoBgColorItem(0xFF438EDB.toInt()), // Industry standard blue
+            IdPhotoBgColorItem(0xFFD32F2F.toInt()), // National flag / marriage red
+            IdPhotoBgColorItem(0xFFD2D2D2.toInt(), isLight = true), // Neutral light gray
+            IdPhotoBgColorItem(0xFF004898.toInt()), // Deep judicial blue
+        )
     }
 
     // Source URI: preserved across process death
@@ -61,6 +84,43 @@ class IdPhotoViewModel(
     fun selectPreset(preset: IdPhotoPreset) {
         _selectedPreset.value = preset
         savedStateHandle[KEY_PRESET_ID] = preset.id
+    }
+
+    // Active bottom navigation tab: SPECS vs BACKGROUND
+    private val _activeBottomTab = MutableStateFlow(
+        savedStateHandle.get<String>(KEY_BOTTOM_TAB)?.let {
+            runCatching { IdPhotoBottomTab.valueOf(it) }.getOrNull()
+        } ?: IdPhotoBottomTab.SPECS
+    )
+    val activeBottomTab: StateFlow<IdPhotoBottomTab> = _activeBottomTab.asStateFlow()
+
+    fun selectBottomTab(tab: IdPhotoBottomTab) {
+        _activeBottomTab.value = tab
+        savedStateHandle[KEY_BOTTOM_TAB] = tab.name
+    }
+
+    // Selected background color
+    private val _selectedBgColor = MutableStateFlow(
+        savedStateHandle.get<Int>(KEY_BG_COLOR) ?: Color.WHITE
+    )
+    val selectedBgColor: StateFlow<Int> = _selectedBgColor.asStateFlow()
+
+    fun selectBgColor(colorInt: Int) {
+        _selectedBgColor.value = colorInt
+        savedStateHandle[KEY_BG_COLOR] = colorInt
+    }
+
+    // Active Category Group filter in the horizontal preset rail
+    private val _selectedRailGroup = MutableStateFlow<PresetGroup?>(
+        savedStateHandle.get<String>(KEY_RAIL_GROUP_NAME)?.let { name ->
+            runCatching { PresetGroup.valueOf(name) }.getOrNull()
+        } ?: PresetGroup.COMMON
+    )
+    val selectedRailGroup: StateFlow<PresetGroup?> = _selectedRailGroup.asStateFlow()
+
+    fun selectRailGroup(group: PresetGroup?) {
+        _selectedRailGroup.value = group
+        savedStateHandle[KEY_RAIL_GROUP_NAME] = group?.name
     }
 
     // Full catalog picker overlay visibility state
@@ -127,22 +187,22 @@ class IdPhotoViewModel(
         }
 
     // In-memory preview bitmap downsampled for smooth framing (survives rotation)
-    var previewBitmap: Bitmap? = null
-        private set
+    private val _previewBitmap = MutableStateFlow<Bitmap?>(null)
+    val previewBitmap: StateFlow<Bitmap?> = _previewBitmap.asStateFlow()
 
     private val _isBitmapLoading = MutableStateFlow(false)
     val isBitmapLoading: StateFlow<Boolean> = _isBitmapLoading.asStateFlow()
 
     fun ensurePreviewBitmapLoaded(contentResolver: ContentResolver) {
         val uri = sourceUri ?: return
-        val currentBitmap = previewBitmap
+        val currentBitmap = _previewBitmap.value
         if (currentBitmap != null && !currentBitmap.isRecycled) return
 
         _isBitmapLoading.value = true
         viewModelScope.launch(Dispatchers.IO) {
             val bmp = loadDownsampledBitmap(contentResolver, uri)
             withContext(Dispatchers.Main) {
-                previewBitmap = bmp
+                _previewBitmap.value = bmp
                 _isBitmapLoading.value = false
             }
         }
@@ -168,7 +228,7 @@ class IdPhotoViewModel(
 
     override fun onCleared() {
         super.onCleared()
-        previewBitmap?.recycle()
-        previewBitmap = null
+        _previewBitmap.value?.recycle()
+        _previewBitmap.value = null
     }
 }
