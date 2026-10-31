@@ -162,6 +162,7 @@
     <string name="id_photo_bg_marriage_red">结婚红</string>
     <string name="id_photo_bg_light_gray">官方浅灰</string>
     <string name="id_photo_matting_refusal">检测到背景色彩不均匀，当前仅支持纯色背景证件照换底。已为您保留原背景继续生成。</string>
+    <string name="id_photo_matting_refusal_separability">人物与背景颜色过于接近，无法安全换底。已为您保留原背景继续生成。</string>
     <string name="id_photo_editor_entry_warning">证件照将基于原图制作，当前未保存的编辑不会包含在内。</string>
     <string name="id_photo_editor_entry_continue">继续</string>
     <string name="id_photo_discard_title">放弃修改？</string>

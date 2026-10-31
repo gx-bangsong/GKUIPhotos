@@ -235,6 +235,7 @@
     <string name="id_photo_bg_marriage_red">Marriage Red</string>
     <string name="id_photo_bg_light_gray">Light Gray (NIA)</string>
     <string name="id_photo_matting_refusal">Non-uniform background detected. Background replacement currently only supports solid-color backgrounds. Kept original background.</string>
+    <string name="id_photo_matting_refusal_separability">Subject and background colors are too similar for safe background replacement. Kept original background.</string>
     <string name="id_photo_editor_entry_warning">The ID photo will be created from the original image. Current unsaved edits will not be included.</string>
     <string name="id_photo_editor_entry_continue">Continue</string>
     <string name="id_photo_discard_title">Discard changes?</string>

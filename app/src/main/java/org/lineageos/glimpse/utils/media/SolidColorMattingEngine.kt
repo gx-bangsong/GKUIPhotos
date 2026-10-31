@@ -55,9 +55,22 @@ object SolidColorMattingEngine {
     // Calibration-ready parameters (§4.4.1 - §4.4.3)
     const val DEFAULT_LAMBDA = 0.15f // calibration pending — owner device testing
     const val DEFAULT_T_INNER = 12.0f // calibration pending — owner device testing
+    // Calibration note: To fix color halo, INCREASE T_outer (e.g. 28 -> 32-34) to pull fringe pixels into transition band; do NOT shrink.
     const val DEFAULT_T_OUTER = 28.0f // calibration pending — owner device testing
     const val DEFAULT_CHROMA_STD_DEV_THRESHOLD = 14.0f // calibration pending — owner device testing
     const val DEFAULT_SOBEL_GRADIENT_MEAN_THRESHOLD = 25.0f // calibration pending — owner device testing
+
+    /**
+     * Threshold for central region separability pre-check (§4.4.1 extension).
+     * If the fraction of pixels in the center 50%x50% box with D < T_outer exceeds this value,
+     * the subject color is deemed too close to the background (e.g. white shirt on white background).
+     */
+    const val DEFAULT_SEPARABILITY_THRESHOLD = 0.12f // calibration pending — owner device testing
+
+    /**
+     * Maximum dimension of the downscaled analysis grid for flood-fill connectivity constraint.
+     */
+    const val CONNECTIVITY_ANALYSIS_MAX_DIM = 512
 
     /**
      * Internal debug toggle that overlays the matte mask on the preview
@@ -67,6 +80,9 @@ object SolidColorMattingEngine {
 
     const val REFUSAL_MESSAGE =
         "检测到背景色彩不均匀，当前仅支持纯色背景证件照换底。已为您保留原背景继续生成。"
+
+    const val REFUSAL_MESSAGE_SEPARABILITY =
+        "人物与背景颜色过于接近，无法安全换底。已为您保留原背景继续生成。"
 
     /**
      * Convert RGB (0..255) to ITU-R BT.601 YCbCr.
@@ -238,7 +254,12 @@ object SolidColorMattingEngine {
     }
 
     /**
-     * Array-based solid-color matting algorithm core.
+     * Array-based solid-color matting algorithm core with spatial protection:
+     * - Border purity detection (§4.4.1)
+     * - Central separability pre-check (refusing white-shirt-on-white / subject-bg color clash)
+     * - Flood-fill connectivity constraint from border seeds (protecting enclosed eye whites/catchlights)
+     * - Dual-threshold smoothstep soft matte (§4.4.3)
+     * - Color spill suppression (§4.4.4)
      */
     fun processPixels(
         pixels: IntArray,
@@ -250,62 +271,193 @@ object SolidColorMattingEngine {
         tOuter: Float = DEFAULT_T_OUTER,
         chromaThreshold: Float = DEFAULT_CHROMA_STD_DEV_THRESHOLD,
         gradientThreshold: Float = DEFAULT_SOBEL_GRADIENT_MEAN_THRESHOLD,
+        separabilityThreshold: Float = DEFAULT_SEPARABILITY_THRESHOLD,
     ): MattingPixelsResult {
         val stats = sampleBorderStatsFromPixels(pixels, w, h)
         if (stats.sigmaChroma > chromaThreshold || stats.gradientMean > gradientThreshold) {
             return MattingPixelsResult.Refused(REFUSAL_MESSAGE)
         }
 
+        val bgY = stats.meanY
+        val bgCb = stats.meanCb
+        val bgCr = stats.meanCr
+
+        // Step 1: Separability pre-check in central region (center 50% x 50% box)
+        val cxStart = w / 4
+        val cxEnd = w - w / 4
+        val cyStart = h / 4
+        val cyEnd = h - h / 4
+        val totalCenterPixels = (cxEnd - cxStart) * (cyEnd - cyStart)
+
+        if (totalCenterPixels > 0) {
+            var closeColorCount = 0
+            for (cy in cyStart until cyEnd) {
+                val rowOffset = cy * w
+                for (cx in cxStart until cxEnd) {
+                    val p = pixels[rowOffset + cx]
+                    val r = (p shr 16) and 0xFF
+                    val g = (p shr 8) and 0xFF
+                    val b = p and 0xFF
+                    val d = computeDistance(r, g, b, bgY, bgCb, bgCr, lambda)
+                    if (d < tOuter) {
+                        closeColorCount++
+                    }
+                }
+            }
+            val closeFraction = closeColorCount.toFloat() / totalCenterPixels.toFloat()
+            if (closeFraction > separabilityThreshold) {
+                return MattingPixelsResult.Refused(REFUSAL_MESSAGE_SEPARABILITY)
+            }
+        }
+
+        // Step 2: Spatial connectivity analysis on downscaled grid (longest side <= 512px)
+        val maxDim = maxOf(w, h)
+        val scale = if (maxDim > CONNECTIVITY_ANALYSIS_MAX_DIM) CONNECTIVITY_ANALYSIS_MAX_DIM.toFloat() / maxDim else 1f
+        val sw = if (scale < 1f) (w * scale).roundToInt().coerceIn(1, w) else w
+        val sh = if (scale < 1f) (h * scale).roundToInt().coerceIn(1, h) else h
+
+        val smallPixels = if (sw == w && sh == h) {
+            pixels
+        } else {
+            val downsampled = IntArray(sw * sh)
+            for (sy in 0 until sh) {
+                val srcY = (sy.toLong() * h / sh).toInt().coerceIn(0, h - 1)
+                val srcRow = srcY * w
+                val dstRow = sy * sw
+                for (sx in 0 until sw) {
+                    val srcX = (sx.toLong() * w / sw).toInt().coerceIn(0, w - 1)
+                    downsampled[dstRow + sx] = pixels[srcRow + srcX]
+                }
+            }
+            downsampled
+        }
+
+        val isConnected = BooleanArray(sw * sh)
+        val queue = IntArray(sw * sh)
+        var head = 0
+        var tail = 0
+
+        val topH = (sh * 0.05f).toInt().coerceIn(1, sh)
+        val sideH = (sh * 0.70f).toInt().coerceIn(1, sh)
+        val sideW = (sw * 0.05f).toInt().coerceIn(1, sw)
+
+        fun checkSeed(sx: Int, sy: Int) {
+            val idx = sy * sw + sx
+            if (!isConnected[idx]) {
+                val p = smallPixels[idx]
+                val r = (p shr 16) and 0xFF
+                val g = (p shr 8) and 0xFF
+                val b = p and 0xFF
+                val d = computeDistance(r, g, b, bgY, bgCb, bgCr, lambda)
+                if (d < tInner) {
+                    isConnected[idx] = true
+                    queue[tail++] = idx
+                }
+            }
+        }
+
+        for (sx in 0 until sw) {
+            checkSeed(sx, 0)
+            checkSeed(sx, sh - 1)
+        }
+        for (sy in 0 until sh) {
+            checkSeed(0, sy)
+            checkSeed(sw - 1, sy)
+        }
+        for (sy in 0 until sideH) {
+            val isTop = sy < topH
+            for (sx in 0 until sw) {
+                if (isTop || sx < sideW || sx >= sw - sideW) {
+                    checkSeed(sx, sy)
+                }
+            }
+        }
+
+        while (head < tail) {
+            val curr = queue[head++]
+            val cx = curr % sw
+            val cy = curr / sw
+
+            fun checkNeighbor(nx: Int, ny: Int) {
+                val nIdx = ny * sw + nx
+                if (!isConnected[nIdx]) {
+                    val p = smallPixels[nIdx]
+                    val r = (p shr 16) and 0xFF
+                    val g = (p shr 8) and 0xFF
+                    val b = p and 0xFF
+                    val d = computeDistance(r, g, b, bgY, bgCb, bgCr, lambda)
+                    if (d < tOuter) {
+                        isConnected[nIdx] = true
+                        queue[tail++] = nIdx
+                    }
+                }
+            }
+
+            if (cx > 0) checkNeighbor(cx - 1, cy)
+            if (cx < sw - 1) checkNeighbor(cx + 1, cy)
+            if (cy > 0) checkNeighbor(cx, cy - 1)
+            if (cy < sh - 1) checkNeighbor(cx, cy + 1)
+        }
+
+        // Step 3: Full-resolution matting with connectivity constraint and feathering
         val outPixels = IntArray(w * h)
 
         val targetR = (targetColorInt shr 16) and 0xFF
         val targetG = (targetColorInt shr 8) and 0xFF
         val targetB = targetColorInt and 0xFF
 
-        val bgY = stats.meanY
-        val bgCb = stats.meanCb
-        val bgCr = stats.meanCr
+        for (y in 0 until h) {
+            val yOffset = y * w
+            val sy = if (sh == h) y else (y.toLong() * sh / h).toInt().coerceIn(0, sh - 1)
+            val sRowOffset = sy * sw
 
-        for (i in 0 until w * h) {
-            val p = pixels[i]
-            val r = (p shr 16) and 0xFF
-            val g = (p shr 8) and 0xFF
-            val b = p and 0xFF
+            for (x in 0 until w) {
+                val i = yOffset + x
+                val p = pixels[i]
+                val r = (p shr 16) and 0xFF
+                val g = (p shr 8) and 0xFF
+                val b = p and 0xFF
 
-            val yVal = 0.299f * r + 0.587f * g + 0.114f * b
-            val cbVal = -0.1687f * r - 0.3313f * g + 0.5f * b + 128.0f
-            val crVal = 0.5f * r - 0.4187f * g - 0.0813f * b + 128.0f
+                val yVal = 0.299f * r + 0.587f * g + 0.114f * b
+                val cbVal = -0.1687f * r - 0.3313f * g + 0.5f * b + 128.0f
+                val crVal = 0.5f * r - 0.4187f * g - 0.0813f * b + 128.0f
 
-            val dy = yVal - bgY
-            val dcb = cbVal - bgCb
-            val dcr = crVal - bgCr
-            val dist = sqrt(dcb * dcb + dcr * dcr + lambda * dy * dy)
+                val dy = yVal - bgY
+                val dcb = cbVal - bgCb
+                val dcr = crVal - bgCr
+                val dist = sqrt(dcb * dcb + dcr * dcr + lambda * dy * dy)
 
-            val alpha = if (dist <= tInner) {
-                0f
-            } else if (dist >= tOuter) {
-                1f
-            } else {
-                val t = (dist - tInner) / (tOuter - tInner)
-                3f * t * t - 2f * t * t * t
-            }
+                val sx = if (sw == w) x else (x.toLong() * sw / w).toInt().coerceIn(0, sw - 1)
+                val isBorderConnected = isConnected[sRowOffset + sx]
 
-            if (DEBUG_OVERLAY_MATTE_MASK) {
-                val maskVal = (alpha * 255f).roundToInt().coerceIn(0, 255)
-                outPixels[i] = (0xFF shl 24) or (maskVal shl 16) or (maskVal shl 8) or maskVal
-            } else {
-                // Color spill suppression: in the transition band (0 < alpha < 1),
-                // desaturate foreground chroma towards luminance Y to eliminate old background halos
-                val destatR = r * alpha + yVal * (1f - alpha)
-                val destatG = g * alpha + yVal * (1f - alpha)
-                val destatB = b * alpha + yVal * (1f - alpha)
+                val alpha = if (!isBorderConnected) {
+                    1f // Enclosed low-D pixels (eye whites, specular highlights) are forced alpha = 1
+                } else if (dist <= tInner) {
+                    0f
+                } else if (dist >= tOuter) {
+                    1f
+                } else {
+                    val t = (dist - tInner) / (tOuter - tInner)
+                    3f * t * t - 2f * t * t * t
+                }
 
-                // Composite foreground over target background color
-                val outR = (destatR * alpha + targetR * (1f - alpha)).roundToInt().coerceIn(0, 255)
-                val outG = (destatG * alpha + targetG * (1f - alpha)).roundToInt().coerceIn(0, 255)
-                val outB = (destatB * alpha + targetB * (1f - alpha)).roundToInt().coerceIn(0, 255)
+                if (DEBUG_OVERLAY_MATTE_MASK) {
+                    val maskVal = (alpha * 255f).roundToInt().coerceIn(0, 255)
+                    outPixels[i] = (0xFF shl 24) or (maskVal shl 16) or (maskVal shl 8) or maskVal
+                } else {
+                    // Color spill suppression: in the transition band (0 < alpha < 1),
+                    // desaturate foreground chroma towards luminance Y to eliminate old background halos
+                    val destatR = r * alpha + yVal * (1f - alpha)
+                    val destatG = g * alpha + yVal * (1f - alpha)
+                    val destatB = b * alpha + yVal * (1f - alpha)
 
-                outPixels[i] = (0xFF shl 24) or (outR shl 16) or (outG shl 8) or outB
+                    // Composite foreground over target background color
+                    val outR = (destatR * alpha + targetR * (1f - alpha)).roundToInt().coerceIn(0, 255)
+                    val outG = (destatG * alpha + targetG * (1f - alpha)).roundToInt().coerceIn(0, 255)
+                    val outB = (destatB * alpha + targetB * (1f - alpha)).roundToInt().coerceIn(0, 255)
+
+                    outPixels[i] = (0xFF shl 24) or (outR shl 16) or (outG shl 8) or outB
+                }
             }
         }
 
@@ -323,6 +475,7 @@ object SolidColorMattingEngine {
         tOuter: Float = DEFAULT_T_OUTER,
         chromaThreshold: Float = DEFAULT_CHROMA_STD_DEV_THRESHOLD,
         gradientThreshold: Float = DEFAULT_SOBEL_GRADIENT_MEAN_THRESHOLD,
+        separabilityThreshold: Float = DEFAULT_SEPARABILITY_THRESHOLD,
     ): MattingResult {
         val w = source.width
         val h = source.height
@@ -331,7 +484,7 @@ object SolidColorMattingEngine {
 
         return when (val res = processPixels(
             pixels, w, h, targetColorInt,
-            lambda, tInner, tOuter, chromaThreshold, gradientThreshold
+            lambda, tInner, tOuter, chromaThreshold, gradientThreshold, separabilityThreshold
         )) {
             is MattingPixelsResult.Success -> {
                 val outputBitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)

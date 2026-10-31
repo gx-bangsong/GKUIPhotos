@@ -332,7 +332,7 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
                         if (reason != null) {
                             MaterialAlertDialogBuilder(this@IdPhotoActivity)
                                 .setTitle(R.string.id_photo_title)
-                                .setMessage(R.string.id_photo_matting_refusal)
+                                .setMessage(reason)
                                 .setPositiveButton(android.R.string.ok, null)
                                 .show()
                             viewModel.clearMattingRefusalEvent()

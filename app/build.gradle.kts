@@ -126,6 +126,8 @@ dependencies {
     implementation(libs.material)
     implementation(libs.okhttp)
     implementation(libs.zoomimage.view.glide)
+
+    testImplementation("junit:junit:4.13.2")
 }
 
 generateBp {

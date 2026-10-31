@@ -61,7 +61,7 @@ class SolidColorMattingEngineTest {
 
         for (y in 0 until h) {
             for (x in 0 until w) {
-                val isSubject = x in 30..70 && y in 30..70
+                val isSubject = x in 20..80 && y in 20..80
                 pixels[y * w + x] = if (isSubject) skinSubject else blueBg
             }
         }
@@ -104,6 +104,7 @@ class SolidColorMattingEngineTest {
         val baseR = 67
         val baseG = 142
         val baseB = 219
+        val skinSubject = packRgb(230, 180, 150)
 
         // Linear vertical gradient of ±12% luminance ramp
         for (y in 0 until h) {
@@ -111,9 +112,10 @@ class SolidColorMattingEngineTest {
             val r = (baseR * factor).roundToInt().coerceIn(0, 255)
             val g = (baseG * factor).roundToInt().coerceIn(0, 255)
             val b = (baseB * factor).roundToInt().coerceIn(0, 255)
-            val color = packRgb(r, g, b)
+            val bgCol = packRgb(r, g, b)
             for (x in 0 until w) {
-                pixels[y * w + x] = color
+                val isSubject = x in 20..80 && y in 20..80
+                pixels[y * w + x] = if (isSubject) skinSubject else bgCol
             }
         }
 
@@ -154,5 +156,93 @@ class SolidColorMattingEngineTest {
         val result = SolidColorMattingEngine.processPixels(pixels, w, h, targetWhite)
         assertTrue("Checkerboard background must return MattingPixelsResult.Refused", result is MattingPixelsResult.Refused)
         assertEquals(SolidColorMattingEngine.REFUSAL_MESSAGE, (result as MattingPixelsResult.Refused).reason)
+    }
+
+    /**
+     * Test 5: Connectivity constraint protects enclosed white patch (eye whites / specular highlights).
+     * On a white background with a colored subject, an enclosed white patch inside the subject
+     * is forced alpha = 1 and survives matting untouched.
+     */
+    @Test
+    fun testEnclosedWhitePatchSurvivesMatting() {
+        val w = 100
+        val h = 100
+        val pixels = IntArray(w * h)
+
+        val whiteBg = packRgb(255, 255, 255)
+        val skinSubject = packRgb(200, 100, 100)
+        val eyeWhitePatch = packRgb(255, 255, 255) // Same color as background!
+
+        for (y in 0 until h) {
+            for (x in 0 until w) {
+                val isSubject = x in 20..80 && y in 20..80
+                val isEnclosedEye = x in 45..55 && y in 45..55
+                pixels[y * w + x] = when {
+                    isEnclosedEye -> eyeWhitePatch
+                    isSubject -> skinSubject
+                    else -> whiteBg
+                }
+            }
+        }
+
+        // Replace white background with target blue
+        val targetBlue = packRgb(0, 72, 152)
+        val result = SolidColorMattingEngine.processPixels(pixels, w, h, targetBlue)
+
+        assertTrue("Expected matting to succeed with connectivity protection", result is MattingPixelsResult.Success)
+        val success = result as MattingPixelsResult.Success
+
+        // Outer background pixel must be replaced by target blue
+        val bgOut = success.pixels[0]
+        assertEquals(0, (bgOut shr 16) and 0xFF)
+        assertEquals(72, (bgOut shr 8) and 0xFF)
+        assertEquals(152, bgOut and 0xFF)
+
+        // Subject pixel outside the eye must remain subject color
+        val fgOut = success.pixels[30 * w + 30]
+        assertEquals(200, (fgOut shr 16) and 0xFF)
+        assertEquals(100, (fgOut shr 8) and 0xFF)
+        assertEquals(100, fgOut and 0xFF)
+
+        // Enclosed eye white patch inside the subject MUST survive untouched (NOT recolored to blue!)
+        val eyeOut = success.pixels[50 * w + 50]
+        assertEquals(255, (eyeOut shr 16) and 0xFF)
+        assertEquals(255, (eyeOut shr 8) and 0xFF)
+        assertEquals(255, eyeOut and 0xFF)
+    }
+
+    /**
+     * Test 6: Separability pre-check refuses white-shirt-on-white / subject-background color clash.
+     * When the central region is white-dominant on a white background (>12% D < T_outer in center box),
+     * matting is refused with REFUSAL_MESSAGE_SEPARABILITY.
+     */
+    @Test
+    fun testWhiteDominantCentralRegionRefused() {
+        val w = 100
+        val h = 100
+        val pixels = IntArray(w * h)
+
+        val whiteBg = packRgb(255, 255, 255)
+        val whiteShirt = packRgb(250, 250, 250) // Very close to white background (D < T_outer)
+        val faceSubject = packRgb(220, 160, 130)
+
+        for (y in 0 until h) {
+            for (x in 0 until w) {
+                val isFace = x in 30..70 && y in 20..40
+                val isWhiteShirt = x in 20..80 && y in 41..85
+                pixels[y * w + x] = when {
+                    isFace -> faceSubject
+                    isWhiteShirt -> whiteShirt
+                    else -> whiteBg
+                }
+            }
+        }
+
+        val targetBlue = packRgb(67, 142, 219)
+        val result = SolidColorMattingEngine.processPixels(pixels, w, h, targetBlue)
+
+        assertTrue("Expected white-shirt-on-white to be refused by separability check", result is MattingPixelsResult.Refused)
+        val refused = result as MattingPixelsResult.Refused
+        assertEquals(SolidColorMattingEngine.REFUSAL_MESSAGE_SEPARABILITY, refused.reason)
     }
 }
