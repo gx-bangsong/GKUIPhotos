@@ -83,15 +83,15 @@ This engineering document delivers a rigorous specification, comprehensive size 
 | 序号 | 预设名称 | 物理尺寸 ($W \times H\text{ mm}$) | 精确宽高比 ($W:H$) | 输出像素 ($W \times H\text{ px}$) | 实际分辨率 (DPI) | 权威规范与官方标准出处 | 常见适用场景 |
 | :---: | :--- | :---: | :---: | :---: | :---: | :--- | :--- |
 | **一** | **常用尺寸 (Common Sizes)** | | | | | | |
-| 1 | 标准一寸 | $25 \times 35$ | $5:7 \approx 0.7143$ | $295 \times 413$ | 300 DPI | 中华人民共和国国家标准 GB/T | 入职体检、履历表、学生证、部分从业资格证 |
-| 2 | 标准二寸 | $35 \times 49$ | $5:7 \approx 0.7143$ | $413 \times 579$ | 300 DPI | 中华人民共和国国家标准 GB/T | 高等教育毕业证书、学位证书、各类职称评定 |
+| 1 | 标准一寸 | $25 \times 35$ | $5:7 \approx 0.7143$ | $295 \times 413$ | 300 DPI | 冲印行业通行惯例 | 入职体检、履历表、学生证、部分从业资格证 |
+| 2 | 标准二寸 | $35 \times 49$ | $5:7 \approx 0.7143$ | $413 \times 579$ | 300 DPI | 冲印行业通行惯例 | 高等教育毕业证书、学位证书、各类职称评定 |
 | 3 | 小一寸 | $22 \times 32$ | $11:16 = 0.6875$ | $260 \times 378$ | 300 DPI | 公安部交通管理行业规范 | 驾驶证副页、部分执业注册表、通用胸牌卡 |
 | 4 | 大一寸 | $33 \times 48$ | $11:16 = 0.6875$ | $390 \times 567$ | 300 DPI | 国家出入境证件照通用标准 | 护照申请、通行证、全国大型统一考试 |
 | 5 | 小二寸 | $35 \times 45$ | $7:9 \approx 0.7778$ | $413 \times 531$ | 300 DPI | 国际民航组织 ICAO 9303 Part 3 | 欧洲申根签证、公派出国材料、公务员报名 |
 | 6 | 大二寸 | $35 \times 53$ | $35:53 \approx 0.6604$ | $413 \times 626$ | 300 DPI | 冲印行业特殊规格标准 | 部分海外特定申请表、专业技能鉴定登记表 |
 | 7 | 三寸 | $55 \times 84$ | $55:84 \approx 0.6548$ | $650 \times 992$ | 300 DPI | 传统冲印放大规格 | 档案正页保留、毕业纪念册登记 |
 | 8 | 五寸 (3R 相纸) | $89 \times 127$ | $89:127 \approx 0.7008$ | $1051 \times 1500$ | 300 DPI | 摄影冲印工业 3R 相纸标准 | 证件照排版冲印母相纸（可排一寸 8 张） |
-| 9 | 六寸 (4R 相纸) | $102 \times 152$ | $51:76 \approx 0.6711$ | $1200 \times 1800$ | 300 DPI | 摄影冲印工业 4R 相纸标准 | 证件照标准冲印相纸（排 8 张一寸或 4 张二寸） |
+| 9 | 六寸 (4R 相纸) | $102 \times 152$ | $51:76 \approx 0.6711$ | **$1200 \times 1800$** | 300 DPI | 摄影冲印工业 4R 相纸标准 (4x6 inch) | 证件照标准冲印相纸（排 8 张一寸或 4 张二寸，需指定 customTarget） |
 | **二** | **官方证照 (Official Documents)** | | | | | | |
 | 10 | 第二代居民身份证 | $26 \times 32$ | $13:16 = 0.8125$ | **$358 \times 441$** | **350 DPI** | 公安部行业标准 GA/T 461-2019【已核实确认】 | 居民身份证受理制证、异地换领核验（纯白底无边框） |
 | 11 | 机动车驾驶证 (纸质) | $22 \times 32$ | $11:16 = 0.6875$ | $260 \times 378$ | 300 DPI | 公安部行业标准 GA 482-2012 | 纸质驾驶证申领与补换发、体检表贴照（白底） |
@@ -101,7 +101,7 @@ This engineering document delivers a rigorous specification, comprehensive size 
 | 15 | 结婚登记证件照 | $53 \times 35$ | $53:35 \approx 1.5143$ | $626 \times 413$ | 300 DPI | 民政部《婚姻登记工作规范》第二十八条 | 婚姻登记处颁发结婚证粘贴红底双方合影 |
 | **三** | **各国及地区签证 (Visas)** | | | | | | |
 | 16 | 欧洲申根签证 (通用) | $35 \times 45$ | $7:9 \approx 0.7778$ | $413 \times 531$ | 300 DPI | 欧盟申根签证标准 / ICAO Doc 9303 Part 3 | 法国、德国、意大利、瑞士等申根成员国（头部占70~80%） |
-| 17 | 美国签证 (DS-160) | $51 \times 51$ | $1:1 = 1.0000$ | $600 \times 600$ | 300 DPI | 美国国务院领事事务局 (US DoS) 标准 | 美国非移民/移民签证、绿卡、DS-160 网上申报（正方形白底） |
+| 17 | 美国签证 (DS-160) | $51 \times 51$ | $1:1 = 1.0000$ | **$600 \times 600$** | 300 DPI | 美国国务院领事事务局 (US DoS) 标准 (2x2 inch) | 美国非移民/移民签证、绿卡、DS-160 网上申报（正方形白底，需指定 customTarget） |
 | 18 | 日本签证 (标准型) | $35 \times 45$ | $7:9 \approx 0.7778$ | $413 \times 531$ | 300 DPI | 日本外务省领事局签证申请规程 | 赴日个人单次/多次旅游签证、商务签证（白底） |
 | 19 | 日本签证 (特定正方型) | $45 \times 45$ | $1:1 = 1.0000$ | $531 \times 531$ | 300 DPI | 日本特定领区及部分特殊滞在申请表 | 冲绳/东北六县多次签证或特殊归化申请（正方形白底） |
 | 20 | 英国签证 (UKVI) | $35 \times 45$ | $7:9 \approx 0.7778$ | $413 \times 531$ | 300 DPI | 英国签证与移民署 (UKVI) 照相标准 | 英国各类访问、学生及工作签证（浅灰或白底，头部29~34mm） |
@@ -113,7 +113,7 @@ This engineering document delivers a rigorous specification, comprehensive size 
 | 26 | 泰国签证 (落地签/电子签) | $40 \times 60$ | $2:3 \approx 0.6667$ | $472 \times 709$ | 300 DPI | 泰王国国家移民局签证准则 | 泰国落地签证申请表贴照、电子落地签上传（白底） |
 | **四** | **考试与职业资格认证 (Exams)** | | | | | | |
 | 27 | 全国大学英语四六级 (CET) | $33 \times 48$ | $11:16 = 0.6875$ | $390 \times 567$ | 300 DPI | 教育部教育考试院 CET 报名照要求 | CET-4、CET-6 全国统一考试网上报名（白底或浅蓝底） |
-| 28 | 中小学教师资格考试 (NTCE) | $35 \times 45$ | $7:9$ (网申 3:4) | $413 \times 531$ | 300 DPI | 教育部教育考试院 NTCE 网报系统规范 | 教师资格笔试、面试报名相片采集（电子版 3:4 比例） |
+| 28 | 中小学教师资格考试 (NTCE 网报) | $36 \times 48$ | $3:4 = 0.7500$ | **$480 \times 640$** | 系统标准 | 教育部教育考试院 NTCE 网报系统规范 | 教师资格笔试、面试网报（系统硬性要求 3:4 比例，需指定 customTarget） |
 | 29 | 全国计算机等级考试 (NCRE) | $33 \times 48$ | $11:16 = 0.6875$ | $390 \times 567$ | 300 DPI | 教育部教育考试院 NCRE 报名规范 | 计算机等级考试各级科目网报（浅蓝或白色底） |
 | 30 | 国家公务员录用考试 (国考) | $35 \times 45$ | $7:9 \approx 0.7778$ | $413 \times 531$ | 300 DPI | 国家公务员局考录专题网络报名规范 | 中央机关及其直属机构公务员考试网上报名（考务工具标准版） |
 | 31 | 注册会计师考试 (CPA) | $15 \times 19$ (约) | 专用 $178:220 \approx 0.809$ | **$178 \times 220$** | 系统标准 | 中国注册会计师协会网报系统标准 | CPA 全国统一考试网上报名与准考证打印（白底，2~20KB） |
@@ -192,7 +192,7 @@ This engineering document delivers a rigorous specification, comprehensive size 
 +--------------------------------------------------------------------------------+
 | 同比例组 6: 3:4 比例组 (Ratio = 0.7500)                                         |
 | -> 全国硕士研究生统一招生网报 (研招网, 480x640 px)                               |
-| -> 中小学教师资格考试 (NTCE 网申标准电子版)                                     |
+| -> 中小学教师资格考试 (NTCE 网报, 480x640 px)                                   |
 +--------------------------------------------------------------------------------+
 ```
 
@@ -336,18 +336,25 @@ data class IdPhotoPreset(
 1. `aspectRatio`、`targetWidthPx`、`targetHeightPx` 均为计算属性（getter）。
 2. 在该模型下，标准一寸（25×35mm, 300DPI $\to 295 \times 413\text{ px}$）与标准二寸（35×49mm, 300DPI $\to 413 \times 579\text{ px}$）合法共存且各司其职，因为它们在最终导出的物理网格完全不同，彻底消除了所谓的“重复定义”。
 3. 电子驾驶证通过配置 `dpi = 600`，自动派生出 $520 \times 756\text{ px}$，并在导出 EXIF 时精准写入 600 DPI 标签。
+4. **强制 `customTargetWidthPx`/`customTargetHeightPx` 准则与清单**：
+   - **核心准则**：英制原生尺寸（如 2×2 inch 美签、4×6 inch 六寸排版照）与系统像素硬性指定预设（如注册会计师 CPA 178×220、考研研招网 480×640、教师资格证 NTCE 网报 480×640）**严禁依赖毫米取整派生公式（`round(mm × dpi / 25.4)`）**。
+   - **工程依据**：毫米数值仅为公制工程近似（例如 2×2 inch 标称为 51×51mm，若用 51mm 派生将错误计算为 602×602；4×6 inch 标称为 102×152mm，若用 102×152mm 派生将错误计算为 1205×1795）。
+   - **强制清单（必须显式配置 customTarget）**：
+     - **六寸 (4R 相纸)**: `customTargetWidthPx = 1200`, `customTargetHeightPx = 1800` (4×6 inch @ 300 DPI)
+     - **美国签证 (DS-160)**: `customTargetWidthPx = 600`, `customTargetHeightPx = 600` (2×2 inch @ 300 DPI)
+     - **中小学教师资格考试 (NTCE 网报)**: `customTargetWidthPx = 480`, `customTargetHeightPx = 640` (网报系统 3:4 规范)
+     - **注册会计师考试 (CPA)**: `customTargetWidthPx = 178`, `customTargetHeightPx = 220` (中注协网报系统硬性标准)
+     - **全国硕士研究生考试 (考研)**: `customTargetWidthPx = 480`, `customTargetHeightPx = 640` (研招网网上确认硬性标准)
 
 ---
 
 ### 4.2 目录交互 UI 设计（Catalog UI）
 
-面对 32 种专业规格，传统的扁平 Chip 列表将极度臃肿。设计方案参考现有 `dialog_image_toolbox.xml` 的水平分段设计与 `LibraryFragment` 的分层卡片架构：
+面对 32 种专业规格，传统的扁平 Chip 列表将极度臃肿。设计方案参考现有 `dialog_image_toolbox.xml` 的水平分段设计与 `LibraryFragment` 的分层卡片架构（注：P0 阶段仅上线五项分类 ChipGroup 切换与卡片网格选择，即时搜索过滤框根据工作分解表延后至 P1 阶段实现）：
 
 ```
 +-------------------------------------------------------------------+
 |  [X] 证件照制作                                              [完成] |
-+-------------------------------------------------------------------+
-|  [搜索预设，例如：考研 / 身份证 / 日本签证...                  ]   |
 +-------------------------------------------------------------------+
 |  [全部]  [常用寸照]  [官方证件]  [国际签证]  [各类考试]               | <- 水平滑动 Tab / Chip
 +-------------------------------------------------------------------+
@@ -471,18 +478,58 @@ fun resampleIdPhoto(sourceCropped: Bitmap, targetW: Int, targetH: Int): Bitmap {
 为什么必须注入 DPI 元数据？
 - **打印驱动与冲印系统机制**：专业相纸打印机驱动通过读取图片元数据中的 `XResolution` 与 `ResolutionUnit` 决定每个像素点在相纸上占据的物理微米数。缺少该标记的图片被默认当作屏显 72 DPI 处理，导致照片在排版软件中尺寸失控。
 - **实现方式**：
-  利用 Androidx 官方库中的 `androidx.exifinterface.media.ExifInterface`，根据所选预设的实际 `preset.dpi`（如常规 300、身份证 350、电子驾驶证 600）在文件写入磁盘后动态写入标准 EXIF 标签：
-  ```kotlin
-  fun injectDpiMetadata(file: File, dpi: Int) {
-      val exif = ExifInterface(file)
-      // 写入有理数表示的分辨率: "$dpi/1" (如 "300/1", "350/1", "600/1")
-      exif.setAttribute(ExifInterface.TAG_X_RESOLUTION, "$dpi/1")
-      exif.setAttribute(ExifInterface.TAG_Y_RESOLUTION, "$dpi/1")
-      // 2 表示分辨率单位为英寸 (Inches)
-      exif.setAttribute(ExifInterface.TAG_RESOLUTION_UNIT, "2")
-      exif.saveAttributes()
-  }
-  ```
+  采用双层注入机制：在内存字节数组中进行零依赖 JFIF APP0 标头补丁注入，并在磁盘文件上通过 AndroidX `ExifInterface` 写入标准 EXIF 标签：
+
+  1. **零依赖 JFIF APP0 密度头补丁规范（内存字节流层）**：
+     Android 原生 `Bitmap.compress(CompressFormat.JPEG, quality, stream)` 输出的标准 JPEG 数据流中，`ExifInterface` 仅能修改 APP1 (EXIF) 段，无法写入或修改 JFIF APP0 段。为保证在不依赖第三方重型图像库的前提下向 JFIF 注入精准 DPI，采用如下零依赖轻量二进制补丁：
+     ```kotlin
+     /**
+      * 在内存中针对 JPEG 二进制数据流执行 JFIF APP0 density header 注入
+      */
+     fun patchJfifApp0Density(jpegBytes: ByteArray, dpi: Int): ByteArray {
+         // JPEG 必须以 SOI (0xFF, 0xD8) 开头且至少包含基础标头长度
+         if (jpegBytes.size < 18 || jpegBytes[0] != 0xFF.toByte() || jpegBytes[1] != 0xD8.toByte()) {
+             return jpegBytes
+         }
+         // 检查紧随 SOI 其后的段是否为 APP0 Marker (0xFF, 0xE0)
+         if (jpegBytes[2] == 0xFF.toByte() && jpegBytes[3] == 0xE0.toByte()) {
+             // 验证 APP0 identifier 是否为 "JFIF\0" (bytes 6..10)
+             if (jpegBytes[6] == 'J'.code.toByte() &&
+                 jpegBytes[7] == 'F'.code.toByte() &&
+                 jpegBytes[8] == 'I'.code.toByte() &&
+                 jpegBytes[9] == 'F'.code.toByte() &&
+                 jpegBytes[10] == 0.toByte()
+             ) {
+                 // 固定偏移写入：
+                 // offset 13: density units = 1 (1 = Dots Per Inch / DPI)
+                 jpegBytes[13] = 1.toByte()
+                 // offset 14..15: Xdensity (Big-Endian uint16)
+                 jpegBytes[14] = ((dpi shr 8) and 0xFF).toByte()
+                 jpegBytes[15] = (dpi and 0xFF).toByte()
+                 // offset 16..17: Ydensity (Big-Endian uint16)
+                 jpegBytes[16] = ((dpi shr 8) and 0xFF).toByte()
+                 jpegBytes[17] = (dpi and 0xFF).toByte()
+             }
+         }
+         // 降级兜底说明：若底层 Skia 编码器输出未包含 APP0 标记（例如直接输出了 APP1 EXIF），
+         // 则保持字节流不变，依赖后续 EXIF 进行兜底记录（此为已知文档化降级限制）。
+         return jpegBytes
+     }
+     ```
+
+  2. **标准 EXIF 元数据注入（磁盘文件层）**：
+     利用 Androidx 官方库中的 `androidx.exifinterface.media.ExifInterface`，根据所选预设的实际 `preset.dpi`（如常规 300、身份证 350、电子驾驶证 600）在文件写入磁盘后动态写入标准 EXIF 标签：
+     ```kotlin
+     fun injectDpiMetadata(file: File, dpi: Int) {
+         val exif = ExifInterface(file)
+         // 写入有理数表示的分辨率: "$dpi/1" (如 "300/1", "350/1", "600/1")
+         exif.setAttribute(ExifInterface.TAG_X_RESOLUTION, "$dpi/1")
+         exif.setAttribute(ExifInterface.TAG_Y_RESOLUTION, "$dpi/1")
+         // 2 表示分辨率单位为英寸 (Inches)
+         exif.setAttribute(ExifInterface.TAG_RESOLUTION_UNIT, "2")
+         exif.saveAttributes()
+     }
+     ```
 
 ---
 
@@ -506,10 +553,13 @@ fun resampleIdPhoto(sourceCropped: Bitmap, targetW: Int, targetH: Int): Bitmap {
 | :---: | :--- | :--- | :--- | :---: | :--- |
 | **P0** | 物理预设数据模型与 32 项规格目录定义 | 数据层 | `models/idphoto/IdPhotoPreset.kt`<br>`models/idphoto/IdPhotoCatalog.kt` | ~180 行 | 彻底解决 5:7 比例重复，支持逐项动态 DPI，为整个管道提供精确物理毫米与像素派生定义 |
 | **P0** | 证件照取景构图、双向插值重采样与动态 DPI 注入管线 | 工具箱核心算法 | `utils/media/IdPhotoGenerator.kt`<br>`utils/media/ImageToolbox.kt` | ~240 行 | 保证裁剪框输出的图片 100% 符合 300/350/600 DPI 物理标准像素及 EXIF 元数据规范 |
-| **P0** | 证件照规格选择器 UI 与人脸辅助线取景器 | 工具箱交互层 | `ui/dialogs/IdPhotoBottomSheet.kt`<br>`res/layout/dialog_id_photo_catalog.xml` | ~320 行 | 提供分类水平标签、卡片选择、搜索过滤及人脸轮廓/三分网格定焦取景 |
+| **P0** | 证件照规格选择器 UI 与人脸辅助线取景器 | 工具箱交互层 | `ui/dialogs/IdPhotoBottomSheet.kt`<br>`res/layout/dialog_id_photo_catalog.xml` | ~320 行 | 提供分类水平标签（分组切换）、卡片选择网格及人脸轮廓/三分网格定焦取景（即时搜索过滤延后至 P1 实现） |
 | **P1** | 纯色背景智能检测、优雅拒识与 YCbCr 双阈值软换底 | 图像处理算法 | `utils/media/SolidColorMattingEngine.kt` | ~280 行 | 纯原生图像算法实现无依赖换底（白/淡蓝/浅灰/天蓝/深蓝/红），复杂背景安全拒识 |
-| **P1** | 证件照预设即时搜索过滤与常用收藏 | UI 交互增强 | `ui/dialogs/IdPhotoBottomSheet.kt` | ~90 行 | 面对 30+ 规格，支持关键字即时检索（如“教资”、“驾驶证”）极大提升效率 |
+| **P1** | 证件照预设即时搜索过滤 | UI 交互增强 | `ui/dialogs/IdPhotoBottomSheet.kt` | ~90 行 | 面对 30+ 规格，支持关键字即时检索（如“教资”、“驾驶证”）极大提升效率 |
 | **P2** | 6寸标准相纸（4R）多张证件照排版冲印合成器 | 增值冲印工具 | `utils/media/IdPhotoPrintSheetComposer.kt` | ~210 行 | 自动计算间距并绘制裁切辅助线，一键导出用于线下相馆冲印的标准 6寸母版相片 |
+
+*后续演进建议（Future Ideas）*：
+“常用收藏”预设功能未在本次评审范围之内，已移出 P1 并记录为后续可选特性（例如在用户多次使用同一规格后置顶提示），不在当前实现计划中。
 
 ---
 
@@ -544,5 +594,14 @@ fun resampleIdPhoto(sourceCropped: Bitmap, targetW: Int, targetH: Int): Bitmap {
   - 这种设计直观且严谨，避免给用户造成“选了2寸就能直接去冲印2寸照片”的错误预期。
 - **路径 B（全面引入物理尺寸与分辨率重采样）**：
   - 若 Canvas 未来规划支持完整的证件照导出，应引入本方案第四部分定义的 `IdPhotoPreset` 物理模型，在裁剪保存时不仅约束比例，同时对裁剪像素强制执行目标分辨率重采样与动态 DPI 元数据写入。
+
+---
+
+### 5.3 GKUI 图片编辑器（ImageEditorActivity）旧证件照命名预设下线
+在 Slice-1 交付时，`ImageEditorActivity.kt` 中旧有的以证件照业务命名的比例选项（一寸 `id_photo_preset_one_inch`、二寸 `id_photo_preset_two_inch`、护照 `id_photo_preset_passport`）正式下线移除。
+**决策依据**：
+1. **职责分离**：证件照制作具备完整的像素物理重采样、DPI 元数据注入、人脸辅助线与合规尺寸约束，统一收敛在图片工具箱（Toolbox）的“证件照制作”独立管线；
+2. **消除虚假合规预期**：普通图片编辑器的自由裁剪仅约束画面几何长宽比，裁出的任意像素图片无法满足任何官方网报审核。在纯裁剪器中打着“一寸/二寸/护照”标签会给用户造成“裁剪后即可用于证件申报”的虚假合规预期；
+3. **中性比例化演进**：保留“自由”和“正方形”，并补充中性的纯比例标签 `5:7`、`7:9`、`11:16`，镜像对齐对 Canvas 的 Path-A 建议。
 
 *声明：本节仅作为 GKUI 与 LineageOS 社区跨项目架构反馈建议记录于本文档中，未对 Canvas 项目代码仓库执行任何直接改动。*
