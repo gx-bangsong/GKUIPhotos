@@ -74,4 +74,24 @@ class AnnotationItemTest {
         stack.clear()
         assertTrue(stack.isEmpty())
     }
+
+    @Test
+    fun testTextAnnotation() {
+        val textItem = AnnotationItem.Text(
+            text = "Hello World",
+            centerX = 100f,
+            centerY = 200f,
+            baseTextSize = 32f,
+            scale = 1.5f,
+            color = Color.YELLOW,
+            hasBackgroundPill = true,
+        )
+
+        assertEquals("Hello World", textItem.text)
+        assertEquals(48f, textItem.effectiveTextSize, 0.01f)
+        assertTrue(textItem.hasBackgroundPill)
+
+        textItem.scale = 2.0f
+        assertEquals(64f, textItem.effectiveTextSize, 0.01f)
+    }
 }

@@ -8,19 +8,21 @@ package org.lineageos.glimpse
 import android.app.Activity
 import android.content.ContentValues
 import android.content.Intent
+import android.content.res.ColorStateList
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.Matrix
 import android.graphics.Paint
 import android.net.Uri
-import android.graphics.Color
 import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
 import android.view.MenuItem
 import android.view.View
 import android.widget.Button
+import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -238,6 +240,9 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         annotationOverlayView.onAnnotationChanged = {
             markupUndoButton.isEnabled = annotationOverlayView.hasAnnotations()
         }
+        annotationOverlayView.onTextEditRequested = { textItem ->
+            showTextInputDialog(textItem)
+        }
 
         setupRatioChips()
         setupAdjustControls()
@@ -451,7 +456,39 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                 addColorPalette()
             }
             MarkupTool.TEXT -> {
-                // Prepared for Commit 4
+                // 1. Add text button
+                val addTextBtn = com.google.android.material.button.MaterialButton(this).apply {
+                    text = getString(R.string.editor_markup_text)
+                    textSize = 12f
+                    setTextColor(Color.WHITE)
+                    strokeColor = ColorStateList.valueOf(Color.DKGRAY)
+                    setOnClickListener {
+                        val cropRect = cropImageView.getCropRect()
+                        val cx = if (cropRect.isEmpty) cropImageView.width / 2f else cropRect.centerX()
+                        val cy = if (cropRect.isEmpty) cropImageView.height / 2f else cropRect.centerY()
+                        annotationOverlayView.addTextItem("", cx, cy)
+                    }
+                }
+                markupOptionsContent.addView(addTextBtn)
+
+                // 2. Background pill toggle chip
+                val bgChip = Chip(this).apply {
+                    text = getString(R.string.editor_markup_text_bg)
+                    isCheckable = true
+                    isChecked = annotationOverlayView.hasTextBackgroundPill
+                    setOnCheckedChangeListener { _, isChecked ->
+                        annotationOverlayView.hasTextBackgroundPill = isChecked
+                        annotationOverlayView.activeText?.hasBackgroundPill = isChecked
+                        annotationOverlayView.invalidate()
+                    }
+                }
+                markupOptionsContent.addView(bgChip)
+
+                // 3. Color palette
+                addColorPalette { c ->
+                    annotationOverlayView.activeText?.color = c
+                    annotationOverlayView.invalidate()
+                }
             }
             MarkupTool.MOSAIC -> {
                 // Prepared for Commit 5
@@ -511,7 +548,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         markupOptionsContent.addView(chipGroup)
     }
 
-    private fun addColorPalette() {
+    private fun addColorPalette(onColorChanged: ((Int) -> Unit)? = null) {
         val colors = listOf(
             Color.parseColor("#F44336"), // Red
             Color.WHITE,
@@ -541,11 +578,47 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                 isClickable = true
                 setOnClickListener {
                     annotationOverlayView.activeColor = c
+                    onColorChanged?.invoke(c)
                 }
             }
             paletteContainer.addView(card)
         }
         markupOptionsContent.addView(paletteContainer)
+    }
+
+    private fun showTextInputDialog(textItem: AnnotationItem.Text) {
+        val input = TextInputEditText(this).apply {
+            setText(textItem.text)
+            hint = getString(R.string.editor_markup_text_hint)
+            setSelection(textItem.text.length)
+            isSingleLine = false
+            maxLines = 4
+        }
+        val container = FrameLayout(this).apply {
+            val pad = (20f * resources.displayMetrics.density).toInt()
+            setPadding(pad, pad / 2, pad, pad / 2)
+            addView(input)
+        }
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.editor_markup_text)
+            .setView(container)
+            .setNegativeButton(R.string.cancel) { _, _ ->
+                if (textItem.text.isBlank()) {
+                    annotationOverlayView.undo()
+                }
+            }
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                val str = input.text?.toString()?.trim() ?: ""
+                if (str.isNotBlank()) {
+                    textItem.text = str
+                    annotationOverlayView.invalidate()
+                    annotationOverlayView.onAnnotationChanged?.invoke()
+                } else {
+                    annotationOverlayView.undo()
+                }
+            }
+            .show()
     }
 
     private fun setupFilterChips() {

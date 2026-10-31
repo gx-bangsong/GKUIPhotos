@@ -8,11 +8,13 @@ package org.lineageos.glimpse.ui.views
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.DashPathEffect
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
 import android.util.AttributeSet
 import android.view.MotionEvent
+import android.view.ScaleGestureDetector
 import android.view.View
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -120,6 +122,62 @@ sealed interface AnnotationItem {
             }
         }
     }
+
+    data class Text(
+        var text: String,
+        var centerX: Float,
+        var centerY: Float,
+        var baseTextSize: Float = 32f,
+        var scale: Float = 1.0f,
+        var color: Int = Color.WHITE,
+        var hasBackgroundPill: Boolean = true,
+    ) : AnnotationItem {
+        val effectiveTextSize: Float
+            get() = (baseTextSize * scale).coerceIn(12f, 240f)
+
+        fun computeBounds(outRect: RectF) {
+            val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                textSize = effectiveTextSize
+                isFakeBoldText = true
+            }
+            val textWidth = paint.measureText(text.ifEmpty { " " })
+            val fm = paint.fontMetrics
+            val textHeight = fm.bottom - fm.top
+            val padX = effectiveTextSize * 0.45f
+            val padY = effectiveTextSize * 0.3f
+
+            val w = textWidth + padX * 2f
+            val h = textHeight + padY * 2f
+            outRect.set(centerX - w / 2f, centerY - h / 2f, centerX + w / 2f, centerY + h / 2f)
+        }
+
+        override fun draw(canvas: Canvas) {
+            if (text.isBlank()) return
+
+            val bounds = RectF()
+            computeBounds(bounds)
+
+            if (hasBackgroundPill) {
+                val pillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = if (this@Text.color == Color.WHITE) Color.argb(160, 0, 0, 0) else Color.argb(160, 255, 255, 255)
+                    style = Paint.Style.FILL
+                }
+                val pillRadius = bounds.height() * 0.25f
+                canvas.drawRoundRect(bounds, pillRadius, pillRadius, pillPaint)
+            }
+
+            val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                textSize = effectiveTextSize
+                color = this@Text.color
+                isFakeBoldText = true
+                textAlign = Paint.Align.CENTER
+            }
+
+            val fm = paint.fontMetrics
+            val baseline = bounds.centerY() - (fm.descent + fm.ascent) / 2f
+            canvas.drawText(text, bounds.centerX(), baseline, paint)
+        }
+    }
 }
 
 class AnnotationOverlayView @JvmOverloads constructor(
@@ -131,6 +189,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
     var activeTool: MarkupTool = MarkupTool.NONE
         set(value) {
             commitActiveShape()
+            commitActiveText()
             field = value
             invalidate()
         }
@@ -143,8 +202,10 @@ class AnnotationOverlayView @JvmOverloads constructor(
 
     var activeColor: Int = Color.RED
     var activeStrokeWidth: Float = 8f
+    var hasTextBackgroundPill: Boolean = true
 
     var onAnnotationChanged: (() -> Unit)? = null
+    var onTextEditRequested: ((AnnotationItem.Text) -> Unit)? = null
 
     val annotations = mutableListOf<AnnotationItem>()
 
@@ -157,8 +218,31 @@ class AnnotationOverlayView @JvmOverloads constructor(
     var activeShape: AnnotationItem.Shape? = null
         private set
 
+    // Active text item
+    var activeText: AnnotationItem.Text? = null
+        private set
+
     // Handle dragging state
     private var draggedHandle: Int = -1 // 0: start, 1: end, -1: none
+    private var isDraggingTextHandle: Boolean = false
+    private var isMovingText: Boolean = false
+    private var textDragStartX = 0f
+    private var textDragStartY = 0f
+    private var textInitialDist = 0f
+    private var textInitialScale = 1f
+    private var lastTapTime = 0L
+
+    private val scaleDetector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+        override fun onScale(detector: ScaleGestureDetector): Boolean {
+            activeText?.let { t ->
+                t.scale = (t.scale * detector.scaleFactor).coerceIn(0.3f, 6.0f)
+                onAnnotationChanged?.invoke()
+                invalidate()
+                return true
+            }
+            return false
+        }
+    })
 
     private val handlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
@@ -169,8 +253,13 @@ class AnnotationOverlayView @JvmOverloads constructor(
         color = Color.parseColor("#2196F3")
         strokeWidth = 3f
     }
+    private val boundsDashPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        color = Color.parseColor("#2196F3")
+        strokeWidth = 2f
+        pathEffect = DashPathEffect(floatArrayOf(10f, 10f), 0f)
+    }
 
-    private val clipBoundsRect = RectF()
     var cropRectProvider: (() -> RectF)? = null
 
     fun commitActiveShape() {
@@ -182,10 +271,44 @@ class AnnotationOverlayView @JvmOverloads constructor(
         invalidate()
     }
 
+    fun commitActiveText() {
+        val t = activeText ?: return
+        if (t.text.isNotBlank()) {
+            annotations.add(t)
+        }
+        activeText = null
+        isDraggingTextHandle = false
+        isMovingText = false
+        onAnnotationChanged?.invoke()
+        invalidate()
+    }
+
+    fun addTextItem(text: String, cx: Float, cy: Float) {
+        commitActiveShape()
+        commitActiveText()
+        val item = AnnotationItem.Text(
+            text = text,
+            centerX = cx,
+            centerY = cy,
+            color = activeColor,
+            hasBackgroundPill = hasTextBackgroundPill,
+        )
+        activeText = item
+        activeTool = MarkupTool.TEXT
+        onAnnotationChanged?.invoke()
+        invalidate()
+    }
+
     fun undo(): Boolean {
         if (activeShape != null) {
             activeShape = null
             draggedHandle = -1
+            invalidate()
+            onAnnotationChanged?.invoke()
+            return true
+        }
+        if (activeText != null) {
+            activeText = null
             invalidate()
             onAnnotationChanged?.invoke()
             return true
@@ -201,13 +324,14 @@ class AnnotationOverlayView @JvmOverloads constructor(
 
     fun clear() {
         activeShape = null
+        activeText = null
         draggedHandle = -1
         annotations.clear()
         invalidate()
         onAnnotationChanged?.invoke()
     }
 
-    fun hasAnnotations(): Boolean = annotations.isNotEmpty() || activeShape != null
+    fun hasAnnotations(): Boolean = annotations.isNotEmpty() || activeShape != null || activeText != null
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
@@ -238,10 +362,17 @@ class AnnotationOverlayView @JvmOverloads constructor(
         // 3. Draw active shape and handles
         activeShape?.let { shape ->
             shape.draw(canvas)
-
-            // Draw handles at start and end points
             drawHandle(canvas, shape.startX, shape.startY)
             drawHandle(canvas, shape.endX, shape.endY)
+        }
+
+        // 4. Draw active text with bounding outline and resize handle
+        activeText?.let { t ->
+            t.draw(canvas)
+            val textBounds = RectF()
+            t.computeBounds(textBounds)
+            canvas.drawRoundRect(textBounds, 8f, 8f, boundsDashPaint)
+            drawHandle(canvas, textBounds.right, textBounds.bottom)
         }
 
         if (cropRect != null && !cropRect.isEmpty) {
@@ -250,7 +381,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
     }
 
     private fun drawHandle(canvas: Canvas, x: Float, y: Float) {
-        val radius = 18f
+        val radius = 16f
         canvas.drawCircle(x, y, radius, handlePaint)
         canvas.drawCircle(x, y, radius, handleBorderPaint)
     }
@@ -264,6 +395,10 @@ class AnnotationOverlayView @JvmOverloads constructor(
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (activeTool == MarkupTool.NONE) return false
+
+        if (activeTool == MarkupTool.TEXT) {
+            scaleDetector.onTouchEvent(event)
+        }
 
         val x = event.x
         val y = event.y
@@ -309,7 +444,6 @@ class AnnotationOverlayView @JvmOverloads constructor(
             MarkupTool.SHAPES -> {
                 when (event.actionMasked) {
                     MotionEvent.ACTION_DOWN -> {
-                        // Check if tapping existing handle
                         val existing = activeShape
                         if (existing != null) {
                             val handleIdx = findTouchedHandle(existing, x, y)
@@ -317,12 +451,10 @@ class AnnotationOverlayView @JvmOverloads constructor(
                                 draggedHandle = handleIdx
                                 return true
                             } else {
-                                // Tap away commits the existing shape
                                 commitActiveShape()
                             }
                         }
 
-                        // Start new shape
                         activeShape = AnnotationItem.Shape(
                             type = selectedShapeType,
                             startX = x,
@@ -332,7 +464,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
                             color = activeColor,
                             strokeWidth = activeStrokeWidth,
                         )
-                        draggedHandle = 1 // dragging the end handle
+                        draggedHandle = 1
                         invalidate()
                         return true
                     }
@@ -358,6 +490,89 @@ class AnnotationOverlayView @JvmOverloads constructor(
                 }
             }
 
+            MarkupTool.TEXT -> {
+                val t = activeText
+                val hitRadius = 48f
+
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> {
+                        if (t != null) {
+                            val bounds = RectF()
+                            t.computeBounds(bounds)
+
+                            // 1. Check resize handle at (bounds.right, bounds.bottom)
+                            if (hypot((x - bounds.right).toDouble(), (y - bounds.bottom).toDouble()) <= hitRadius) {
+                                isDraggingTextHandle = true
+                                textInitialDist = hypot((x - t.centerX).toDouble(), (y - t.centerY).toDouble()).toFloat().coerceAtLeast(10f)
+                                textInitialScale = t.scale
+                                return true
+                            }
+
+                            // 2. Check tap/move inside bounds
+                            if (bounds.contains(x, y)) {
+                                val now = System.currentTimeMillis()
+                                if (now - lastTapTime < 300) {
+                                    onTextEditRequested?.invoke(t)
+                                    lastTapTime = 0
+                                    return true
+                                }
+                                lastTapTime = now
+                                isMovingText = true
+                                textDragStartX = x
+                                textDragStartY = y
+                                return true
+                            }
+
+                            // Tap outside: commit current text
+                            commitActiveText()
+                        }
+
+                        // Tap empty space: create new text item
+                        val now = System.currentTimeMillis()
+                        lastTapTime = now
+                        val newItem = AnnotationItem.Text(
+                            text = "",
+                            centerX = x,
+                            centerY = y,
+                            color = activeColor,
+                            hasBackgroundPill = hasTextBackgroundPill,
+                        )
+                        activeText = newItem
+                        invalidate()
+                        onTextEditRequested?.invoke(newItem)
+                        return true
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        if (scaleDetector.isInProgress) return true
+
+                        val currentText = activeText ?: return false
+                        if (isDraggingTextHandle) {
+                            val currentDist = hypot((x - currentText.centerX).toDouble(), (y - currentText.centerY).toDouble()).toFloat()
+                            val newScale = (currentDist / textInitialDist * textInitialScale).coerceIn(0.3f, 6.0f)
+                            currentText.scale = newScale
+                            onAnnotationChanged?.invoke()
+                            invalidate()
+                            return true
+                        } else if (isMovingText) {
+                            val dx = x - textDragStartX
+                            val dy = y - textDragStartY
+                            currentText.centerX += dx
+                            currentText.centerY += dy
+                            textDragStartX = x
+                            textDragStartY = y
+                            onAnnotationChanged?.invoke()
+                            invalidate()
+                            return true
+                        }
+                    }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        isDraggingTextHandle = false
+                        isMovingText = false
+                    }
+                }
+                return true
+            }
+
             else -> return false
         }
     }
@@ -367,6 +582,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
      */
     fun rasterize(canvas: Canvas, cropRect: RectF) {
         commitActiveShape()
+        commitActiveText()
         if (annotations.isEmpty()) return
         if (cropRect.isEmpty) return
 
