@@ -83,7 +83,7 @@ class IdPhotoBottomSheet(
     private fun setupRecyclerView() {
         presetRecyclerView.layoutManager = GridLayoutManager(context, 2)
         presetRecyclerView.adapter = adapter
-        adapter.submitList(IdPhotoCatalog.allPresets)
+        adapter.submitList(IdPhotoCatalog.presets)
     }
 
     private fun setupGroupChips() {
@@ -104,9 +104,9 @@ class IdPhotoBottomSheet(
             }
             chip.setOnClickListener {
                 val list = if (group == null) {
-                    IdPhotoCatalog.allPresets
+                    IdPhotoCatalog.presets
                 } else {
-                    IdPhotoCatalog.getPresetsByGroup(group)
+                    IdPhotoCatalog.getByGroup(group)
                 }
                 adapter.submitList(list)
             }
@@ -170,7 +170,7 @@ class IdPhotoBottomSheet(
 
     private fun setupSameRatioChips(preset: IdPhotoPreset) {
         sameRatioChipGroup.removeAllViews()
-        val sameRatioList = IdPhotoCatalog.findSameRatioPresets(preset)
+        val sameRatioList = IdPhotoCatalog.getSameRatioPresets(preset)
         if (sameRatioList.size <= 1) {
             sameRatioContainer.isVisible = false
             return
@@ -276,7 +276,7 @@ class IdPhotoBottomSheet(
         fun bind(preset: IdPhotoPreset) {
             nameText.setText(preset.nameRes)
             specText.text = "${preset.widthMm}x${preset.heightMm}mm · ${preset.targetWidthPx}x${preset.targetHeightPx} px · ${preset.dpi} DPI"
-            usageText.setText(preset.descriptionRes)
+            usageText.text = preset.description
             itemView.setOnClickListener { onPresetSelected(preset) }
         }
     }

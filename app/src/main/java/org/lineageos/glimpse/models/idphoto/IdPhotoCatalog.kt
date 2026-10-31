@@ -350,10 +350,17 @@ object IdPhotoCatalog {
         ),
     )
 
+    val allPresets: List<IdPhotoPreset>
+        get() = presets
+
     fun getById(id: String): IdPhotoPreset? = presets.find { it.id == id }
 
     fun getByGroup(group: PresetGroup): List<IdPhotoPreset> = presets.filter { it.group == group }
 
+    fun getPresetsByGroup(group: PresetGroup): List<IdPhotoPreset> = getByGroup(group)
+
     fun getSameRatioPresets(preset: IdPhotoPreset): List<IdPhotoPreset> =
         presets.filter { abs(it.aspectRatio - preset.aspectRatio) < 0.005f }
+
+    fun findSameRatioPresets(preset: IdPhotoPreset): List<IdPhotoPreset> = getSameRatioPresets(preset)
 }

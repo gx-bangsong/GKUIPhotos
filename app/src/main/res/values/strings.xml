@@ -204,6 +204,9 @@
     <string name="editor_filter_warm">Warm</string>
     <string name="editor_filter_cool">Cool</string>
 
+    <!-- Generic dialog actions -->
+    <string name="close">Close</string>
+
     <!-- ID Photo tool (module 5) -->
     <string name="id_photo_title">ID photo</string>
     <string name="id_photo_guide_hint">Drag to position. Use the rule-of-thirds and face oval to align head and shoulders.</string>

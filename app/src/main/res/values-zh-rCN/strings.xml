@@ -131,6 +131,9 @@
     <string name="editor_filter_warm">暖色</string>
     <string name="editor_filter_cool">冷色</string>
 
+    <!-- Generic dialog actions -->
+    <string name="close">关闭</string>
+
     <!-- 证件照工具（模块 5） -->
     <string name="id_photo_title">证件照</string>
     <string name="id_photo_guide_hint">拖动以定位。借助九宫格与人脸轮廓辅助线对齐头部和肩部。</string>
