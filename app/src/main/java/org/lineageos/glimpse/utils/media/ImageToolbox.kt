@@ -509,7 +509,7 @@ object ImageToolbox {
         return out
     }
 
-    private fun decode(sourceUri: Uri, resolver: ContentResolver): Triple<Bitmap, Long?, String> {
+    internal fun decode(sourceUri: Uri, resolver: ContentResolver): Triple<Bitmap, Long?, String> {
         val originalBytes = resolver.openAssetFileDescriptor(sourceUri, "r")?.use { it.length }
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         resolver.openInputStream(sourceUri)?.use {
@@ -583,7 +583,7 @@ object ImageToolbox {
         )
     }
 
-    private fun writeBitmapToMediaStore(
+    internal fun writeBitmapToMediaStore(
         context: Context,
         data: ByteArray,
         displayName: String,
@@ -651,7 +651,7 @@ object ImageToolbox {
         Bitmap.CompressFormat.WEBP_LOSSLESS -> "image/webp"
     }
 
-    private fun buildName(source: String, suffix: String, ext: String): String {
+    internal fun buildName(source: String, suffix: String, ext: String): String {
         val base = source.substringBeforeLast('.').takeIf { it.isNotBlank() } ?: "image"
         val unique = "_${System.currentTimeMillis() % 100000}"
         return "${base}_${suffix}$unique.$ext"
