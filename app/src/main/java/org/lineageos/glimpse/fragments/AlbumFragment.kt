@@ -75,6 +75,7 @@ import org.lineageos.glimpse.utils.MediaDialogsUtils
 import org.lineageos.glimpse.utils.PermissionsChecker
 import org.lineageos.glimpse.utils.PermissionsUtils
 import org.lineageos.glimpse.utils.privacy.LockedVaultRepository
+import org.lineageos.glimpse.utils.privacy.VaultItem
 import org.lineageos.glimpse.viewmodels.AlbumViewModel
 import org.lineageos.glimpse.viewmodels.IntentsViewModel
 import kotlin.reflect.safeCast
@@ -333,7 +334,7 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
             selectionTracker?.clearSelection()
         }
 
-    private var pendingLockMoveStaged: List<Pair<LockedVaultRepository.VaultItem, Uri>>? = null
+    private var pendingLockMoveStaged: List<Pair<VaultItem, Uri>>? = null
 
     private val lockDeleteForeverContract =
         registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
