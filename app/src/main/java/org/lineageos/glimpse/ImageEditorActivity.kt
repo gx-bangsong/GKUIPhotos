@@ -35,6 +35,7 @@ import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.TextInputEditText
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -78,6 +79,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
     private var baseBitmap: Bitmap? = null
     private var rotation = 0
     private var currentFilter: ImageFilter = ImageFilter.NONE
+    private var isFramingModified = false
 
     /** Pending bytes to write once a write request is granted (overwrite path). */
     private var pendingOverwrite: ByteArray? = null
@@ -130,13 +132,28 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             }
         }
 
+        cropImageView.onFramingModified = {
+            isFramingModified = true
+        }
+
         rotateButton.setOnClickListener {
             rotation = (rotation + 90) % 360
             refreshBaseBitmap()
         }
         faceGuideButton.setOnClickListener {
             val uri = sourceUri ?: return@setOnClickListener
-            startActivity(IdPhotoActivity.createIntent(this, uri, sourceMimeType))
+            if (isEditorDirty()) {
+                MaterialAlertDialogBuilder(this)
+                    .setTitle(R.string.id_photo_title)
+                    .setMessage(R.string.id_photo_editor_entry_warning)
+                    .setNegativeButton(R.string.cancel, null)
+                    .setPositiveButton(R.string.id_photo_editor_entry_continue) { _, _ ->
+                        startActivity(IdPhotoActivity.createIntent(this, uri, sourceMimeType))
+                    }
+                    .show()
+            } else {
+                startActivity(IdPhotoActivity.createIntent(this, uri, sourceMimeType))
+            }
         }
         watermarkButton.setOnClickListener {
             showPrivacyWatermarkDialog()
@@ -157,6 +174,14 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             cropImageView.aspectRatio = bmp.width.toFloat() / bmp.height.toFloat()
             refreshBaseBitmap()
         }
+    }
+
+    private fun isEditorDirty(): Boolean {
+        val hasRotation = rotation != 0
+        val hasFilter = currentFilter != ImageFilter.NONE
+        val hasWatermark = !cropImageView.watermarkText.isNullOrBlank()
+        val hasRatioChange = ratioChipGroup.checkedChipId != 0
+        return hasRotation || hasFilter || hasWatermark || hasRatioChange || isFramingModified
     }
 
     private fun onMenuItemSelected(item: MenuItem): Boolean {

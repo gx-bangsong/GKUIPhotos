@@ -19,8 +19,19 @@
         android:layout_gravity="center"
         app:cardCornerRadius="10dp"
         app:cardElevation="0dp"
-        app:strokeColor="#33FFFFFF"
+        app:strokeColor="@color/id_photo_swatch_stroke"
         app:strokeWidth="1dp">
+
+        <TextView
+            android:id="@+id/originalLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:text="@string/id_photo_bg_original"
+            android:textColor="@android:color/white"
+            android:textSize="10sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
 
         <ImageView
             android:id="@+id/colorCheckIcon"

@@ -153,6 +153,17 @@
     <string name="id_photo_all_specs">全部规格</string>
     <string name="id_photo_tab_spec">规格</string>
     <string name="id_photo_tab_background">背景</string>
+    <string name="id_photo_bg_original">保留原底</string>
+    <string name="id_photo_bg_white">纯白底</string>
+    <string name="id_photo_bg_light_blue">官方淡蓝</string>
+    <string name="id_photo_bg_blue">行业天蓝</string>
+    <string name="id_photo_bg_dark_blue">政法深蓝</string>
+    <string name="id_photo_bg_flag_red">国旗红</string>
+    <string name="id_photo_bg_marriage_red">结婚红</string>
+    <string name="id_photo_bg_light_gray">官方浅灰</string>
+    <string name="id_photo_matting_refusal">检测到背景色彩不均匀，当前仅支持纯色背景证件照换底。已为您保留原背景继续生成。</string>
+    <string name="id_photo_editor_entry_warning">证件照将基于原图制作，当前未保存的编辑不会包含在内。</string>
+    <string name="id_photo_editor_entry_continue">继续</string>
     <string name="id_photo_discard_title">放弃修改？</string>
     <string name="id_photo_discard_message">当前证件照未保存，退出将丢失修改。</string>
     <string name="id_photo_discard_confirm">放弃</string>

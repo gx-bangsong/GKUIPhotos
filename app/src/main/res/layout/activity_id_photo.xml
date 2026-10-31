@@ -10,7 +10,7 @@
     android:layout_height="match_parent"
     android:background="@android:color/black">
 
-    <!-- Top Action Bar matching ImageEditorActivity: Back icon on left, Save icon on right -->
+    <!-- Top Action Bar: Back icon on left, Save icon on right -->
     <com.google.android.material.appbar.AppBarLayout
         android:id="@+id/appBarLayout"
         android:layout_width="match_parent"
@@ -22,7 +22,7 @@
             android:id="@+id/toolbar"
             android:layout_width="match_parent"
             android:layout_height="?attr/actionBarSize"
-            app:menu="@menu/menu_image_editor"
+            app:menu="@menu/menu_id_photo"
             app:navigationIcon="@drawable/ic_back"
             app:navigationIconTint="@android:color/white"
             app:title="@string/image_toolbox_id_photo"
@@ -50,10 +50,10 @@
             android:layout_height="wrap_content"
             android:layout_gravity="top|center_horizontal"
             android:layout_marginTop="12dp"
-            app:cardBackgroundColor="#99000000"
+            app:cardBackgroundColor="@color/id_photo_badge_bg"
             app:cardCornerRadius="14dp"
             app:cardElevation="0dp"
-            app:strokeColor="#33FFFFFF"
+            app:strokeColor="@color/id_photo_badge_stroke"
             app:strokeWidth="1dp">
 
             <TextView
@@ -82,7 +82,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom"
-        android:background="#1C1C1E"
+        android:background="@color/id_photo_surface_bg"
         android:orientation="vertical">
 
         <!-- CONTENT LAYER 1: Specs Mode (规格) -->
@@ -110,7 +110,7 @@
                     android:contentDescription="@string/id_photo_all_specs"
                     android:scaleType="centerInside"
                     android:src="@drawable/ic_search"
-                    app:tint="#8E8E93" />
+                    app:tint="@color/id_photo_text_secondary" />
 
                 <HorizontalScrollView
                     android:layout_width="match_parent"
@@ -146,10 +146,10 @@
                     android:clickable="true"
                     android:focusable="true"
                     android:foreground="?attr/selectableItemBackground"
-                    app:cardBackgroundColor="#2C2C2E"
+                    app:cardBackgroundColor="@color/id_photo_card_bg"
                     app:cardCornerRadius="10dp"
                     app:cardElevation="0dp"
-                    app:strokeColor="#3A3A3C"
+                    app:strokeColor="@color/id_photo_card_border"
                     app:strokeWidth="1dp">
 
                     <ImageView
@@ -161,7 +161,7 @@
                         app:tint="@android:color/white" />
                 </com.google.android.material.card.MaterialCardView>
 
-                <!-- Scrollable Preset Cards (Selected card is #F5C542 gold with black text, inactive is #2C2C2E) -->
+                <!-- Scrollable Preset Cards -->
                 <androidx.recyclerview.widget.RecyclerView
                     android:id="@+id/presetRailRecyclerView"
                     android:layout_width="match_parent"
@@ -199,7 +199,7 @@
             android:layout_width="match_parent"
             android:layout_height="0.5dp"
             android:layout_marginTop="12dp"
-            android:background="#2C2C2E" />
+            android:background="@color/id_photo_divider" />
 
         <!-- BOTTOM-MOST TAB BAR: "规格" (Specs) and "背景" (Background) -->
         <LinearLayout
@@ -220,7 +220,7 @@
                 android:gravity="center"
                 android:text="@string/id_photo_tab_spec"
                 android:textAppearance="?attr/textAppearanceLabelLarge"
-                android:textColor="#F5C542"
+                android:textColor="@color/id_photo_gold"
                 android:textSize="14sp"
                 android:textStyle="bold" />
 
@@ -235,7 +235,7 @@
                 android:gravity="center"
                 android:text="@string/id_photo_tab_background"
                 android:textAppearance="?attr/textAppearanceLabelLarge"
-                android:textColor="#8E8E93"
+                android:textColor="@color/id_photo_text_secondary"
                 android:textSize="14sp" />
         </LinearLayout>
 
@@ -311,7 +311,7 @@
         android:id="@+id/savingOverlay"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="#80000000"
+        android:background="@color/id_photo_scrim_overlay"
         android:clickable="true"
         android:elevation="24dp"
         android:focusable="true"

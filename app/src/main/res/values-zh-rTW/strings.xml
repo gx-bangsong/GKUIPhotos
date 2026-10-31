@@ -157,6 +157,17 @@
     <string name="id_photo_all_specs">全部規格</string>
     <string name="id_photo_tab_spec">規格</string>
     <string name="id_photo_tab_background">背景</string>
+    <string name="id_photo_bg_original">保留原底</string>
+    <string name="id_photo_bg_white">純白底</string>
+    <string name="id_photo_bg_light_blue">官方淡藍</string>
+    <string name="id_photo_bg_blue">行業天藍</string>
+    <string name="id_photo_bg_dark_blue">政法深藍</string>
+    <string name="id_photo_bg_flag_red">國旗紅</string>
+    <string name="id_photo_bg_marriage_red">結婚紅</string>
+    <string name="id_photo_bg_light_gray">官方淺灰</string>
+    <string name="id_photo_matting_refusal">偵測到背景色彩不均勻，目前僅支援純色背景證件照換底。已為您保留原背景繼續產生。</string>
+    <string name="id_photo_editor_entry_warning">證件照將基於原圖製作，目前未儲存的編輯不會包含在內。</string>
+    <string name="id_photo_editor_entry_continue">繼續</string>
     <string name="id_photo_discard_title">放棄修改？</string>
     <string name="id_photo_discard_message">目前證件照未儲存，結束將遺失修改。</string>
     <string name="id_photo_discard_confirm">放棄</string>

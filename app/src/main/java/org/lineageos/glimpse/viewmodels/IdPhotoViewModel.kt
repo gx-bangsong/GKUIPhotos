@@ -9,7 +9,6 @@ import android.app.Application
 import android.content.ContentResolver
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.Color
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
@@ -20,9 +19,12 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.lineageos.glimpse.R
 import org.lineageos.glimpse.models.idphoto.IdPhotoCatalog
 import org.lineageos.glimpse.models.idphoto.IdPhotoPreset
 import org.lineageos.glimpse.models.idphoto.PresetGroup
+import org.lineageos.glimpse.utils.media.MattingResult
+import org.lineageos.glimpse.utils.media.SolidColorMattingEngine
 
 enum class IdPhotoBottomTab {
     SPECS,
@@ -30,8 +32,11 @@ enum class IdPhotoBottomTab {
 }
 
 data class IdPhotoBgColorItem(
-    val colorInt: Int,
+    val id: String,
+    val nameRes: Int,
+    val colorInt: Int?, // null = 保留原底 (original background)
     val isLight: Boolean = false,
+    val annotation: String? = null,
 )
 
 /**
@@ -57,13 +62,23 @@ class IdPhotoViewModel(
         private const val KEY_HAS_TRANSFORM = "idphoto_has_transform"
         private const val KEY_MODIFIED = "idphoto_framing_modified"
 
+        /**
+         * Authoritative ID photo background palette per docs/ID_PHOTO_PLAN.md §2.5.
+         * Includes NIA (国家移民管理局) lower-bound values and industry-standard colors.
+         */
         val STANDARD_BG_COLORS = listOf(
-            IdPhotoBgColorItem(Color.WHITE, isLight = true),
-            IdPhotoBgColorItem(0xFF64C5FF.toInt()), // Sky blue
-            IdPhotoBgColorItem(0xFF438EDB.toInt()), // Industry standard blue
-            IdPhotoBgColorItem(0xFFD32F2F.toInt()), // National flag / marriage red
-            IdPhotoBgColorItem(0xFFD2D2D2.toInt(), isLight = true), // Neutral light gray
-            IdPhotoBgColorItem(0xFF004898.toInt()), // Deep judicial blue
+            IdPhotoBgColorItem("original", R.string.id_photo_bg_original, null, isLight = true),
+            IdPhotoBgColorItem("white", R.string.id_photo_bg_white, 0xFFFFFFFF.toInt(), isLight = true),
+            // NIA lower-bound Windows HSL (135, 240, >=167) -> RGB(100, 197, 255) / #64C5FF
+            IdPhotoBgColorItem("light_blue_nia", R.string.id_photo_bg_light_blue, 0xFF64C5FF.toInt(), annotation = "NIA lower bound"),
+            IdPhotoBgColorItem("blue_standard", R.string.id_photo_bg_blue, 0xFF438EDB.toInt()),
+            IdPhotoBgColorItem("dark_blue", R.string.id_photo_bg_dark_blue, 0xFF004898.toInt()),
+            // National flag red per §2.5 -> #C41F26 / RGB(196, 31, 38)
+            IdPhotoBgColorItem("flag_red", R.string.id_photo_bg_flag_red, 0xFFC41F26.toInt()),
+            // Marriage registry red per §2.5 -> #D9001B / RGB(217, 0, 27)
+            IdPhotoBgColorItem("marriage_red", R.string.id_photo_bg_marriage_red, 0xFFD9001B.toInt()),
+            // NIA lower-bound Windows HSL (0, 0, >=198) -> RGB(210, 210, 210) / #D2D2D2
+            IdPhotoBgColorItem("light_gray_nia", R.string.id_photo_bg_light_gray, 0xFFD2D2D2.toInt(), isLight = true, annotation = "NIA lower bound"),
         )
     }
 
@@ -99,15 +114,16 @@ class IdPhotoViewModel(
         savedStateHandle[KEY_BOTTOM_TAB] = tab.name
     }
 
-    // Selected background color
-    private val _selectedBgColor = MutableStateFlow(
-        savedStateHandle.get<Int>(KEY_BG_COLOR) ?: Color.WHITE
+    // Selected background color (null = 保留原底 / original background)
+    private val _selectedBgColor = MutableStateFlow<Int?>(
+        savedStateHandle.get<Int?>(KEY_BG_COLOR)
     )
-    val selectedBgColor: StateFlow<Int> = _selectedBgColor.asStateFlow()
+    val selectedBgColor: StateFlow<Int?> = _selectedBgColor.asStateFlow()
 
-    fun selectBgColor(colorInt: Int) {
+    fun selectBgColor(colorInt: Int?) {
         _selectedBgColor.value = colorInt
         savedStateHandle[KEY_BG_COLOR] = colorInt
+        updateMattedPreview()
     }
 
     // Active Category Group filter in the horizontal preset rail
@@ -190,8 +206,20 @@ class IdPhotoViewModel(
     private val _previewBitmap = MutableStateFlow<Bitmap?>(null)
     val previewBitmap: StateFlow<Bitmap?> = _previewBitmap.asStateFlow()
 
+    // Live matted preview bitmap composited over selectedBgColor
+    private val _mattedPreviewBitmap = MutableStateFlow<Bitmap?>(null)
+    val mattedPreviewBitmap: StateFlow<Bitmap?> = _mattedPreviewBitmap.asStateFlow()
+
     private val _isBitmapLoading = MutableStateFlow(false)
     val isBitmapLoading: StateFlow<Boolean> = _isBitmapLoading.asStateFlow()
+
+    // Matting refusal event for UX messaging
+    private val _mattingRefusalEvent = MutableStateFlow<String?>(null)
+    val mattingRefusalEvent: StateFlow<String?> = _mattingRefusalEvent.asStateFlow()
+
+    fun clearMattingRefusalEvent() {
+        _mattingRefusalEvent.value = null
+    }
 
     fun ensurePreviewBitmapLoaded(contentResolver: ContentResolver) {
         val uri = sourceUri ?: return
@@ -204,6 +232,35 @@ class IdPhotoViewModel(
             withContext(Dispatchers.Main) {
                 _previewBitmap.value = bmp
                 _isBitmapLoading.value = false
+                updateMattedPreview()
+            }
+        }
+    }
+
+    private fun updateMattedPreview() {
+        val sourceBmp = _previewBitmap.value ?: return
+        val targetColor = _selectedBgColor.value
+
+        if (targetColor == null) {
+            _mattedPreviewBitmap.value = null
+            return
+        }
+
+        viewModelScope.launch(Dispatchers.Default) {
+            when (val result = SolidColorMattingEngine.process(sourceBmp, targetColor)) {
+                is MattingResult.Success -> {
+                    withContext(Dispatchers.Main) {
+                        _mattedPreviewBitmap.value = result.bitmap
+                    }
+                }
+                is MattingResult.Refused -> {
+                    withContext(Dispatchers.Main) {
+                        _selectedBgColor.value = null
+                        savedStateHandle[KEY_BG_COLOR] = null
+                        _mattedPreviewBitmap.value = null
+                        _mattingRefusalEvent.value = result.reason
+                    }
+                }
             }
         }
     }
@@ -230,5 +287,7 @@ class IdPhotoViewModel(
         super.onCleared()
         _previewBitmap.value?.recycle()
         _previewBitmap.value = null
+        _mattedPreviewBitmap.value?.recycle()
+        _mattedPreviewBitmap.value = null
     }
 }

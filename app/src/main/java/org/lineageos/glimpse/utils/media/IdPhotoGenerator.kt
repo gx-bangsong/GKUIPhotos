@@ -74,6 +74,7 @@ object IdPhotoGenerator {
         sourceUri: Uri,
         cropRectNormalized: RectF,
         preset: IdPhotoPreset,
+        targetBackgroundColor: Int? = null,
     ): Uri {
         val (sourceBitmap, _, sourceName) = ImageToolbox.decode(sourceUri, context.contentResolver)
 
@@ -88,11 +89,28 @@ object IdPhotoGenerator {
         val cropH = bottom - top
 
         val cropped = Bitmap.createBitmap(sourceBitmap, left, top, cropW, cropH)
-        val resampled = if (cropped.width == preset.targetWidthPx && cropped.height == preset.targetHeightPx) {
-            cropped
+
+        // Matting stage (only if a target color is selected AND purity check passes)
+        val matted = if (targetBackgroundColor != null) {
+            when (val mattingResult = SolidColorMattingEngine.process(cropped, targetBackgroundColor)) {
+                is MattingResult.Success -> {
+                    if (mattingResult.bitmap !== cropped) cropped.recycle()
+                    mattingResult.bitmap
+                }
+                is MattingResult.Refused -> {
+                    // Graceful fallback: retain original cropped background per §4.4.1
+                    cropped
+                }
+            }
         } else {
-            resample(cropped, preset.targetWidthPx, preset.targetHeightPx).also {
-                if (it !== cropped) cropped.recycle()
+            cropped
+        }
+
+        val resampled = if (matted.width == preset.targetWidthPx && matted.height == preset.targetHeightPx) {
+            matted
+        } else {
+            resample(matted, preset.targetWidthPx, preset.targetHeightPx).also {
+                if (it !== matted) matted.recycle()
             }
         }
 

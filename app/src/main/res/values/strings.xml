@@ -226,6 +226,17 @@
     <string name="id_photo_all_specs">All specs</string>
     <string name="id_photo_tab_spec">Specs</string>
     <string name="id_photo_tab_background">Background</string>
+    <string name="id_photo_bg_original">Original</string>
+    <string name="id_photo_bg_white">White</string>
+    <string name="id_photo_bg_light_blue">Light Blue (NIA)</string>
+    <string name="id_photo_bg_blue">Sky Blue</string>
+    <string name="id_photo_bg_dark_blue">Dark Blue</string>
+    <string name="id_photo_bg_flag_red">Flag Red</string>
+    <string name="id_photo_bg_marriage_red">Marriage Red</string>
+    <string name="id_photo_bg_light_gray">Light Gray (NIA)</string>
+    <string name="id_photo_matting_refusal">Non-uniform background detected. Background replacement currently only supports solid-color backgrounds. Kept original background.</string>
+    <string name="id_photo_editor_entry_warning">The ID photo will be created from the original image. Current unsaved edits will not be included.</string>
+    <string name="id_photo_editor_entry_continue">Continue</string>
     <string name="id_photo_discard_title">Discard changes?</string>
     <string name="id_photo_discard_message">Your ID photo has not been saved. Exit anyway?</string>
     <string name="id_photo_discard_confirm">Discard</string>

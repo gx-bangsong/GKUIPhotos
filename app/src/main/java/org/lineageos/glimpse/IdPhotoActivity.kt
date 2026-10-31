@@ -311,21 +311,30 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
 
                 launch {
                     viewModel.previewBitmap.collectLatest { bmp ->
-                        if (bmp != null) {
-                            if (viewModel.hasFramingTransform) {
-                                cropImageView.setBitmap(
-                                    bmp,
-                                    Triple(
-                                        viewModel.framingScale,
-                                        viewModel.framingTranslateX,
-                                        viewModel.framingTranslateY,
-                                    ),
-                                )
-                            } else {
-                                cropImageView.setBitmap(bmp)
-                                val (scale, tx, ty) = cropImageView.getTransformState()
-                                viewModel.updateTransform(scale, tx, ty)
-                            }
+                        if (bmp != null && viewModel.mattedPreviewBitmap.value == null) {
+                            updateCropImageViewBitmap(bmp)
+                        }
+                    }
+                }
+
+                launch {
+                    viewModel.mattedPreviewBitmap.collectLatest { mattedBmp ->
+                        val bmpToDisplay = mattedBmp ?: viewModel.previewBitmap.value
+                        if (bmpToDisplay != null) {
+                            updateCropImageViewBitmap(bmpToDisplay)
+                        }
+                    }
+                }
+
+                launch {
+                    viewModel.mattingRefusalEvent.collectLatest { reason ->
+                        if (reason != null) {
+                            MaterialAlertDialogBuilder(this@IdPhotoActivity)
+                                .setTitle(R.string.id_photo_title)
+                                .setMessage(R.string.id_photo_matting_refusal)
+                                .setPositiveButton(android.R.string.ok, null)
+                                .show()
+                            viewModel.clearMattingRefusalEvent()
                         }
                     }
                 }
@@ -372,6 +381,23 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
                     }
                 }
             }
+        }
+    }
+
+    private fun updateCropImageViewBitmap(bmp: Bitmap) {
+        if (viewModel.hasFramingTransform) {
+            cropImageView.setBitmap(
+                bmp,
+                Triple(
+                    viewModel.framingScale,
+                    viewModel.framingTranslateX,
+                    viewModel.framingTranslateY,
+                ),
+            )
+        } else {
+            cropImageView.setBitmap(bmp)
+            val (scale, tx, ty) = cropImageView.getTransformState()
+            viewModel.updateTransform(scale, tx, ty)
         }
     }
 
@@ -483,6 +509,7 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
 
     private fun executeSavePipeline(cropRect: RectF, preset: IdPhotoPreset) {
         val uri = viewModel.sourceUri ?: return
+        val targetBg = viewModel.selectedBgColor.value
         savingOverlay.isVisible = true
 
         lifecycleScope.launch {
@@ -493,6 +520,7 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
                         sourceUri = uri,
                         cropRectNormalized = cropRect,
                         preset = preset,
+                        targetBackgroundColor = targetBg,
                     )
                 }.getOrNull()
             }
@@ -574,19 +602,19 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
      * Adapter for ID photo background color swatches.
      */
     private class BackgroundColorAdapter(
-        private val onColorSelected: (Int) -> Unit,
+        private val onColorSelected: (Int?) -> Unit,
     ) : RecyclerView.Adapter<BackgroundColorViewHolder>() {
 
         private var colors: List<IdPhotoBgColorItem> = emptyList()
-        private var selectedColor: Int = Color.WHITE
+        private var selectedColor: Int? = null
 
-        fun setColors(items: List<IdPhotoBgColorItem>, selected: Int) {
+        fun setColors(items: List<IdPhotoBgColorItem>, selected: Int?) {
             colors = items
             selectedColor = selected
             notifyDataSetChanged()
         }
 
-        fun setSelectedColor(selected: Int) {
+        fun setSelectedColor(selected: Int?) {
             selectedColor = selected
             notifyDataSetChanged()
         }
@@ -607,16 +635,25 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
 
     private class BackgroundColorViewHolder(
         itemView: View,
-        private val onColorSelected: (Int) -> Unit,
+        private val onColorSelected: (Int?) -> Unit,
     ) : RecyclerView.ViewHolder(itemView) {
 
         private val card = itemView.findViewById<MaterialCardView>(R.id.colorSwatchCard)
+        private val originalLabel = itemView.findViewById<TextView>(R.id.originalLabel)
         private val checkIcon = itemView.findViewById<ImageView>(R.id.colorCheckIcon)
 
         fun bind(item: IdPhotoBgColorItem, isSelected: Boolean) {
-            card.setCardBackgroundColor(item.colorInt)
-
             val density = card.context.resources.displayMetrics.density
+
+            if (item.colorInt == null) {
+                card.setCardBackgroundColor(COLOR_CARD_UNSELECTED)
+                originalLabel.isVisible = !isSelected
+                originalLabel.setText(item.nameRes)
+            } else {
+                card.setCardBackgroundColor(item.colorInt)
+                originalLabel.isVisible = false
+            }
+
             if (isSelected) {
                 card.strokeWidth = (2.5f * density).toInt()
                 card.setStrokeColor(COLOR_SELECTED_GOLD)
