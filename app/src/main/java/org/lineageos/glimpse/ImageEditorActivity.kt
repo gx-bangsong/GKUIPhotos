@@ -195,10 +195,10 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         data class Ratio(val labelRes: Int, val ratio: Float, val faceGuide: Boolean)
         val ratios = listOf(
             Ratio(R.string.editor_crop, 0f, false), // 0 = match image (free)
-            Ratio(R.string.id_photo_preset_one_inch, 25f / 35f, true),
-            Ratio(R.string.id_photo_preset_two_inch, 35f / 49f, true),
-            Ratio(R.string.id_photo_preset_passport, 35f / 45f, true),
-            Ratio(R.string.id_photo_preset_square, 1f, false),
+            Ratio(R.string.ratio_square, 1f, false),
+            Ratio(R.string.ratio_5_7, 5f / 7f, false),
+            Ratio(R.string.ratio_7_9, 7f / 9f, false),
+            Ratio(R.string.ratio_11_16, 11f / 16f, false),
         )
         ratios.forEachIndexed { index, r ->
             val chip = Chip(this).apply {

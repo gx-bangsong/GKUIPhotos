@@ -137,10 +137,6 @@
 
     <!-- 證件照工具（模組 5） -->
     <string name="id_photo_title">證件照</string>
-    <string name="id_photo_preset_one_inch">一寸 (25:35)</string>
-    <string name="id_photo_preset_two_inch">二寸 (35:49)</string>
-    <string name="id_photo_preset_passport">護照 / 簽證</string>
-    <string name="id_photo_preset_square">方形（大頭貼）</string>
     <string name="id_photo_guide_hint">拖曳以定位。藉由九宮格與臉部輪廓輔助線對齊頭部和肩部。</string>
     <string name="id_photo_apply">套用</string>
 
