@@ -213,6 +213,62 @@
     <string name="id_photo_guide_hint">Drag to position. Use the rule-of-thirds and face oval to align head and shoulders.</string>
     <string name="id_photo_apply">Apply</string>
 
+    <!-- Neutral crop ratios for ImageEditorActivity -->
+    <string name="ratio_free">Free</string>
+    <string name="ratio_square">1:1</string>
+    <string name="ratio_5_7">5:7</string>
+    <string name="ratio_7_9">7:9</string>
+    <string name="ratio_11_16">11:16</string>
+
+    <!-- ID Photo tool presets and groups -->
+    <string name="image_toolbox_id_photo">ID Photo</string>
+    <string name="image_toolbox_id_photo_desc">Create standard passport, visa, and exam ID photos</string>
+    <string name="id_photo_change_preset">Change preset</string>
+    <string name="id_photo_same_ratio_title">Same-ratio presets (switch without resetting crop):</string>
+    <string name="id_photo_generate_button">Generate ID photo</string>
+    <string name="id_photo_generating">Generating ID photo…</string>
+    <string name="id_photo_success">ID photo saved to Pictures/Glimpse</string>
+    <string name="id_photo_failed">Failed to generate ID photo</string>
+
+    <string name="id_photo_group_all">All</string>
+    <string name="id_photo_group_common">Common</string>
+    <string name="id_photo_group_official">Official IDs</string>
+    <string name="id_photo_group_visa">Visas</string>
+    <string name="id_photo_group_exam">Exams</string>
+
+    <string name="id_photo_preset_standard_1_inch">Standard 1 inch</string>
+    <string name="id_photo_preset_standard_2_inch">Standard 2 inch</string>
+    <string name="id_photo_preset_small_1_inch">Small 1 inch</string>
+    <string name="id_photo_preset_large_1_inch">Large 1 inch</string>
+    <string name="id_photo_preset_small_2_inch">Small 2 inch</string>
+    <string name="id_photo_preset_large_2_inch">Large 2 inch</string>
+    <string name="id_photo_preset_three_inch">3 inch</string>
+    <string name="id_photo_preset_five_inch_3r">5 inch (3R)</string>
+    <string name="id_photo_preset_six_inch_4r">6 inch (4R)</string>
+    <string name="id_photo_preset_id_card_cn">Resident ID Card</string>
+    <string name="id_photo_preset_driver_license_paper">Driver License (Paper)</string>
+    <string name="id_photo_preset_driver_license_electronic">Electronic Driver License</string>
+    <string name="id_photo_preset_passport_cn">Chinese Passport / Travel Permit</string>
+    <string name="id_photo_preset_social_security_card">Social Security Card</string>
+    <string name="id_photo_preset_marriage_cert">Marriage Certificate</string>
+    <string name="id_photo_preset_visa_schengen">Schengen Visa</string>
+    <string name="id_photo_preset_visa_us">US Visa (DS-160)</string>
+    <string name="id_photo_preset_visa_japan_standard">Japan Visa (Standard)</string>
+    <string name="id_photo_preset_visa_japan_square">Japan Visa (Square)</string>
+    <string name="id_photo_preset_visa_uk">UK Visa (UKVI)</string>
+    <string name="id_photo_preset_visa_canada_online">Canada Visa (Online)</string>
+    <string name="id_photo_preset_passport_canada_paper">Canada Passport / PR (Paper)</string>
+    <string name="id_photo_preset_visa_australia">Australia / NZ Visa</string>
+    <string name="id_photo_preset_visa_singapore">Singapore Visa</string>
+    <string name="id_photo_preset_visa_korea">Korea Visa</string>
+    <string name="id_photo_preset_visa_thailand">Thailand Visa</string>
+    <string name="id_photo_preset_exam_cet">CET-4 / CET-6</string>
+    <string name="id_photo_preset_exam_ntce">NTCE Teacher Certification</string>
+    <string name="id_photo_preset_exam_ncre">NCRE Computer Examination</string>
+    <string name="id_photo_preset_exam_civil_service">Civil Service Examination</string>
+    <string name="id_photo_preset_exam_cpa">CPA Examination</string>
+    <string name="id_photo_preset_exam_postgraduate">Postgraduate Entrance Exam</string>
+
     <!-- Image toolbox (module 6) -->
     <string name="toolbox_title">Image toolbox</string>
     <string name="toolbox_compress">Compress size</string>

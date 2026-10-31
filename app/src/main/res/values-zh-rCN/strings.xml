@@ -140,6 +140,62 @@
     <string name="id_photo_guide_hint">拖动以定位。借助九宫格与人脸轮廓辅助线对齐头部和肩部。</string>
     <string name="id_photo_apply">应用</string>
 
+    <!-- Neutral crop ratios for ImageEditorActivity -->
+    <string name="ratio_free">自由</string>
+    <string name="ratio_square">1:1 正方形</string>
+    <string name="ratio_5_7">5:7</string>
+    <string name="ratio_7_9">7:9</string>
+    <string name="ratio_11_16">11:16</string>
+
+    <!-- ID Photo tool presets and groups -->
+    <string name="image_toolbox_id_photo">证件照制作</string>
+    <string name="image_toolbox_id_photo_desc">一键制作标准寸照、官方证件照、出国签证与各类考试照</string>
+    <string name="id_photo_change_preset">更换规格</string>
+    <string name="id_photo_same_ratio_title">同比例规格（切换不重置取景）：</string>
+    <string name="id_photo_generate_button">生成证件照</string>
+    <string name="id_photo_generating">正在生成证件照…</string>
+    <string name="id_photo_success">证件照已保存至 Pictures/Glimpse</string>
+    <string name="id_photo_failed">生成证件照失败</string>
+
+    <string name="id_photo_group_all">全部</string>
+    <string name="id_photo_group_common">常用寸照</string>
+    <string name="id_photo_group_official">官方证件</string>
+    <string name="id_photo_group_visa">国际签证</string>
+    <string name="id_photo_group_exam">各类考试</string>
+
+    <string name="id_photo_preset_standard_1_inch">标准一寸</string>
+    <string name="id_photo_preset_standard_2_inch">标准二寸</string>
+    <string name="id_photo_preset_small_1_inch">小一寸</string>
+    <string name="id_photo_preset_large_1_inch">大一寸</string>
+    <string name="id_photo_preset_small_2_inch">小二寸</string>
+    <string name="id_photo_preset_large_2_inch">大二寸</string>
+    <string name="id_photo_preset_three_inch">三寸</string>
+    <string name="id_photo_preset_five_inch_3r">五寸 (3R)</string>
+    <string name="id_photo_preset_six_inch_4r">六寸 (4R)</string>
+    <string name="id_photo_preset_id_card_cn">第二代居民身份证</string>
+    <string name="id_photo_preset_driver_license_paper">机动车驾驶证 (纸质)</string>
+    <string name="id_photo_preset_driver_license_electronic">电子机动车驾驶证</string>
+    <string name="id_photo_preset_passport_cn">中国护照 / 通行证</string>
+    <string name="id_photo_preset_social_security_card">社会保障卡 (医保卡)</string>
+    <string name="id_photo_preset_marriage_cert">结婚登记证件照</string>
+    <string name="id_photo_preset_visa_schengen">欧洲申根签证</string>
+    <string name="id_photo_preset_visa_us">美国签证 (DS-160)</string>
+    <string name="id_photo_preset_visa_japan_standard">日本签证 (标准型)</string>
+    <string name="id_photo_preset_visa_japan_square">日本签证 (正方形)</string>
+    <string name="id_photo_preset_visa_uk">英国签证 (UKVI)</string>
+    <string name="id_photo_preset_visa_canada_online">加拿大签证 (网申)</string>
+    <string name="id_photo_preset_passport_canada_paper">加拿大纸质护照 / 移民照</string>
+    <string name="id_photo_preset_visa_australia">澳大利亚 / 新西兰签证</string>
+    <string name="id_photo_preset_visa_singapore">新加坡签证</string>
+    <string name="id_photo_preset_visa_korea">韩国签证</string>
+    <string name="id_photo_preset_visa_thailand">泰国签证 (落地签/电子签)</string>
+    <string name="id_photo_preset_exam_cet">全国大学英语四六级 (CET)</string>
+    <string name="id_photo_preset_exam_ntce">中小学教师资格考试 (NTCE)</string>
+    <string name="id_photo_preset_exam_ncre">全国计算机等级考试 (NCRE)</string>
+    <string name="id_photo_preset_exam_civil_service">国家公务员录用考试 (国考)</string>
+    <string name="id_photo_preset_exam_cpa">注册会计师考试 (CPA)</string>
+    <string name="id_photo_preset_exam_postgraduate">全国硕士研究生考试 (考研)</string>
+
     <!-- 图像工具箱（模块 6） -->
     <string name="toolbox_title">图像工具箱</string>
     <string name="toolbox_compress">压缩大小</string>
