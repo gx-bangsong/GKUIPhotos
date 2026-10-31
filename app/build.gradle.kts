@@ -14,24 +14,6 @@ plugins {
     alias(libs.plugins.lineageos.generatebp)
 }
 
-val keystorePath: String? = System.getenv("KEYSTORE_FILE")
-val keystorePass: String? = System.getenv("KEYSTORE_PASS")
-val keyAlias: String? = System.getenv("KEY_ALIAS")
-val keyPass: String? = System.getenv("KEY_PASS")
-val isCi: Boolean = System.getenv("CI") == "true"
-
-val releaseKeystoreFile: File? = if (!keystorePath.isNullOrBlank()) {
-    val f = file(keystorePath)
-    if (f.exists()) f else null
-} else {
-    null
-}
-
-val hasReleaseSigning: Boolean = releaseKeystoreFile != null &&
-        !keystorePass.isNullOrBlank() &&
-        !keyAlias.isNullOrBlank() &&
-        !keyPass.isNullOrBlank()
-
 fun getGitVersionCode(): Int {
     return try {
         val process = ProcessBuilder("git", "rev-list", "--count", "HEAD").start()
@@ -48,10 +30,6 @@ fun getGitVersionCode(): Int {
 }
 
 fun getAppVersionName(versionCode: Int): String {
-    val envVersion = System.getenv("VERSION_NAME")
-    if (!envVersion.isNullOrBlank()) {
-        return envVersion.trim()
-    }
     val dateFormat = SimpleDateFormat("yyyyMMdd", Locale.US).apply {
         timeZone = TimeZone.getTimeZone("UTC")
     }
@@ -73,32 +51,31 @@ android {
         versionName = calculatedVersionName
     }
 
-    signingConfigs {
-        if (hasReleaseSigning) {
-            create("release") {
-                storeFile = releaseKeystoreFile
-                storePassword = keystorePass
-                this.keyAlias = keyAlias
-                keyPassword = keyPass
-            }
+    val keystoreFile = System.getenv("KEYSTORE_FILE")?.takeIf { it.isNotBlank() }
+    val keystorePassword = System.getenv("KEYSTORE_PASS")?.takeIf { it.isNotBlank() } ?: System.getenv("KEYSTORE_PASSWORD")?.takeIf { it.isNotBlank() }
+    val keyAliasName = System.getenv("KEY_ALIAS")?.takeIf { it.isNotBlank() }
+    val keyPasswordValue = System.getenv("KEY_PASS")?.takeIf { it.isNotBlank() } ?: System.getenv("KEY_PASSWORD")?.takeIf { it.isNotBlank() }
+    val signingValues = listOf(keystoreFile, keystorePassword, keyAliasName, keyPasswordValue)
+    val hasCompleteReleaseSigning = signingValues.all { it != null }
+
+    val productionReleaseSigning = if (hasCompleteReleaseSigning) {
+        signingConfigs.create("productionRelease") {
+            storeFile = file(keystoreFile!!)
+            storePassword = keystorePassword
+            keyAlias = keyAliasName
+            keyPassword = keyPasswordValue  // 严格注意赋值方向
         }
-    }
+    } else { null }
 
     buildTypes {
         release {
-            if (hasReleaseSigning) {
-                signingConfig = signingConfigs.getByName("release")
-            } else {
-                signingConfig = signingConfigs.getByName("debug")
-            }
+            signingConfig = productionReleaseSigning
 
             // Enables code shrinking, obfuscation, and optimization.
             isMinifyEnabled = true
 
             // Enables resource shrinking.
             isShrinkResources = true
-
-            isDebuggable = false
 
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -171,20 +148,15 @@ generateBp {
     }
 }
 
-gradle.taskGraph.whenReady {
-    if (isCi && !hasReleaseSigning) {
-        val hasReleaseTask = allTasks.any {
-            it.name.equals("assembleRelease", ignoreCase = true) ||
-                    it.name.equals("bundleRelease", ignoreCase = true)
-        }
-        if (hasReleaseTask) {
-            throw GradleException(
-                "Release keystore environment variables (KEYSTORE_FILE, KEYSTORE_PASS, KEY_ALIAS, KEY_PASS) " +
-                        "are missing or invalid in CI environment! Refusing to build unsigned or debug-signed release APK."
-            )
+tasks.matching { it.name == "assembleRelease" }.configureEach {
+    doLast {
+        val rootReleaseDir = rootProject.layout.projectDirectory.dir("build/outputs/apk/release").asFile
+        rootReleaseDir.mkdirs()
+        val appReleaseDir = layout.buildDirectory.dir("outputs/apk/release").get().asFile
+        appReleaseDir.listFiles()?.forEach { file ->
+            if (file.name.endsWith("-release.apk")) {
+                file.copyTo(File(rootReleaseDir, file.name), overwrite = true)
+            }
         }
     }
 }
-
-
-
