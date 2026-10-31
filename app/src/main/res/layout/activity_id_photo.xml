@@ -10,65 +10,33 @@
     android:layout_height="match_parent"
     android:background="@android:color/black">
 
-    <!-- Top Action Bar matching 功能参考2.jpg: Cancel on left, Save on right, NO top segmented toggle -->
-    <LinearLayout
-        android:id="@+id/topBar"
+    <!-- Top Action Bar matching ImageEditorActivity: Back icon on left, Save icon on right -->
+    <com.google.android.material.appbar.AppBarLayout
+        android:id="@+id/appBarLayout"
         android:layout_width="match_parent"
-        android:layout_height="56dp"
+        android:layout_height="wrap_content"
         android:background="@android:color/black"
-        android:fitsSystemWindows="true"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:paddingHorizontal="16dp">
+        android:fitsSystemWindows="true">
 
-        <TextView
-            android:id="@+id/cancelButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:clickable="true"
-            android:focusable="true"
-            android:paddingHorizontal="8dp"
-            android:paddingVertical="8dp"
-            android:text="@string/cancel"
-            android:textAppearance="?attr/textAppearanceBodyLarge"
-            android:textColor="@android:color/white"
-            android:textSize="16sp" />
+        <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/toolbar"
+            android:layout_width="match_parent"
+            android:layout_height="?attr/actionBarSize"
+            app:menu="@menu/menu_image_editor"
+            app:navigationIcon="@drawable/ic_back"
+            app:navigationIconTint="@android:color/white"
+            app:title="@string/image_toolbox_id_photo"
+            app:titleTextColor="@android:color/white" />
 
-        <TextView
-            android:id="@+id/titleText"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:gravity="center"
-            android:text="@string/image_toolbox_id_photo"
-            android:textAppearance="?attr/textAppearanceTitleMedium"
-            android:textColor="@android:color/white"
-            android:textStyle="bold" />
-
-        <TextView
-            android:id="@+id/saveButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:clickable="true"
-            android:focusable="true"
-            android:paddingHorizontal="8dp"
-            android:paddingVertical="8dp"
-            android:text="@string/editor_save"
-            android:textAppearance="?attr/textAppearanceBodyLarge"
-            android:textColor="#F5C542"
-            android:textSize="16sp"
-            android:textStyle="bold" />
-    </LinearLayout>
+    </com.google.android.material.appbar.AppBarLayout>
 
     <!-- Center: Interactive Framing Surface -->
     <FrameLayout
         android:id="@+id/previewContainer"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:layout_marginTop="56dp"
-        android:layout_marginBottom="160dp">
+        android:layout_marginBottom="160dp"
+        app:layout_behavior="@string/appbar_scrolling_view_behavior">
 
         <org.lineageos.glimpse.ui.views.CropImageView
             android:id="@+id/cropImageView"
@@ -108,7 +76,7 @@
 
     </FrameLayout>
 
-    <!-- Bottom Controls Area matching 功能参考2.jpg: Fixed, Dark, Multi-layer -->
+    <!-- Bottom Controls Area: Fixed, Dark, Multi-layer -->
     <LinearLayout
         android:id="@+id/bottomControls"
         android:layout_width="match_parent"
@@ -125,7 +93,7 @@
             android:orientation="vertical"
             android:paddingTop="10dp">
 
-            <!-- Category Tabs Row with Search Icon on Left (as in 功能参考2.jpg) -->
+            <!-- Category Tabs Row with Search Icon on Left -->
             <LinearLayout
                 android:id="@+id/categoryTabsRow"
                 android:layout_width="match_parent"
@@ -159,7 +127,7 @@
                 </HorizontalScrollView>
             </LinearLayout>
 
-            <!-- Preset Cards Rail with Expand Button on Left (as in 功能参考2.jpg) -->
+            <!-- Preset Cards Rail with Expand Button on Left -->
             <LinearLayout
                 android:id="@+id/presetRailRow"
                 android:layout_width="match_parent"
@@ -169,7 +137,7 @@
                 android:orientation="horizontal"
                 android:paddingHorizontal="14dp">
 
-                <!-- Expand / All Specs square button (leftmost square button in 功能参考2.jpg) -->
+                <!-- Expand / All Specs square button -->
                 <com.google.android.material.card.MaterialCardView
                     android:id="@+id/allSpecsExpandButton"
                     android:layout_width="48dp"
@@ -233,7 +201,7 @@
             android:layout_marginTop="12dp"
             android:background="#2C2C2E" />
 
-        <!-- BOTTOM-MOST TAB BAR: "规格" (Specs) and "背景" (Background) (as in 功能参考2.jpg) -->
+        <!-- BOTTOM-MOST TAB BAR: "规格" (Specs) and "背景" (Background) -->
         <LinearLayout
             android:id="@+id/bottomTabBar"
             android:layout_width="match_parent"
