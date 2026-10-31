@@ -145,7 +145,8 @@
             android:name=".IdPhotoActivity"
             android:configChanges="orientation|screenLayout|screenSize|smallestScreenSize|keyboardHidden"
             android:exported="false"
-            android:label="@string/image_toolbox_id_photo" />
+            android:label="@string/image_toolbox_id_photo"
+            android:theme="@style/Theme.Glimpse.MediaViewer" />
 
         <!-- Module 7: full offline animated-GIF editor -->
         <activity

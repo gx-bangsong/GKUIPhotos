@@ -52,6 +52,9 @@ class CropImageView @JvmOverloads constructor(
     /** When true the face-alignment oval is drawn inside the crop rectangle. */
     var showFaceGuide: Boolean = true
 
+    /** Callback invoked whenever the user modifies framing via pan or zoom gestures. */
+    var onFramingModified: (() -> Unit)? = null
+
     /** Tiled repeating privacy watermark text drawn live inside the crop area. */
     var watermarkText: String? = null
         set(value) {
@@ -69,6 +72,7 @@ class CropImageView @JvmOverloads constructor(
     private val scaleDetector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
         override fun onScale(detector: ScaleGestureDetector): Boolean {
             scaleFactor = (scaleFactor * detector.scaleFactor).coerceIn(0.3f, 8f)
+            onFramingModified?.invoke()
             invalidate()
             return true
         }
@@ -126,6 +130,23 @@ class CropImageView @JvmOverloads constructor(
         translateX = 0f
         translateY = 0f
         invalidate()
+    }
+
+    /**
+     * Applies a new preset aspect ratio live.
+     * If [oldRatio] shares the same aspect ratio (< 0.005 difference), current pan and zoom
+     * coordinates are preserved pixel-identically.
+     * If cross-ratio, re-fits the viewport centered while preserving zoom intent.
+     */
+    fun applyPresetRatio(newRatio: Float, oldRatio: Float? = null) {
+        val isSameRatio = oldRatio != null && kotlin.math.abs(newRatio - oldRatio) < 0.005f
+        aspectRatio = newRatio
+        if (!isSameRatio && oldRatio != null) {
+            translateX = 0f
+            translateY = 0f
+            scaleFactor = max(scaleFactor, fitScale())
+            invalidate()
+        }
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
@@ -275,11 +296,16 @@ class CropImageView @JvmOverloads constructor(
             }
             MotionEvent.ACTION_MOVE -> {
                 if (!scaleDetector.isInProgress) {
-                    translateX += event.x - lastTouchX
-                    translateY += event.y - lastTouchY
-                    lastTouchX = event.x
-                    lastTouchY = event.y
-                    invalidate()
+                    val dx = event.x - lastTouchX
+                    val dy = event.y - lastTouchY
+                    if (dx != 0f || dy != 0f) {
+                        translateX += dx
+                        translateY += dy
+                        onFramingModified?.invoke()
+                        lastTouchX = event.x
+                        lastTouchY = event.y
+                        invalidate()
+                    }
                 }
             }
         }

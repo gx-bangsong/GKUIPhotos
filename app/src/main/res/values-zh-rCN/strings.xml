@@ -149,6 +149,13 @@
     <!-- ID Photo tool presets and groups -->
     <string name="image_toolbox_id_photo">证件照制作</string>
     <string name="image_toolbox_id_photo_desc">一键制作标准寸照、官方证件照、出国签证与各类考试照</string>
+    <string name="cancel">取消</string>
+    <string name="id_photo_all_specs">全部规格</string>
+    <string name="id_photo_tab_spec">尺寸规格</string>
+    <string name="id_photo_discard_title">放弃修改？</string>
+    <string name="id_photo_discard_message">当前证件照未保存，退出将丢失修改。</string>
+    <string name="id_photo_discard_confirm">放弃</string>
+
     <string name="image_toolbox_id_photo_open">制作证件照</string>
     <string name="id_photo_change_preset">更换规格</string>
     <string name="id_photo_same_ratio_title">同比例规格（切换不重置取景）：</string>

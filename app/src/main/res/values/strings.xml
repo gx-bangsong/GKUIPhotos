@@ -222,6 +222,13 @@
     <!-- ID Photo tool presets and groups -->
     <string name="image_toolbox_id_photo">ID Photo</string>
     <string name="image_toolbox_id_photo_desc">Create standard passport, visa, and exam ID photos</string>
+    <string name="cancel">Cancel</string>
+    <string name="id_photo_all_specs">All specs</string>
+    <string name="id_photo_tab_spec">Size</string>
+    <string name="id_photo_discard_title">Discard changes?</string>
+    <string name="id_photo_discard_message">Your ID photo has not been saved. Exit anyway?</string>
+    <string name="id_photo_discard_confirm">Discard</string>
+
     <string name="image_toolbox_id_photo_open">Create ID photo</string>
     <string name="id_photo_change_preset">Change preset</string>
     <string name="id_photo_same_ratio_title">Same-ratio presets (switch without resetting crop):</string>

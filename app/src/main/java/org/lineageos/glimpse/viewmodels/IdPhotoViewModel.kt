@@ -23,13 +23,10 @@ import org.lineageos.glimpse.models.idphoto.IdPhotoCatalog
 import org.lineageos.glimpse.models.idphoto.IdPhotoPreset
 import org.lineageos.glimpse.models.idphoto.PresetGroup
 
-enum class IdPhotoWizardStep {
-    CATALOG,
-    FRAMING,
-    // [INSERTION POINT - Slice 2]: BACKGROUND_REPLACEMENT step
-    // [INSERTION POINT - Slice 3 / P2]: PRINT_SHEET_LAYOUT step
-}
-
+/**
+ * Shared ViewModel for [org.lineageos.glimpse.IdPhotoActivity].
+ * Survives configuration changes and process death via [SavedStateHandle].
+ */
 class IdPhotoViewModel(
     application: Application,
     private val savedStateHandle: SavedStateHandle,
@@ -39,11 +36,12 @@ class IdPhotoViewModel(
         private const val KEY_SOURCE_URI = "idphoto_source_uri"
         private const val KEY_PRESET_ID = "idphoto_preset_id"
         private const val KEY_GROUP_NAME = "idphoto_group_name"
-        private const val KEY_STEP = "idphoto_wizard_step"
+        private const val KEY_PICKER_OPEN = "idphoto_picker_open"
         private const val KEY_SCALE = "idphoto_framing_scale"
         private const val KEY_TX = "idphoto_framing_tx"
         private const val KEY_TY = "idphoto_framing_ty"
         private const val KEY_HAS_TRANSFORM = "idphoto_has_transform"
+        private const val KEY_MODIFIED = "idphoto_framing_modified"
     }
 
     // Source URI: preserved across process death
@@ -53,41 +51,40 @@ class IdPhotoViewModel(
             savedStateHandle[KEY_SOURCE_URI] = value?.toString()
         }
 
-    // Selected Preset: ID preserved across process death
-    private val _selectedPreset = MutableStateFlow<IdPhotoPreset?>(
+    // Selected Preset: defaults to Standard 1-inch if unset; preserved across process death
+    private val _selectedPreset = MutableStateFlow(
         savedStateHandle.get<String>(KEY_PRESET_ID)?.let { IdPhotoCatalog.getById(it) }
+            ?: IdPhotoCatalog.presets.first()
     )
-    val selectedPreset: StateFlow<IdPhotoPreset?> = _selectedPreset.asStateFlow()
+    val selectedPreset: StateFlow<IdPhotoPreset> = _selectedPreset.asStateFlow()
 
     fun selectPreset(preset: IdPhotoPreset) {
         _selectedPreset.value = preset
         savedStateHandle[KEY_PRESET_ID] = preset.id
     }
 
-    // Selected Group: preserved across configuration changes and process death
-    private val _selectedGroup = MutableStateFlow<PresetGroup?>(
+    // Full catalog picker overlay visibility state
+    private val _isPickerOpen = MutableStateFlow(
+        savedStateHandle.get<Boolean>(KEY_PICKER_OPEN) ?: false
+    )
+    val isPickerOpen: StateFlow<Boolean> = _isPickerOpen.asStateFlow()
+
+    fun setPickerOpen(open: Boolean) {
+        _isPickerOpen.value = open
+        savedStateHandle[KEY_PICKER_OPEN] = open
+    }
+
+    // Selected Catalog Group filter inside the overlay picker
+    private val _selectedCatalogGroup = MutableStateFlow<PresetGroup?>(
         savedStateHandle.get<String>(KEY_GROUP_NAME)?.let { name ->
             runCatching { PresetGroup.valueOf(name) }.getOrNull()
         }
     )
-    val selectedGroup: StateFlow<PresetGroup?> = _selectedGroup.asStateFlow()
+    val selectedCatalogGroup: StateFlow<PresetGroup?> = _selectedCatalogGroup.asStateFlow()
 
-    fun selectGroup(group: PresetGroup?) {
-        _selectedGroup.value = group
+    fun selectCatalogGroup(group: PresetGroup?) {
+        _selectedCatalogGroup.value = group
         savedStateHandle[KEY_GROUP_NAME] = group?.name
-    }
-
-    // Current wizard step
-    private val _currentStep = MutableStateFlow(
-        savedStateHandle.get<String>(KEY_STEP)?.let { stepName ->
-            runCatching { IdPhotoWizardStep.valueOf(stepName) }.getOrNull()
-        } ?: IdPhotoWizardStep.CATALOG
-    )
-    val currentStep: StateFlow<IdPhotoWizardStep> = _currentStep.asStateFlow()
-
-    fun setStep(step: IdPhotoWizardStep) {
-        _currentStep.value = step
-        savedStateHandle[KEY_STEP] = step.name
     }
 
     // Framing transform zoom/pan
@@ -122,14 +119,14 @@ class IdPhotoViewModel(
         hasFramingTransform = true
     }
 
-    fun resetTransform() {
-        hasFramingTransform = false
-        framingScale = 1f
-        framingTranslateX = 0f
-        framingTranslateY = 0f
-    }
+    // Track whether framing has been modified by the user (for confirm-discard on exit)
+    var isFramingModified: Boolean
+        get() = savedStateHandle.get<Boolean>(KEY_MODIFIED) ?: false
+        set(value) {
+            savedStateHandle[KEY_MODIFIED] = value
+        }
 
-    // In-memory preview bitmap downsampled for smooth framing
+    // In-memory preview bitmap downsampled for smooth framing (survives rotation)
     var previewBitmap: Bitmap? = null
         private set
 

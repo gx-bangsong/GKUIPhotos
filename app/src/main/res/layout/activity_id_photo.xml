@@ -8,29 +8,209 @@
     android:id="@+id/idPhotoRootLayout"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="?attr/colorSurface">
+    android:background="@android:color/black">
 
     <com.google.android.material.appbar.AppBarLayout
         android:id="@+id/appBarLayout"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:background="@android:color/black"
         android:fitsSystemWindows="true">
 
         <com.google.android.material.appbar.MaterialToolbar
             android:id="@+id/toolbar"
             android:layout_width="match_parent"
             android:layout_height="?attr/actionBarSize"
+            app:menu="@menu/menu_id_photo"
             app:navigationContentDescription="@string/close"
-            app:navigationIcon="@drawable/ic_back"
-            app:title="@string/image_toolbox_id_photo" />
+            app:navigationIcon="@drawable/ic_close"
+            app:navigationIconTint="@android:color/white"
+            app:title="@string/image_toolbox_id_photo"
+            app:titleTextColor="@android:color/white" />
 
     </com.google.android.material.appbar.AppBarLayout>
 
-    <androidx.fragment.app.FragmentContainerView
-        android:id="@+id/idPhotoFragmentContainer"
+    <!-- Center: Interactive Framing Surface (Owns all pinch/pan gestures) -->
+    <FrameLayout
+        android:id="@+id/previewContainer"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        app:layout_behavior="@string/appbar_scrolling_view_behavior" />
+        app:layout_behavior="@string/appbar_scrolling_view_behavior">
+
+        <org.lineageos.glimpse.ui.views.CropImageView
+            android:id="@+id/cropImageView"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+        <!-- Overlay Badge: Updates live on preset switch (name + px + DPI + mm) -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/specBadgeCard"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top|center_horizontal"
+            android:layout_marginTop="16dp"
+            app:cardBackgroundColor="#99000000"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="0dp"
+            app:strokeColor="#33FFFFFF"
+            app:strokeWidth="1dp">
+
+            <TextView
+                android:id="@+id/specBadgeText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:paddingHorizontal="14dp"
+                android:paddingVertical="6dp"
+                android:textAppearance="?attr/textAppearanceLabelMedium"
+                android:textColor="@android:color/white" />
+        </com.google.android.material.card.MaterialCardView>
+
+        <com.google.android.material.progressindicator.CircularProgressIndicator
+            android:id="@+id/loadingIndicator"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:indeterminate="true"
+            android:visibility="gone" />
+
+    </FrameLayout>
+
+    <!-- Bottom Controls Area (Fixed, Non-draggable) -->
+    <LinearLayout
+        android:id="@+id/bottomControls"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:background="@drawable/bg_media_viewer_bottom_sheet"
+        android:orientation="vertical"
+        android:paddingHorizontal="16dp"
+        android:paddingTop="12dp"
+        android:paddingBottom="16dp">
+
+        <!-- Control Area Tabs Row (Reserved for Future Slices) -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/id_photo_tab_spec"
+                android:textAppearance="?attr/textAppearanceTitleSmall"
+                android:textColor="@android:color/white"
+                android:textStyle="bold" />
+
+            <!-- [INSERTION POINT - Slice 2]: Background Color Rail Tab Button -->
+            <!-- [INSERTION POINT - Slice 3 / P2]: Print Sheet Layout Toggle Button -->
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/allSpecsButton"
+                style="?attr/materialButtonOutlinedStyle"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:paddingHorizontal="10dp"
+                android:text="@string/id_photo_all_specs"
+                android:textColor="@android:color/white"
+                android:textSize="12sp"
+                app:icon="@drawable/ic_photo_size_select_actual"
+                app:iconGravity="textEnd"
+                app:iconSize="16dp"
+                app:iconTint="@android:color/white"
+                app:strokeColor="#66FFFFFF" />
+        </LinearLayout>
+
+        <!-- Preset Rail: Compact horizontal cards with live tap-to-switch -->
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/presetRailRecyclerView"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:clipToPadding="false"
+            android:orientation="horizontal"
+            android:overScrollMode="never" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/id_photo_guide_hint"
+            android:textAppearance="?attr/textAppearanceLabelSmall"
+            android:textColor="#B3FFFFFF" />
+
+        <!-- [INSERTION POINT - Slice 2]: Background Color Rail Container -->
+        <!-- [INSERTION POINT - Slice 3 / P2]: Print Sheet Controls Container -->
+
+    </LinearLayout>
+
+    <!-- Full Catalog Picker Overlay (Tap-opened, Non-draggable) -->
+    <LinearLayout
+        android:id="@+id/catalogPickerOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="?attr/colorSurface"
+        android:clickable="true"
+        android:elevation="12dp"
+        android:focusable="true"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <!-- Overlay Header -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="?attr/actionBarSize"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingHorizontal="16dp">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/id_photo_all_specs"
+                android:textAppearance="?attr/textAppearanceTitleMedium" />
+
+            <ImageButton
+                android:id="@+id/pickerCloseButton"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/close"
+                android:src="@drawable/ic_close"
+                app:tint="?attr/colorOnSurface" />
+        </LinearLayout>
+
+        <!-- Group Tabs (ChipGroup) -->
+        <HorizontalScrollView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingHorizontal="16dp"
+            android:scrollbars="none">
+
+            <com.google.android.material.chip.ChipGroup
+                android:id="@+id/pickerGroupChipGroup"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                app:selectionRequired="true"
+                app:singleLine="true"
+                app:singleSelection="true" />
+        </HorizontalScrollView>
+
+        <!-- [INSERTION POINT - P1]: Search Field placeholder -->
+
+        <!-- 2-Column Preset Grid of all 32 presets -->
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/pickerRecyclerView"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_marginTop="8dp"
+            android:layout_weight="1"
+            android:clipToPadding="false"
+            android:paddingHorizontal="12dp"
+            android:paddingBottom="16dp" />
+    </LinearLayout>
 
     <!-- Saving / Processing Overlay -->
     <FrameLayout
@@ -39,6 +219,7 @@
         android:layout_height="match_parent"
         android:background="#80000000"
         android:clickable="true"
+        android:elevation="24dp"
         android:focusable="true"
         android:visibility="gone">
 
@@ -61,7 +242,8 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
                 android:text="@string/id_photo_generating"
-                android:textAppearance="?attr/textAppearanceBodyMedium" />
+                android:textAppearance="?attr/textAppearanceBodyMedium"
+                android:textColor="@android:color/white" />
         </LinearLayout>
     </FrameLayout>
 
