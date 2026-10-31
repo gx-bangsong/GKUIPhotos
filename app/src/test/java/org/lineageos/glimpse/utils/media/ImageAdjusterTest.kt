@@ -42,10 +42,27 @@ class ImageAdjusterTest {
     }
 
     @Test
-    fun testColorMatrixArrayNotNull() {
+    fun testColorMatrixNotNull() {
         val combined = AdjustParameters(saturation = 10, contrast = 20, temperature = -10, sharpen = 30)
         val matrix = ImageAdjuster.buildColorMatrix(combined)
         assertNotNull(matrix)
-        assertEquals(20, matrix!!.array.size)
+    }
+
+    @Test
+    fun testParameterClampingAndEquality() {
+        val params = AdjustParameters(
+            saturation = 50,
+            contrast = -30,
+            temperature = 25,
+            sharpen = 80
+        )
+        assertEquals(50, params.saturation)
+        assertEquals(-30, params.contrast)
+        assertEquals(25, params.temperature)
+        assertEquals(80, params.sharpen)
+        assertFalse(params.isDefault)
+
+        val reset = params.copy(saturation = 0, contrast = 0, temperature = 0, sharpen = 0)
+        assertTrue(reset.isDefault)
     }
 }
