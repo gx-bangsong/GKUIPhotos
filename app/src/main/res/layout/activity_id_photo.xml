@@ -137,9 +137,9 @@
                 android:orientation="horizontal"
                 android:paddingHorizontal="14dp">
 
-                <!-- Expand / All Specs square button -->
+                <!-- Custom ID Photo Template square button (Fixed on left, does not scroll with rail) -->
                 <com.google.android.material.card.MaterialCardView
-                    android:id="@+id/allSpecsExpandButton"
+                    android:id="@+id/customTemplateButton"
                     android:layout_width="48dp"
                     android:layout_height="52dp"
                     android:layout_marginEnd="8dp"
@@ -153,11 +153,12 @@
                     app:strokeWidth="1dp">
 
                     <ImageView
+                        android:id="@+id/customTemplateIcon"
                         android:layout_width="22dp"
                         android:layout_height="22dp"
                         android:layout_gravity="center"
-                        android:contentDescription="@string/id_photo_all_specs"
-                        android:src="@drawable/ic_photo_size_select_actual"
+                        android:contentDescription="@string/id_photo_custom_title"
+                        android:src="@drawable/ic_custom_template"
                         app:tint="?attr/colorOnSurface" />
                 </com.google.android.material.card.MaterialCardView>
 

@@ -88,7 +88,8 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
     private val specsContainer by lazy { findViewById<View>(R.id.specsContainer) }
     private val searchButton by lazy { findViewById<ImageButton>(R.id.searchButton) }
     private val categoryTabsContainer by lazy { findViewById<LinearLayout>(R.id.categoryTabsContainer) }
-    private val allSpecsExpandButton by lazy { findViewById<View>(R.id.allSpecsExpandButton) }
+    private val customTemplateButton by lazy { findViewById<MaterialCardView>(R.id.customTemplateButton) }
+    private val customTemplateIcon by lazy { findViewById<ImageView>(R.id.customTemplateIcon) }
     private val presetRailRecyclerView by lazy { findViewById<RecyclerView>(R.id.presetRailRecyclerView) }
 
     // Background mode views
@@ -237,8 +238,8 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
         searchButton.setOnClickListener {
             viewModel.setPickerOpen(true)
         }
-        allSpecsExpandButton.setOnClickListener {
-            viewModel.setPickerOpen(true)
+        customTemplateButton.setOnClickListener {
+            showCustomSizeDialog()
         }
 
         observeViewModelState()
@@ -530,13 +531,40 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
         }
 
         val customPresets = IdPhotoCustomPresetManager.getSavedCustomPresets(this)
-        val railItems = baseItems + customPresets + listOf(CUSTOM_ADD_PRESET)
+        val railItems = baseItems + customPresets
 
         railAdapter.setItems(railItems, selected)
 
         val activeIndex = railItems.indexOfFirst { it.id == selected.id }
         if (activeIndex >= 0) {
             presetRailRecyclerView.smoothScrollToPosition(activeIndex)
+        }
+
+        updateCustomTemplateButtonState(selected)
+    }
+
+    private fun updateCustomTemplateButtonState(selected: IdPhotoPreset) {
+        val density = resources.displayMetrics.density
+        val isCustomActive = selected.id.startsWith("custom_")
+
+        if (isCustomActive) {
+            val primaryContainer = getThemeColor(this, "colorPrimaryContainer", Color.parseColor("#F5C542"))
+            val onPrimaryContainer = getThemeColor(this, "colorOnPrimaryContainer", Color.BLACK)
+            val primary = getThemeColor(this, "colorPrimary", Color.parseColor("#F5C542"))
+
+            customTemplateButton.setCardBackgroundColor(primaryContainer)
+            customTemplateButton.strokeWidth = (2 * density).toInt()
+            customTemplateButton.setStrokeColor(primary)
+            customTemplateIcon.imageTintList = android.content.res.ColorStateList.valueOf(onPrimaryContainer)
+        } else {
+            val surfaceContainer = getThemeColor(this, "colorSurfaceContainerHigh", Color.DKGRAY)
+            val outlineVariant = getThemeColor(this, "colorOutlineVariant", Color.GRAY)
+            val onSurface = getThemeColor(this, "colorOnSurface", Color.WHITE)
+
+            customTemplateButton.setCardBackgroundColor(surfaceContainer)
+            customTemplateButton.strokeWidth = (1 * density).toInt()
+            customTemplateButton.setStrokeColor(outlineVariant)
+            customTemplateIcon.imageTintList = android.content.res.ColorStateList.valueOf(onSurface)
         }
     }
 
