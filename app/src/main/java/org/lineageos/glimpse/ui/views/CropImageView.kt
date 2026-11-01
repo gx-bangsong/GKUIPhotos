@@ -65,6 +65,10 @@ class CropImageView @JvmOverloads constructor(
     /** Callback invoked whenever the user modifies framing via pan, zoom, or handle drag gestures. */
     var onFramingModified: (() -> Unit)? = null
 
+    /** Tracks whether the user has actively manipulated the crop rectangle, ratio, or pan/zoom. */
+    var hasUserModifiedCrop: Boolean = false
+        private set
+
     /** Tiled repeating privacy watermark text drawn live inside the crop area. */
     var watermarkText: String? = null
         set(value) {
@@ -97,6 +101,7 @@ class CropImageView @JvmOverloads constructor(
     private val scaleDetector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
         override fun onScale(detector: ScaleGestureDetector): Boolean {
             scaleFactor = (scaleFactor * detector.scaleFactor).coerceIn(0.3f, 8f)
+            hasUserModifiedCrop = true
             onFramingModified?.invoke()
             invalidate()
             return true
@@ -160,6 +165,7 @@ class CropImageView @JvmOverloads constructor(
         scaleFactor = fitScale()
         translateX = 0f
         translateY = 0f
+        hasUserModifiedCrop = false
         computeCropRect()
         invalidate()
     }
@@ -167,6 +173,16 @@ class CropImageView @JvmOverloads constructor(
     fun getCropRect(): RectF {
         if (cropRect.isEmpty) computeCropRect()
         return RectF(cropRect)
+    }
+
+    /**
+     * Returns the visible bounds of the image in view coordinates.
+     */
+    fun getImageBounds(): RectF {
+        val bmp = bitmap ?: return RectF(0f, 0f, width.toFloat(), height.toFloat())
+        val rect = RectF(0f, 0f, bmp.width.toFloat(), bmp.height.toFloat())
+        getImageMatrix().mapRect(rect)
+        return rect
     }
 
     fun getDisplayBitmap(): Bitmap? = bitmap
@@ -194,6 +210,7 @@ class CropImageView @JvmOverloads constructor(
      * If cross-ratio, re-fits the viewport centered while preserving zoom intent.
      */
     fun applyPresetRatio(newRatio: Float, oldRatio: Float? = null) {
+        hasUserModifiedCrop = true
         val isSameRatio = oldRatio != null && kotlin.math.abs(newRatio - oldRatio) < 0.005f
         aspectRatio = newRatio
         if (!isSameRatio && oldRatio != null) {
@@ -457,12 +474,14 @@ class CropImageView @JvmOverloads constructor(
                         }
                         else -> {}
                     }
+                    hasUserModifiedCrop = true
                     onFramingModified?.invoke()
                     invalidate()
                 } else if (activeDragHandle == DragHandle.PAN) {
                     if (!scaleDetector.isInProgress && (dx != 0f || dy != 0f)) {
                         translateX += dx
                         translateY += dy
+                        hasUserModifiedCrop = true
                         onFramingModified?.invoke()
                         invalidate()
                     }
@@ -478,9 +497,11 @@ class CropImageView @JvmOverloads constructor(
     /**
      * Extract the portion of the source bitmap currently shown inside the crop
      * rectangle, returning a new (possibly filtered-elsewhere) [Bitmap].
+     * Returns null if [hasUserModifiedCrop] is false and [force] is false.
      */
-    fun crop(): Bitmap? {
+    fun crop(force: Boolean = false): Bitmap? {
         val bmp = bitmap ?: return null
+        if (!hasUserModifiedCrop && !force) return null
         if (cropRect.isEmpty) computeCropRect()
         drawMatrix.invert(inverseMatrix)
         val srcCorners = floatArrayOf(

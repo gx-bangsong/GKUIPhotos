@@ -37,6 +37,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.core.view.isVisible
 import androidx.core.view.updatePadding
+import androidx.exifinterface.media.ExifInterface
 import androidx.lifecycle.lifecycleScope
 import androidx.preference.PreferenceManager
 import com.google.android.material.bottomsheet.BottomSheetDialog
@@ -267,6 +268,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
 
         // Annotation Overlay Callbacks
         annotationOverlayView.cropRectProvider = { cropImageView.getCropRect() }
+        annotationOverlayView.imageBoundsProvider = { cropImageView.getImageBounds() }
         annotationOverlayView.displayBitmapProvider = { cropImageView.getDisplayBitmap() }
         annotationOverlayView.imageMatrixProvider = { cropImageView.getImageMatrix() }
         annotationOverlayView.onAnnotationChanged = {
@@ -371,6 +373,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
 
         // Crop guides only in CROP mode
         cropImageView.showCropGuides = (category == EditorCategory.CROP)
+        annotationOverlayView.isMarkupRestrictedToCrop = cropImageView.hasUserModifiedCrop
         annotationOverlayView.isVisible = true
 
         // Exit adjust slider if active
@@ -1187,7 +1190,8 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             val canvasBmp = Bitmap.createBitmap(result.width, result.height, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(canvasBmp)
             canvas.drawBitmap(result, 0f, 0f, null)
-            annotationOverlayView.rasterize(canvas, cropImageView.getCropRect(), result)
+            val targetRect = if (cropped != null) cropImageView.getCropRect() else cropImageView.getImageBounds()
+            annotationOverlayView.rasterize(canvas, targetRect, result)
             if (result !== baseBitmap && result !== cropped) result.recycle()
             canvasBmp
         } else {
@@ -1410,6 +1414,13 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
     }
 
     private fun loadBitmap(uri: Uri): Bitmap? = runCatching {
+        val exifOrientation = contentResolver.openInputStream(uri)?.use {
+            ExifInterface(it).getAttributeInt(
+                ExifInterface.TAG_ORIENTATION,
+                ExifInterface.ORIENTATION_NORMAL
+            )
+        } ?: ExifInterface.ORIENTATION_NORMAL
+
         val opts = android.graphics.BitmapFactory.Options().apply {
             inPreferredConfig = Bitmap.Config.ARGB_8888
             inMutable = true
@@ -1423,8 +1434,29 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         while (maxDim / sample > 2560) sample *= 2
         opts.inSampleSize = sample
 
-        contentResolver.openInputStream(uri)?.use {
+        val decoded = contentResolver.openInputStream(uri)?.use {
             android.graphics.BitmapFactory.decodeStream(it, null, opts)
+        } ?: return null
+
+        val rotationDegrees = when (exifOrientation) {
+            ExifInterface.ORIENTATION_ROTATE_90 -> 90f
+            ExifInterface.ORIENTATION_ROTATE_180 -> 180f
+            ExifInterface.ORIENTATION_ROTATE_270 -> 270f
+            else -> 0f
+        }
+        val flipHorizontal = exifOrientation == ExifInterface.ORIENTATION_FLIP_HORIZONTAL ||
+                exifOrientation == ExifInterface.ORIENTATION_FLIP_VERTICAL
+
+        if (rotationDegrees != 0f || flipHorizontal) {
+            val matrix = Matrix().apply {
+                if (rotationDegrees != 0f) postRotate(rotationDegrees)
+                if (flipHorizontal) postScale(-1f, 1f)
+            }
+            val rotated = Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, matrix, true)
+            if (rotated !== decoded) decoded.recycle()
+            rotated
+        } else {
+            decoded
         }
     }.getOrNull()
 

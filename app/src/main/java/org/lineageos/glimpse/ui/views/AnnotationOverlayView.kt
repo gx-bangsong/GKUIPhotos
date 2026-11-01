@@ -230,8 +230,10 @@ class AnnotationOverlayView @JvmOverloads constructor(
     var onTextEditRequested: ((AnnotationItem.Text) -> Unit)? = null
     var onShapeStarted: (() -> Unit)? = null
     var cropRectProvider: (() -> RectF)? = null
+    var imageBoundsProvider: (() -> RectF)? = null
     var displayBitmapProvider: (() -> Bitmap?)? = null
     var imageMatrixProvider: (() -> Matrix)? = null
+    var isMarkupRestrictedToCrop: Boolean = false
 
     val annotations = mutableListOf<AnnotationItem>()
 
@@ -394,10 +396,14 @@ class AnnotationOverlayView @JvmOverloads constructor(
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
 
-        val cropRect = cropRectProvider?.invoke()
-        if (cropRect != null && !cropRect.isEmpty) {
+        val bounds = if (isMarkupRestrictedToCrop) {
+            cropRectProvider?.invoke()
+        } else {
+            imageBoundsProvider?.invoke() ?: cropRectProvider?.invoke()
+        }
+        if (bounds != null && !bounds.isEmpty) {
             canvas.save()
-            canvas.clipRect(cropRect)
+            canvas.clipRect(bounds)
         }
 
         val currentMatrix = imageMatrixProvider?.invoke()
@@ -472,7 +478,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
             drawHandle(canvas, textBounds.right, textBounds.bottom)
         }
 
-        if (cropRect != null && !cropRect.isEmpty) {
+        if (bounds != null && !bounds.isEmpty) {
             canvas.restore()
         }
     }
