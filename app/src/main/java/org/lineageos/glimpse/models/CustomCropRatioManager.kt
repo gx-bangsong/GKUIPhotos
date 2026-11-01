@@ -55,6 +55,62 @@ object CustomCropRatioManager {
         return ratios.joinToString(";") { "${it.label}|${it.width}|${it.height}" }
     }
 
+    /**
+     * Parse custom ratios from an imported configuration file (JSON or line-by-line text).
+     */
+    fun parseConfigFile(content: String): List<CustomRatio> {
+        if (content.isBlank()) return emptyList()
+        val list = mutableListOf<CustomRatio>()
+
+        // 1. Try JSON Array or JSON Object
+        try {
+            val trimmed = content.trim()
+            if (trimmed.startsWith("[") || trimmed.startsWith("{")) {
+                val arr = if (trimmed.startsWith("[")) {
+                    org.json.JSONArray(trimmed)
+                } else {
+                    val obj = org.json.JSONObject(trimmed)
+                    obj.optJSONArray("ratios") ?: org.json.JSONArray()
+                }
+                for (i in 0 until arr.length()) {
+                    val item = arr.getJSONObject(i)
+                    val label = item.optString("label", "")
+                    val w = item.optDouble("w", 0.0).toFloat()
+                    val h = item.optDouble("h", 0.0).toFloat()
+                    if (validate(w, h)) {
+                        list.add(CustomRatio(formatLabel(w, h, label), w, h))
+                    }
+                }
+                if (list.isNotEmpty()) return list
+            }
+        } catch (_: Throwable) {}
+
+        // 2. Line by line parsing: "label|w|h" or "w:h"
+        val lines = content.lines()
+        for (line in lines) {
+            val t = line.trim()
+            if (t.isEmpty() || t.startsWith("#") || t.startsWith("//")) continue
+
+            if (t.contains("|")) {
+                val parts = t.split("|")
+                if (parts.size >= 3) {
+                    val label = parts[0].trim()
+                    val w = parts[1].toFloatOrNull() ?: continue
+                    val h = parts[2].toFloatOrNull() ?: continue
+                    if (validate(w, h)) list.add(CustomRatio(formatLabel(w, h, label), w, h))
+                }
+            } else if (t.contains(":")) {
+                val parts = t.split(":")
+                if (parts.size == 2) {
+                    val w = parts[0].trim().toFloatOrNull() ?: continue
+                    val h = parts[1].trim().toFloatOrNull() ?: continue
+                    if (validate(w, h)) list.add(CustomRatio(formatLabel(w, h), w, h))
+                }
+            }
+        }
+        return list
+    }
+
     fun getSavedRatios(context: Context): List<CustomRatio> {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val str = prefs.getString(KEY_RATIOS, null)

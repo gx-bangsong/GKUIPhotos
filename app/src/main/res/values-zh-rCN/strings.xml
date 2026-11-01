@@ -237,6 +237,17 @@
     <string name="editor_brush_highlighter">荧光笔</string>
     <string name="editor_brush_neon">霓虹笔</string>
     <string name="editor_brush_dashed">虚线笔</string>
+    <string name="editor_brush_back">‹ 画笔</string>
+    <string name="editor_shape_back">‹ 形状</string>
+    <string name="editor_mosaic_back">‹ 马赛克</string>
+    <string name="editor_sticker_back">‹ 贴纸库</string>
+    <string name="editor_brush_import">+ 导入画笔</string>
+    <string name="editor_mosaic_import">+ 导入遮挡纹理</string>
+    <string name="editor_ratio_import_file">从文件导入配置…</string>
+    <string name="editor_ratio_import_success">成功导入 %d 个比例预设</string>
+    <string name="editor_ratio_import_failed">文件中未找到有效比例配置</string>
+    <string name="editor_brush_custom_texture">自定义纹理</string>
+    <string name="editor_mosaic_custom_pattern">自定义图案</string>
     <string name="editor_mosaic_cat_non_image">图像模糊</string>
     <string name="editor_mosaic_cat_graphical">图形遮挡</string>
     <string name="editor_mosaic_pixelate">像素化</string>

@@ -241,6 +241,17 @@
     <string name="editor_brush_highlighter">螢光筆</string>
     <string name="editor_brush_neon">霓虹筆</string>
     <string name="editor_brush_dashed">虛線筆</string>
+    <string name="editor_brush_back">‹ 畫筆</string>
+    <string name="editor_shape_back">‹ 形狀</string>
+    <string name="editor_mosaic_back">‹ 馬賽克</string>
+    <string name="editor_sticker_back">‹ 貼紙庫</string>
+    <string name="editor_brush_import">+ 匯入畫筆</string>
+    <string name="editor_mosaic_import">+ 匯入遮擋紋理</string>
+    <string name="editor_ratio_import_file">從檔案匯入設定…</string>
+    <string name="editor_ratio_import_success">成功匯入 %d 個比例預設</string>
+    <string name="editor_ratio_import_failed">檔案中未找到有效比例設定</string>
+    <string name="editor_brush_custom_texture">自訂紋理</string>
+    <string name="editor_mosaic_custom_pattern">自訂圖案</string>
     <string name="editor_mosaic_cat_non_image">圖像模糊</string>
     <string name="editor_mosaic_cat_graphical">圖形遮擋</string>
     <string name="editor_mosaic_pixelate">像素化</string>

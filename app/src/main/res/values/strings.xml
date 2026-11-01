@@ -310,6 +310,17 @@
     <string name="editor_brush_highlighter">Highlighter</string>
     <string name="editor_brush_neon">Neon</string>
     <string name="editor_brush_dashed">Dashed</string>
+    <string name="editor_brush_back">‹ Brushes</string>
+    <string name="editor_shape_back">‹ Shapes</string>
+    <string name="editor_mosaic_back">‹ Mosaic</string>
+    <string name="editor_sticker_back">‹ Stickers</string>
+    <string name="editor_brush_import">+ Import brush</string>
+    <string name="editor_mosaic_import">+ Import pattern</string>
+    <string name="editor_ratio_import_file">Import from file…</string>
+    <string name="editor_ratio_import_success">Imported %d ratio presets</string>
+    <string name="editor_ratio_import_failed">No valid ratios found in file</string>
+    <string name="editor_brush_custom_texture">Custom texture</string>
+    <string name="editor_mosaic_custom_pattern">Custom pattern</string>
     <string name="editor_mosaic_cat_non_image">Pixel / Blur</string>
     <string name="editor_mosaic_cat_graphical">Pattern block</string>
     <string name="editor_mosaic_pixelate">Pixelate</string>

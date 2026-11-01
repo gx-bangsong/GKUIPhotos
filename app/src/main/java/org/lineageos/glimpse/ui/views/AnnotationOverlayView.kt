@@ -59,6 +59,7 @@ enum class BrushType {
     HIGHLIGHTER,
     NEON,
     DASHED,
+    CUSTOM_TEXTURE,
 }
 
 enum class MosaicEffect {
@@ -67,6 +68,7 @@ enum class MosaicEffect {
     BLACKOUT,
     STRIPES,
     NOISE,
+    CUSTOM_PATTERN,
 }
 
 sealed interface AnnotationItem {
@@ -77,6 +79,7 @@ sealed interface AnnotationItem {
         val color: Int,
         val strokeWidth: Float,
         val brushType: BrushType = BrushType.NORMAL,
+        val customTexture: Bitmap? = null,
     ) : AnnotationItem {
         private var paint: Paint? = null
         private var glowPaint: Paint? = null
@@ -120,6 +123,16 @@ sealed interface AnnotationItem {
                     p.strokeCap = Paint.Cap.ROUND
                     p.strokeJoin = Paint.Join.ROUND
                     p.pathEffect = DashPathEffect(floatArrayOf(strokeWidth * 2.5f, strokeWidth * 1.8f), 0f)
+                    canvas.drawPath(path, p)
+                }
+                BrushType.CUSTOM_TEXTURE -> {
+                    if (customTexture != null && !customTexture.isRecycled) {
+                        p.shader = BitmapShader(customTexture, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
+                    } else {
+                        p.color = color
+                    }
+                    p.strokeCap = Paint.Cap.ROUND
+                    p.strokeJoin = Paint.Join.ROUND
                     canvas.drawPath(path, p)
                 }
             }
@@ -374,6 +387,7 @@ sealed interface AnnotationItem {
         val effect: MosaicEffect = MosaicEffect.PIXELATE,
         val cellSize: Int = 16,
         val color: Int = Color.BLACK,
+        val customPattern: Bitmap? = null,
     ) : AnnotationItem {
         override fun draw(canvas: Canvas) {
             // Handled directly via shader in onDraw/rasterize
@@ -432,6 +446,8 @@ class AnnotationOverlayView @JvmOverloads constructor(
     var activeBrushType: BrushType = BrushType.NORMAL
     var activeShapeStyle: ShapeStyle = ShapeStyle.OUTLINE
     var activeMosaicEffect: MosaicEffect = MosaicEffect.PIXELATE
+    var activeCustomBrushTexture: Bitmap? = null
+    var activeCustomMosaicPattern: Bitmap? = null
 
     var activeColor: Int = Color.RED
     var activeStrokeWidth: Float = 8f
@@ -442,6 +458,8 @@ class AnnotationOverlayView @JvmOverloads constructor(
     var onAnnotationChanged: (() -> Unit)? = null
     var onTextEditRequested: ((AnnotationItem.Text) -> Unit)? = null
     var onShapeStarted: (() -> Unit)? = null
+    var onDoodleStarted: (() -> Unit)? = null
+    var onMosaicStarted: (() -> Unit)? = null
     var cropRectProvider: (() -> RectF)? = null
     var imageBoundsProvider: (() -> RectF)? = null
     var displayBitmapProvider: (() -> Bitmap?)? = null
@@ -810,6 +828,19 @@ class AnnotationOverlayView @JvmOverloads constructor(
                         }
                         canvas.drawPath(item.path, paint)
                     }
+                    MosaicEffect.CUSTOM_PATTERN -> {
+                        val pattern = item.customPattern
+                        if (pattern != null && !pattern.isRecycled) {
+                            val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                                shader = BitmapShader(pattern, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
+                                style = Paint.Style.STROKE
+                                strokeCap = Paint.Cap.ROUND
+                                strokeJoin = Paint.Join.ROUND
+                                strokeWidth = item.brushSize
+                            }
+                            canvas.drawPath(item.path, paint)
+                        }
+                    }
                 }
             } else {
                 item.draw(canvas)
@@ -823,6 +854,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
                 color = activeColor,
                 strokeWidth = activeStrokeWidth,
                 brushType = activeBrushType,
+                customTexture = activeCustomBrushTexture,
             )
             doodle.draw(canvas)
         }
@@ -891,6 +923,19 @@ class AnnotationOverlayView @JvmOverloads constructor(
                         strokeWidth = activeMosaicBrushSize
                     }
                     canvas.drawPath(path, paint)
+                }
+                MosaicEffect.CUSTOM_PATTERN -> {
+                    val pattern = activeCustomMosaicPattern
+                    if (pattern != null && !pattern.isRecycled) {
+                        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                            shader = BitmapShader(pattern, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
+                            style = Paint.Style.STROKE
+                            strokeCap = Paint.Cap.ROUND
+                            strokeJoin = Paint.Join.ROUND
+                            strokeWidth = activeMosaicBrushSize
+                        }
+                        canvas.drawPath(path, paint)
+                    }
                 }
             }
         }
@@ -975,6 +1020,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
                         currentDoodlePath = path
                         lastDoodleX = x
                         lastDoodleY = y
+                        onDoodleStarted?.invoke()
                         invalidate()
                         return true
                     }
@@ -1000,6 +1046,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
                                     color = activeColor,
                                     strokeWidth = activeStrokeWidth,
                                     brushType = activeBrushType,
+                                    customTexture = activeCustomBrushTexture,
                                 )
                             )
                             currentDoodlePath = null
@@ -1153,6 +1200,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
                         currentMosaicPath = path
                         lastMosaicX = x
                         lastMosaicY = y
+                        onMosaicStarted?.invoke()
                         invalidate()
                         return true
                     }
@@ -1179,6 +1227,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
                                     effect = activeMosaicEffect,
                                     cellSize = activeMosaicCellSize,
                                     color = Color.BLACK,
+                                    customPattern = activeCustomMosaicPattern,
                                 )
                             )
                             currentMosaicPath = null
@@ -1363,6 +1412,19 @@ class AnnotationOverlayView @JvmOverloads constructor(
                             strokeWidth = item.brushSize
                         }
                         canvas.drawPath(item.path, paint)
+                    }
+                    MosaicEffect.CUSTOM_PATTERN -> {
+                        val pattern = item.customPattern
+                        if (pattern != null && !pattern.isRecycled) {
+                            val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                                shader = BitmapShader(pattern, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
+                                style = Paint.Style.STROKE
+                                strokeCap = Paint.Cap.ROUND
+                                strokeJoin = Paint.Join.ROUND
+                                strokeWidth = item.brushSize
+                            }
+                            canvas.drawPath(item.path, paint)
+                        }
                     }
                 }
             } else {

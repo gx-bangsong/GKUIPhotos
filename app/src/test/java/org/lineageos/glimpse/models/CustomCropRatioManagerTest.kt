@@ -56,4 +56,22 @@ class CustomCropRatioManagerTest {
         assertTrue(CustomCropRatioManager.parseRatios("").isEmpty())
         assertTrue(CustomCropRatioManager.parseRatios("invalid;malformed|data").isEmpty())
     }
+
+    @Test
+    fun testParseConfigFile() {
+        // Line by line format
+        val textConfig = """
+            # Common photo ratios
+            21:9
+            电影宽幅|2.39|1
+            A4 图纸|210|297
+        """.trimIndent()
+        val parsed = CustomCropRatioManager.parseConfigFile(textConfig)
+        assertEquals(3, parsed.size)
+        assertEquals("21:9", parsed[0].label)
+        assertEquals(21f / 9f, parsed[0].ratio, 0.001f)
+        assertEquals("电影宽幅", parsed[1].label)
+        assertEquals(2.39f, parsed[1].ratio, 0.001f)
+        assertEquals("A4 图纸", parsed[2].label)
+    }
 }

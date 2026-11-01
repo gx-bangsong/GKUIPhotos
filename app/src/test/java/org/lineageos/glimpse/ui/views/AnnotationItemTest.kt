@@ -47,21 +47,23 @@ class AnnotationItemTest {
 
     @Test
     fun testBrushTypeEnum() {
-        assertEquals(4, BrushType.values().size)
+        assertEquals(5, BrushType.values().size)
         assertTrue(BrushType.values().contains(BrushType.NORMAL))
         assertTrue(BrushType.values().contains(BrushType.HIGHLIGHTER))
         assertTrue(BrushType.values().contains(BrushType.NEON))
         assertTrue(BrushType.values().contains(BrushType.DASHED))
+        assertTrue(BrushType.values().contains(BrushType.CUSTOM_TEXTURE))
     }
 
     @Test
     fun testMosaicEffectEnum() {
-        assertEquals(5, MosaicEffect.values().size)
+        assertEquals(6, MosaicEffect.values().size)
         assertTrue(MosaicEffect.values().contains(MosaicEffect.PIXELATE))
         assertTrue(MosaicEffect.values().contains(MosaicEffect.BLUR))
         assertTrue(MosaicEffect.values().contains(MosaicEffect.BLACKOUT))
         assertTrue(MosaicEffect.values().contains(MosaicEffect.STRIPES))
         assertTrue(MosaicEffect.values().contains(MosaicEffect.NOISE))
+        assertTrue(MosaicEffect.values().contains(MosaicEffect.CUSTOM_PATTERN))
     }
 
     @Test
