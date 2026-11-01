@@ -49,12 +49,14 @@ sealed interface AnnotationItem {
         val color: Int,
         val strokeWidth: Float,
     ) : AnnotationItem {
-        private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = this@Doodle.color
-            strokeWidth = this@Doodle.strokeWidth
-            style = Paint.Style.STROKE
-            strokeCap = Paint.Cap.ROUND
-            strokeJoin = Paint.Join.ROUND
+        private val paint by lazy {
+            Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = this@Doodle.color
+                strokeWidth = this@Doodle.strokeWidth
+                style = Paint.Style.STROKE
+                strokeCap = Paint.Cap.ROUND
+                strokeJoin = Paint.Join.ROUND
+            }
         }
 
         override fun draw(canvas: Canvas) {
@@ -71,17 +73,21 @@ sealed interface AnnotationItem {
         val color: Int,
         val strokeWidth: Float,
     ) : AnnotationItem {
-        private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = this@Shape.color
-            strokeWidth = this@Shape.strokeWidth
-            style = Paint.Style.STROKE
-            strokeCap = Paint.Cap.ROUND
-            strokeJoin = Paint.Join.ROUND
+        private val strokePaint by lazy {
+            Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = this@Shape.color
+                strokeWidth = this@Shape.strokeWidth
+                style = Paint.Style.STROKE
+                strokeCap = Paint.Cap.ROUND
+                strokeJoin = Paint.Join.ROUND
+            }
         }
 
-        private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = this@Shape.color
-            style = Paint.Style.FILL
+        private val fillPaint by lazy {
+            Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = this@Shape.color
+                style = Paint.Style.FILL
+            }
         }
 
         override fun draw(canvas: Canvas) {
