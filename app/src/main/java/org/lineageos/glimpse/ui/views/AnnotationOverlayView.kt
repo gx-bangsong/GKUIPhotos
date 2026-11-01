@@ -74,41 +74,44 @@ sealed interface AnnotationItem {
         var color: Int,
         var strokeWidth: Float,
     ) : AnnotationItem {
-        private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Paint.Style.STROKE
-            strokeCap = Paint.Cap.ROUND
-            strokeJoin = Paint.Join.ROUND
-        }
-
-        private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Paint.Style.FILL
-        }
+        private var strokePaint: Paint? = null
+        private var fillPaint: Paint? = null
 
         override fun draw(canvas: Canvas) {
-            strokePaint.color = color
-            strokePaint.strokeWidth = strokeWidth
-            fillPaint.color = color
+            val sPaint = strokePaint ?: Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                style = Paint.Style.STROKE
+                strokeCap = Paint.Cap.ROUND
+                strokeJoin = Paint.Join.ROUND
+            }.also { strokePaint = it }
+
+            val fPaint = fillPaint ?: Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                style = Paint.Style.FILL
+            }.also { fillPaint = it }
+
+            sPaint.color = color
+            sPaint.strokeWidth = strokeWidth
+            fPaint.color = color
 
             when (type) {
                 ShapeType.LINE -> {
-                    canvas.drawLine(startX, startY, endX, endY, strokePaint)
+                    canvas.drawLine(startX, startY, endX, endY, sPaint)
                 }
                 ShapeType.RECTANGLE -> {
                     val l = min(startX, endX)
                     val t = min(startY, endY)
                     val r = max(startX, endX)
                     val b = max(startY, endY)
-                    canvas.drawRect(l, t, r, b, strokePaint)
+                    canvas.drawRect(l, t, r, b, sPaint)
                 }
                 ShapeType.ELLIPSE -> {
                     val l = min(startX, endX)
                     val t = min(startY, endY)
                     val r = max(startX, endX)
                     val b = max(startY, endY)
-                    canvas.drawOval(RectF(l, t, r, b), strokePaint)
+                    canvas.drawOval(RectF(l, t, r, b), sPaint)
                 }
                 ShapeType.ARROW -> {
-                    canvas.drawLine(startX, startY, endX, endY, strokePaint)
+                    canvas.drawLine(startX, startY, endX, endY, sPaint)
                     val angle = atan2((endY - startY).toDouble(), (endX - startX).toDouble())
                     val arrowLen = max(24f, strokeWidth * 3.5f)
                     val arrowAngle = Math.PI / 6.0 // 30 degrees
@@ -124,7 +127,7 @@ sealed interface AnnotationItem {
                         lineTo(x2, y2)
                         close()
                     }
-                    canvas.drawPath(headPath, fillPaint)
+                    canvas.drawPath(headPath, fPaint)
                 }
             }
         }

@@ -938,7 +938,6 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                 isCheckable = true
                 id = index
                 isChecked = st == annotationOverlayView.selectedShapeType
-                ensureMinTouchTargetSize(false)
             }
             chip.setOnClickListener {
                 annotationOverlayView.selectedShapeType = st
