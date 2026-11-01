@@ -198,6 +198,9 @@
     <string name="editor_markup_clear">清除</string>
     <string name="editor_done">完成</string>
     <string name="editor_markup_add_text">添加文字</string>
+    <string name="editor_flip">镜像翻转</string>
+    <string name="editor_markup_stroke_width">画笔粗细</string>
+    <string name="editor_markup_mosaic_brush">涂抹粗细</string>
     <string name="editor_markup_text_hint">点击编辑文本</string>
     <string name="editor_markup_text_bg">背景底色</string>
     <string name="editor_shape_arrow">箭头</string>

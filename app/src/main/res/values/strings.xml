@@ -271,6 +271,9 @@
     <string name="editor_markup_clear">Clear</string>
     <string name="editor_done">Done</string>
     <string name="editor_markup_add_text">Add text</string>
+    <string name="editor_flip">Flip</string>
+    <string name="editor_markup_stroke_width">Stroke width</string>
+    <string name="editor_markup_mosaic_brush">Brush size</string>
     <string name="editor_markup_text_hint">Tap to edit text</string>
     <string name="editor_markup_text_bg">Background</string>
     <string name="editor_shape_arrow">Arrow</string>

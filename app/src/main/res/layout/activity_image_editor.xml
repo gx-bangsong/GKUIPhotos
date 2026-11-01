@@ -80,10 +80,17 @@
                     android:id="@+id/cropAngleText"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginBottom="8dp"
+                    android:layout_marginBottom="4dp"
                     android:text="0°"
                     android:textColor="#E0E0E0"
                     android:textSize="13sp" />
+
+                <ImageView
+                    android:id="@+id/cropAngleRuler"
+                    android:layout_width="200dp"
+                    android:layout_height="12dp"
+                    android:layout_marginBottom="12dp"
+                    android:src="@drawable/bg_ruler_ticks" />
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -96,7 +103,7 @@
                         android:id="@+id/cropRatioItem"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginHorizontal="20dp"
+                        android:layout_marginHorizontal="14dp"
                         android:clickable="true"
                         android:focusable="true"
                         android:gravity="center"
@@ -130,7 +137,7 @@
                         android:id="@+id/cropRotateItem"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginHorizontal="20dp"
+                        android:layout_marginHorizontal="14dp"
                         android:clickable="true"
                         android:focusable="true"
                         android:gravity="center"
@@ -158,12 +165,47 @@
                             android:textSize="11sp" />
                     </LinearLayout>
 
+                    <!-- Flip Item -->
+                    <LinearLayout
+                        android:id="@+id/cropFlipItem"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginHorizontal="14dp"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:gravity="center"
+                        android:orientation="vertical">
+
+                        <FrameLayout
+                            android:layout_width="48dp"
+                            android:layout_height="48dp"
+                            android:background="@drawable/bg_circle_tool">
+
+                            <ImageView
+                                android:id="@+id/cropFlipIcon"
+                                android:layout_width="24dp"
+                                android:layout_height="24dp"
+                                android:layout_gravity="center"
+                                android:src="@drawable/ic_flip"
+                                app:tint="@android:color/white" />
+                        </FrameLayout>
+
+                        <TextView
+                            android:id="@+id/cropFlipLabel"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:text="@string/editor_flip"
+                            android:textColor="#B0B0B0"
+                            android:textSize="11sp" />
+                    </LinearLayout>
+
                     <!-- Reset Crop Item -->
                     <TextView
                         android:id="@+id/cropResetButton"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginStart="20dp"
+                        android:layout_marginStart="14dp"
                         android:clickable="true"
                         android:focusable="true"
                         android:padding="8dp"

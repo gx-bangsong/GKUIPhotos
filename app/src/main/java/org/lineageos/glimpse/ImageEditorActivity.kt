@@ -84,11 +84,11 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         TOOLS(R.string.editor_tab_tools),
     }
 
-    enum class AdjustParam(val labelRes: Int, val isBipolar: Boolean) {
-        SATURATION(R.string.editor_adjust_saturation, true),
-        CONTRAST(R.string.editor_adjust_contrast, true),
-        TEMPERATURE(R.string.editor_adjust_temperature, true),
-        SHARPEN(R.string.editor_adjust_sharpen, false),
+    enum class AdjustParam(val labelRes: Int, val iconRes: Int, val isBipolar: Boolean) {
+        CONTRAST(R.string.editor_adjust_contrast, R.drawable.ic_adjust_contrast, true),
+        SATURATION(R.string.editor_adjust_saturation, R.drawable.ic_adjust_saturation, true),
+        TEMPERATURE(R.string.editor_adjust_temperature, R.drawable.ic_adjust_temperature, true),
+        SHARPEN(R.string.editor_adjust_sharpen, R.drawable.ic_adjust_sharpen, false),
     }
 
     private val cropImageView by lazy { findViewById<CropImageView>(R.id.cropImageView) }
@@ -108,6 +108,9 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
     private val cropRatioItem by lazy { findViewById<View>(R.id.cropRatioItem) }
     private val cropRatioLabel by lazy { findViewById<TextView>(R.id.cropRatioLabel) }
     private val cropRotateItem by lazy { findViewById<View>(R.id.cropRotateItem) }
+    private val cropFlipItem by lazy { findViewById<View>(R.id.cropFlipItem) }
+    private val cropFlipIcon by lazy { findViewById<ImageView>(R.id.cropFlipIcon) }
+    private val cropFlipLabel by lazy { findViewById<TextView>(R.id.cropFlipLabel) }
     private val cropResetButton by lazy { findViewById<View>(R.id.cropResetButton) }
 
     // Strip Controls: Adjust
@@ -155,6 +158,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
 
     private var activeCategory = EditorCategory.CROP
     private var isFramingModified = false
+    private var isFlippedHorizontal = false
     private var pendingOverwrite: ByteArray? = null
 
     private val writeRequestContract = registerForActivityResult(
@@ -211,14 +215,21 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         cropRatioItem.setOnClickListener {
             showRatioBottomSheet()
         }
+        cropFlipItem.setOnClickListener {
+            isFlippedHorizontal = !isFlippedHorizontal
+            updateFlipButtonUI()
+            refreshBaseBitmap()
+        }
         cropResetButton.setOnClickListener {
             rotation = 0
+            isFlippedHorizontal = false
             isFramingModified = false
             cropAngleText.text = "0°"
             baseBitmap?.let { bmp ->
                 cropImageView.aspectRatio = bmp.width.toFloat() / bmp.height.toFloat()
             }
             cropRatioLabel.setText(R.string.editor_crop)
+            updateFlipButtonUI()
             refreshBaseBitmap()
         }
 
@@ -340,8 +351,18 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         }
     }
 
+    private fun updateFlipButtonUI() {
+        cropFlipLabel.setTextColor(
+            if (isFlippedHorizontal) Color.parseColor("#A8C7FA") else Color.parseColor("#B0B0B0")
+        )
+        cropFlipIcon.imageTintList = ColorStateList.valueOf(
+            if (isFlippedHorizontal) Color.parseColor("#A8C7FA") else Color.WHITE
+        )
+    }
+
     private fun isDirty(): Boolean {
         return rotation != 0 ||
+                isFlippedHorizontal ||
                 currentFilter != ImageFilter.NONE ||
                 !adjustParameters.isDefault ||
                 annotationOverlayView.hasAnnotations() ||
@@ -475,7 +496,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                     layoutParams = FrameLayout.LayoutParams(iconSize, iconSize).apply {
                         gravity = Gravity.CENTER
                     }
-                    setImageResource(R.drawable.ic_adjust)
+                    setImageResource(param.iconRes)
                     imageTintList = ColorStateList.valueOf(
                         if (isSelected) Color.parseColor("#001D35") else Color.WHITE
                     )
@@ -765,6 +786,37 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                 markupOptionsContent.addView(cellGroup)
 
                 val density = resources.displayMetrics.density
+                val mosaicBrushContainer = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding((8 * density).toInt(), 0, (8 * density).toInt(), 0)
+                }
+
+                val currentBrushDp = (annotationOverlayView.activeMosaicBrushSize / density).coerceIn(10f, 60f)
+                val brushLabel = TextView(this).apply {
+                    text = "${getString(R.string.editor_markup_mosaic_brush)}: ${currentBrushDp.toInt()}dp"
+                    setTextColor(Color.WHITE)
+                    textSize = 12f
+                    minWidth = (96 * density).toInt()
+                }
+
+                val brushSlider = Slider(this).apply {
+                    layoutParams = LinearLayout.LayoutParams((140 * density).toInt(), LinearLayout.LayoutParams.WRAP_CONTENT)
+                    valueFrom = 10f
+                    valueTo = 60f
+                    stepSize = 2f
+                    value = currentBrushDp
+                    thumbTintList = ColorStateList.valueOf(Color.parseColor("#A8C7FA"))
+                    trackActiveTintList = ColorStateList.valueOf(Color.parseColor("#A8C7FA"))
+                    trackInactiveTintList = ColorStateList.valueOf(Color.parseColor("#3C4043"))
+                    haloTintList = ColorStateList.valueOf(Color.parseColor("#33A8C7FA"))
+
+                    addOnChangeListener { _, valDp, _ ->
+                        annotationOverlayView.activeMosaicBrushSize = valDp * density
+                        brushLabel.text = "${getString(R.string.editor_markup_mosaic_brush)}: ${valDp.toInt()}dp"
+                    }
+                }
+
                 val brushSizes = listOf(
                     16f * density to R.string.editor_size_fine,
                     32f * density to R.string.editor_size_medium,
@@ -774,7 +826,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                     isSingleSelection = true
                     isSingleLine = true
                     isSelectionRequired = true
-                    setPadding(12, 0, 12, 0)
+                    setPadding((8 * density).toInt(), 0, (8 * density).toInt(), 0)
                 }
                 brushSizes.forEachIndexed { index, (bs, labelRes) ->
                     val chip = Chip(this).apply {
@@ -785,10 +837,18 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                     }
                     chip.setOnClickListener {
                         annotationOverlayView.activeMosaicBrushSize = bs
+                        val dp = (bs / density).coerceIn(10f, 60f)
+                        brushSlider.value = dp
+                        brushLabel.text = "${getString(R.string.editor_markup_mosaic_brush)}: ${dp.toInt()}dp"
                     }
                     brushGroup.addView(chip)
                 }
+
+                mosaicBrushContainer.addView(brushLabel)
+                mosaicBrushContainer.addView(brushSlider)
+
                 markupOptionsContent.addView(brushGroup)
+                markupOptionsContent.addView(mosaicBrushContainer)
             }
             MarkupTool.NONE -> {
                 markupOptionsScroll.isVisible = false
@@ -824,12 +884,60 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
     }
 
     private fun addStrokeSizeSelector(sizes: List<Pair<Float, Int>>) {
+        val density = resources.displayMetrics.density
+
         val chipGroup = ChipGroup(this).apply {
             isSingleSelection = true
             isSingleLine = true
             isSelectionRequired = true
-            setPadding(12, 0, 12, 0)
+            setPadding((8 * density).toInt(), 0, (8 * density).toInt(), 0)
         }
+
+        val sliderContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding((8 * density).toInt(), 0, (8 * density).toInt(), 0)
+        }
+
+        val currentDp = (annotationOverlayView.activeStrokeWidth / density).coerceIn(2f, 40f)
+
+        val dotPreview = View(this).apply {
+            val sizePx = (currentDp * density).toInt().coerceIn(4, 28)
+            layoutParams = LinearLayout.LayoutParams(sizePx, sizePx).apply {
+                marginEnd = (8 * density).toInt()
+            }
+            setBackgroundResource(R.drawable.bg_circle_tool_selected)
+        }
+
+        val label = TextView(this).apply {
+            text = "${getString(R.string.editor_markup_stroke_width)}: ${currentDp.toInt()}dp"
+            setTextColor(Color.WHITE)
+            textSize = 12f
+            minWidth = (96 * density).toInt()
+        }
+
+        val slider = Slider(this).apply {
+            layoutParams = LinearLayout.LayoutParams((140 * density).toInt(), LinearLayout.LayoutParams.WRAP_CONTENT)
+            valueFrom = 2f
+            valueTo = 40f
+            stepSize = 1f
+            value = currentDp
+            thumbTintList = ColorStateList.valueOf(Color.parseColor("#A8C7FA"))
+            trackActiveTintList = ColorStateList.valueOf(Color.parseColor("#A8C7FA"))
+            trackInactiveTintList = ColorStateList.valueOf(Color.parseColor("#3C4043"))
+            haloTintList = ColorStateList.valueOf(Color.parseColor("#33A8C7FA"))
+
+            addOnChangeListener { _, valDp, _ ->
+                val px = valDp * density
+                annotationOverlayView.activeStrokeWidth = px
+                label.text = "${getString(R.string.editor_markup_stroke_width)}: ${valDp.toInt()}dp"
+                val previewSize = px.toInt().coerceIn(4, 28)
+                dotPreview.layoutParams = LinearLayout.LayoutParams(previewSize, previewSize).apply {
+                    marginEnd = (8 * density).toInt()
+                }
+            }
+        }
+
         sizes.forEachIndexed { index, (sizePx, labelRes) ->
             val chip = Chip(this).apply {
                 text = getString(labelRes)
@@ -839,10 +947,23 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             }
             chip.setOnClickListener {
                 annotationOverlayView.activeStrokeWidth = sizePx
+                val dp = (sizePx / density).coerceIn(2f, 40f)
+                slider.value = dp
+                label.text = "${getString(R.string.editor_markup_stroke_width)}: ${dp.toInt()}dp"
+                val previewSize = sizePx.toInt().coerceIn(4, 28)
+                dotPreview.layoutParams = LinearLayout.LayoutParams(previewSize, previewSize).apply {
+                    marginEnd = (8 * density).toInt()
+                }
             }
             chipGroup.addView(chip)
         }
+
+        sliderContainer.addView(dotPreview)
+        sliderContainer.addView(label)
+        sliderContainer.addView(slider)
+
         markupOptionsContent.addView(chipGroup)
+        markupOptionsContent.addView(sliderContainer)
     }
 
     private fun addColorPalette(onColorChanged: ((Int) -> Unit)? = null) {
@@ -919,14 +1040,14 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             .show()
     }
 
-    /** Rebuild the displayed (rotated + filtered + adjusted) bitmap on the crop view. */
+    /** Rebuild the displayed (rotated + flipped + filtered + adjusted) bitmap on the crop view. */
     private fun refreshBaseBitmap() {
         val bmp = baseBitmap ?: return
         lifecycleScope.launch {
             val displayed = withContext(Dispatchers.Default) {
-                val rotated = rotate(bmp, rotation)
-                val filtered = applyFilter(rotated, currentFilter)
-                if (filtered !== rotated && rotated !== bmp) rotated.recycle()
+                val transformed = transformBitmap(bmp, rotation, isFlippedHorizontal)
+                val filtered = applyFilter(transformed, currentFilter)
+                if (filtered !== transformed && transformed !== bmp) transformed.recycle()
                 val adjusted = ImageAdjuster.applyAdjustments(filtered, adjustParameters)
                 if (adjusted !== filtered && filtered !== bmp) filtered.recycle()
                 adjusted
@@ -942,9 +1063,9 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             cropped
         } else {
             val bmp = baseBitmap ?: return
-            val rotated = rotate(bmp, rotation)
-            val filtered = applyFilter(rotated, currentFilter)
-            if (filtered !== rotated && rotated !== bmp) rotated.recycle()
+            val transformed = transformBitmap(bmp, rotation, isFlippedHorizontal)
+            val filtered = applyFilter(transformed, currentFilter)
+            if (filtered !== transformed && transformed !== bmp) transformed.recycle()
             val adjusted = ImageAdjuster.applyAdjustments(filtered, adjustParameters)
             if (adjusted !== filtered && filtered !== bmp) filtered.recycle()
             adjusted
@@ -1194,9 +1315,12 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         }
     }.getOrNull()
 
-    private fun rotate(src: Bitmap, degrees: Int): Bitmap {
-        if (degrees % 360 == 0) return src
-        val m = Matrix().apply { postRotate(degrees.toFloat()) }
+    private fun transformBitmap(src: Bitmap, degrees: Int, flipHorizontal: Boolean): Bitmap {
+        if (degrees % 360 == 0 && !flipHorizontal) return src
+        val m = Matrix().apply {
+            if (degrees % 360 != 0) postRotate(degrees.toFloat())
+            if (flipHorizontal) postScale(-1f, 1f)
+        }
         return Bitmap.createBitmap(src, 0, 0, src.width, src.height, m, true)
     }
 
