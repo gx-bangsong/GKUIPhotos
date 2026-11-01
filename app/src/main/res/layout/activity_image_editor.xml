@@ -10,26 +10,7 @@
     android:layout_height="match_parent"
     android:background="@android:color/black">
 
-    <!-- Top Bar: Close (X) only -->
-    <com.google.android.material.appbar.AppBarLayout
-        android:id="@+id/appBarLayout"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:background="@android:color/black"
-        app:elevation="0dp"
-        app:layout_constraintTop_toTopOf="parent">
-
-        <com.google.android.material.appbar.MaterialToolbar
-            android:id="@+id/toolbar"
-            android:layout_width="match_parent"
-            android:layout_height="?attr/actionBarSize"
-            app:navigationIcon="@drawable/ic_close"
-            app:navigationIconTint="@android:color/white"
-            app:title="@string/editor_title"
-            app:titleTextColor="@android:color/white" />
-    </com.google.android.material.appbar.AppBarLayout>
-
-    <!-- Center Preview: maximal, centered, static -->
+    <!-- Center Preview: maximal, centered, edge-to-edge under status bar -->
     <org.lineageos.glimpse.ui.views.CropImageView
         android:id="@+id/cropImageView"
         android:layout_width="0dp"
@@ -37,9 +18,9 @@
         app:layout_constraintBottom_toTopOf="@id/editorBottomDeck"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/appBarLayout" />
+        app:layout_constraintTop_toTopOf="parent" />
 
-    <!-- Annotation / Markup Layer -->
+    <!-- Annotation / Markup Overlay Layer -->
     <org.lineageos.glimpse.ui.views.AnnotationOverlayView
         android:id="@+id/annotationOverlayView"
         android:layout_width="0dp"
@@ -47,9 +28,9 @@
         app:layout_constraintBottom_toTopOf="@id/editorBottomDeck"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/appBarLayout" />
+        app:layout_constraintTop_toTopOf="parent" />
 
-    <!-- Saving Overlay -->
+    <!-- Saving Indicator Overlay -->
     <FrameLayout
         android:id="@+id/savingOverlay"
         android:layout_width="match_parent"
@@ -64,7 +45,8 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="center"
-            android:indeterminate="true" />
+            android:indeterminate="true"
+            app:indicatorColor="#A8C7FA" />
     </FrameLayout>
 
     <!-- Bottom Deck: Contextual Strip + Category Tabs + Action Bar -->
@@ -72,7 +54,7 @@
         android:id="@+id/editorBottomDeck"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@drawable/bg_media_viewer_bottom_sheet"
+        android:background="@android:color/black"
         android:orientation="vertical"
         app:layout_constraintBottom_toBottomOf="parent">
 
@@ -81,111 +63,198 @@
             android:id="@+id/contextualStripContainer"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:minHeight="56dp"
-            android:paddingHorizontal="12dp"
+            android:minHeight="96dp"
+            android:paddingHorizontal="16dp"
             android:paddingTop="8dp"
-            android:paddingBottom="6dp">
+            android:paddingBottom="8dp">
 
             <!-- Strip: 裁剪 (Crop) -->
             <LinearLayout
                 android:id="@+id/stripCrop"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:gravity="center_vertical"
-                android:orientation="horizontal">
+                android:gravity="center"
+                android:orientation="vertical">
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/rotateButton"
-                    style="?attr/materialButtonOutlinedStyle"
+                <TextView
+                    android:id="@+id/cropAngleText"
                     android:layout_width="wrap_content"
-                    android:layout_height="36dp"
-                    android:paddingHorizontal="12dp"
-                    android:paddingVertical="0dp"
-                    android:text="@string/editor_rotate"
-                    android:textColor="@android:color/white"
-                    android:textSize="12sp"
-                    app:icon="@drawable/ic_rotate"
-                    app:iconTint="@android:color/white"
-                    app:strokeColor="?attr/colorOutlineVariant" />
-
-                <HorizontalScrollView
-                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="8dp"
-                    android:scrollbars="none">
-
-                    <com.google.android.material.chip.ChipGroup
-                        android:id="@+id/ratioChipGroup"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        app:singleLine="true"
-                        app:singleSelection="true" />
-                </HorizontalScrollView>
-            </LinearLayout>
-
-            <!-- Strip: 调整 (Adjust) - Placeholder for Commit 2 -->
-            <LinearLayout
-                android:id="@+id/stripAdjust"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:visibility="gone">
-
-                <HorizontalScrollView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:scrollbars="none">
-
-                    <com.google.android.material.chip.ChipGroup
-                        android:id="@+id/adjustParamChipGroup"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        app:selectionRequired="true"
-                        app:singleLine="true"
-                        app:singleSelection="true" />
-                </HorizontalScrollView>
+                    android:layout_marginBottom="8dp"
+                    android:text="0°"
+                    android:textColor="#E0E0E0"
+                    android:textSize="13sp" />
 
                 <LinearLayout
-                    android:id="@+id/adjustSliderRow"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal"
-                    android:visibility="gone">
+                    android:gravity="center"
+                    android:orientation="horizontal">
 
-                    <com.google.android.material.slider.Slider
-                        android:id="@+id/adjustSlider"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:valueFrom="-100"
-                        android:valueTo="100"
-                        android:stepSize="1" />
-
-                    <TextView
-                        android:id="@+id/adjustValueText"
-                        android:layout_width="48dp"
-                        android:layout_height="wrap_content"
-                        android:gravity="center"
-                        android:textColor="@android:color/white"
-                        android:textSize="12sp" />
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/adjustResetButton"
-                        style="?attr/materialButtonOutlinedStyle"
+                    <!-- Crop Ratio Item -->
+                    <LinearLayout
+                        android:id="@+id/cropRatioItem"
                         android:layout_width="wrap_content"
-                        android:layout_height="32dp"
-                        android:paddingHorizontal="8dp"
-                        android:paddingVertical="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginHorizontal="20dp"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:gravity="center"
+                        android:orientation="vertical">
+
+                        <FrameLayout
+                            android:layout_width="48dp"
+                            android:layout_height="48dp"
+                            android:background="@drawable/bg_circle_tool">
+
+                            <ImageView
+                                android:layout_width="24dp"
+                                android:layout_height="24dp"
+                                android:layout_gravity="center"
+                                android:src="@drawable/ic_crop_ratio"
+                                app:tint="@android:color/white" />
+                        </FrameLayout>
+
+                        <TextView
+                            android:id="@+id/cropRatioLabel"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:text="@string/editor_crop"
+                            android:textColor="#B0B0B0"
+                            android:textSize="11sp" />
+                    </LinearLayout>
+
+                    <!-- Rotate Item -->
+                    <LinearLayout
+                        android:id="@+id/cropRotateItem"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginHorizontal="20dp"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:gravity="center"
+                        android:orientation="vertical">
+
+                        <FrameLayout
+                            android:layout_width="48dp"
+                            android:layout_height="48dp"
+                            android:background="@drawable/bg_circle_tool">
+
+                            <ImageView
+                                android:layout_width="24dp"
+                                android:layout_height="24dp"
+                                android:layout_gravity="center"
+                                android:src="@drawable/ic_rotate"
+                                app:tint="@android:color/white" />
+                        </FrameLayout>
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:text="@string/editor_rotate"
+                            android:textColor="#B0B0B0"
+                            android:textSize="11sp" />
+                    </LinearLayout>
+
+                    <!-- Reset Crop Item -->
+                    <TextView
+                        android:id="@+id/cropResetButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="20dp"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:padding="8dp"
                         android:text="@string/editor_adjust_reset"
-                        android:textColor="@android:color/white"
-                        android:textSize="11sp"
-                        app:strokeColor="?attr/colorOutlineVariant" />
+                        android:textColor="#A8C7FA"
+                        android:textSize="12sp" />
                 </LinearLayout>
             </LinearLayout>
 
-            <!-- Strip: 滤镜 (Filters) -->
+            <!-- Strip: 调整 (Adjust) -->
+            <FrameLayout
+                android:id="@+id/stripAdjust"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:visibility="gone">
+
+                <!-- Adjust Tool Carousel (use-adjust-tools.jpg) -->
+                <HorizontalScrollView
+                    android:id="@+id/adjustCarouselScroll"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:scrollbars="none">
+
+                    <LinearLayout
+                        android:id="@+id/adjustToolItemsLayout"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:paddingHorizontal="8dp" />
+                </HorizontalScrollView>
+
+                <!-- Adjust Slider Dial Mode (adjust-google-photos.jpg) -->
+                <LinearLayout
+                    android:id="@+id/adjustSliderLayout"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:id="@+id/adjustActiveParamTitle"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textColor="#FFFFFF"
+                        android:textSize="12sp" />
+
+                    <TextView
+                        android:id="@+id/adjustValueText"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="0"
+                        android:textColor="#A8C7FA"
+                        android:textSize="13sp"
+                        android:textStyle="bold" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <com.google.android.material.slider.Slider
+                            android:id="@+id/adjustSlider"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:stepSize="1"
+                            android:valueFrom="-100"
+                            android:valueTo="100"
+                            app:thumbColor="#A8C7FA"
+                            app:trackColorActive="#A8C7FA"
+                            app:trackColorInactive="#383838" />
+
+                        <TextView
+                            android:id="@+id/adjustResetButton"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:padding="8dp"
+                            android:text="@string/editor_adjust_reset"
+                            android:textColor="#B0B0B0"
+                            android:textSize="12sp" />
+                    </LinearLayout>
+                </LinearLayout>
+            </FrameLayout>
+
+            <!-- Strip: 滤镜 (Filters - use-filters.jpg) -->
             <HorizontalScrollView
                 android:id="@+id/stripFilters"
                 android:layout_width="match_parent"
@@ -193,64 +262,38 @@
                 android:scrollbars="none"
                 android:visibility="gone">
 
-                <com.google.android.material.chip.ChipGroup
-                    android:id="@+id/filterChipGroup"
+                <LinearLayout
+                    android:id="@+id/filtersContainer"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    app:singleLine="true"
-                    app:singleSelection="true" />
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingHorizontal="8dp" />
             </HorizontalScrollView>
 
-            <!-- Strip: 标注 (Markup) -->
+            <!-- Strip: 标注 (Markup - google-photos-markup.jpg & use-arrow-tool.jpg) -->
             <LinearLayout
                 android:id="@+id/stripMarkup"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:gravity="center"
                 android:orientation="vertical"
                 android:visibility="gone">
 
-                <HorizontalScrollView
-                    android:layout_width="match_parent"
+                <!-- Markup Tools Row (Pen, Shapes, Text, Mosaic) -->
+                <LinearLayout
+                    android:id="@+id/markupToolsRow"
+                    android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:scrollbars="none">
+                    android:gravity="center"
+                    android:orientation="horizontal" />
 
-                    <LinearLayout
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:gravity="center_vertical"
-                        android:orientation="horizontal">
-
-                        <com.google.android.material.chip.ChipGroup
-                            android:id="@+id/markupToolChipGroup"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            app:selectionRequired="false"
-                            app:singleLine="true"
-                            app:singleSelection="true" />
-
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/markupUndoButton"
-                            style="?attr/materialButtonOutlinedStyle"
-                            android:layout_width="wrap_content"
-                            android:layout_height="32dp"
-                            android:layout_marginStart="8dp"
-                            android:paddingHorizontal="10dp"
-                            android:paddingVertical="0dp"
-                            android:text="@string/editor_markup_undo"
-                            android:textColor="@android:color/white"
-                            android:textSize="11sp"
-                            app:icon="@drawable/ic_restore_from_trash"
-                            app:iconTint="@android:color/white"
-                            app:strokeColor="?attr/colorOutlineVariant" />
-                    </LinearLayout>
-                </HorizontalScrollView>
-
-                <!-- Contextual options for active markup tool -->
+                <!-- Palette & Tool Options Row -->
                 <HorizontalScrollView
                     android:id="@+id/markupOptionsScroll"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
+                    android:layout_marginTop="8dp"
                     android:scrollbars="none"
                     android:visibility="gone">
 
@@ -259,7 +302,8 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:gravity="center_vertical"
-                        android:orientation="horizontal" />
+                        android:orientation="horizontal"
+                        android:paddingHorizontal="8dp" />
                 </HorizontalScrollView>
             </LinearLayout>
 
@@ -268,38 +312,75 @@
                 android:id="@+id/stripTools"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:gravity="center_vertical"
+                android:gravity="center"
                 android:orientation="horizontal"
                 android:visibility="gone">
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/faceGuideButton"
-                    style="?attr/materialButtonOutlinedStyle"
+                <LinearLayout
+                    android:id="@+id/toolIdPhotoItem"
                     android:layout_width="wrap_content"
-                    android:layout_height="36dp"
-                    android:paddingHorizontal="12dp"
-                    android:paddingVertical="0dp"
-                    android:text="@string/id_photo_title"
-                    android:textColor="@android:color/white"
-                    android:textSize="12sp"
-                    app:icon="@drawable/ic_id_photo"
-                    app:iconTint="@android:color/white"
-                    app:strokeColor="?attr/colorOutlineVariant" />
+                    android:layout_height="wrap_content"
+                    android:layout_marginHorizontal="24dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:gravity="center"
+                    android:orientation="vertical">
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/watermarkButton"
-                    style="?attr/materialButtonOutlinedStyle"
+                    <FrameLayout
+                        android:layout_width="48dp"
+                        android:layout_height="48dp"
+                        android:background="@drawable/bg_circle_tool">
+
+                        <ImageView
+                            android:layout_width="24dp"
+                            android:layout_height="24dp"
+                            android:layout_gravity="center"
+                            android:src="@drawable/ic_id_photo"
+                            app:tint="@android:color/white" />
+                    </FrameLayout>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="@string/id_photo_title"
+                        android:textColor="#B0B0B0"
+                        android:textSize="11sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/toolWatermarkItem"
                     android:layout_width="wrap_content"
-                    android:layout_height="36dp"
-                    android:layout_marginStart="8dp"
-                    android:paddingHorizontal="12dp"
-                    android:paddingVertical="0dp"
-                    android:text="@string/editor_watermark"
-                    android:textColor="@android:color/white"
-                    android:textSize="12sp"
-                    app:icon="@drawable/ic_privacy_watermark"
-                    app:iconTint="@android:color/white"
-                    app:strokeColor="?attr/colorOutlineVariant" />
+                    android:layout_height="wrap_content"
+                    android:layout_marginHorizontal="24dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:gravity="center"
+                    android:orientation="vertical">
+
+                    <FrameLayout
+                        android:layout_width="48dp"
+                        android:layout_height="48dp"
+                        android:background="@drawable/bg_circle_tool">
+
+                        <ImageView
+                            android:id="@+id/watermarkIcon"
+                            android:layout_width="24dp"
+                            android:layout_height="24dp"
+                            android:layout_gravity="center"
+                            android:src="@drawable/ic_privacy_watermark"
+                            app:tint="@android:color/white" />
+                    </FrameLayout>
+
+                    <TextView
+                        android:id="@+id/watermarkLabel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="@string/editor_watermark"
+                        android:textColor="#B0B0B0"
+                        android:textSize="11sp" />
+                </LinearLayout>
             </LinearLayout>
         </FrameLayout>
 
@@ -307,61 +388,133 @@
         <View
             android:layout_width="match_parent"
             android:layout_height="0.5dp"
-            android:background="?attr/colorOutlineVariant" />
+            android:background="#2A2A2A" />
 
-        <!-- Tier 2: Category Tabs (Horizontal Scrollable) -->
+        <!-- Tier 2: Category Tabs (Pills style) -->
         <HorizontalScrollView
             android:id="@+id/categoryTabsScroll"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:paddingHorizontal="8dp"
-            android:paddingVertical="4dp"
+            android:paddingHorizontal="12dp"
+            android:paddingVertical="8dp"
             android:scrollbars="none">
 
-            <com.google.android.material.chip.ChipGroup
-                android:id="@+id/categoryChipGroup"
+            <LinearLayout
+                android:id="@+id/categoryTabsContainer"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                app:selectionRequired="true"
-                app:singleLine="true"
-                app:singleSelection="true" />
+                android:gravity="center_vertical"
+                android:orientation="horizontal" />
         </HorizontalScrollView>
 
         <!-- Divider line -->
         <View
             android:layout_width="match_parent"
             android:layout_height="0.5dp"
-            android:background="?attr/colorOutlineVariant" />
+            android:background="#2A2A2A" />
 
-        <!-- Tier 3: Bottom Action Bar ([取消] ... [保存]) -->
-        <LinearLayout
-            android:id="@+id/bottomActionBar"
+        <!-- Tier 3: Bottom Action Bar -->
+        <FrameLayout
+            android:id="@+id/actionBarContainer"
             android:layout_width="match_parent"
-            android:layout_height="52dp"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
+            android:layout_height="56dp"
             android:paddingHorizontal="16dp">
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/cancelButton"
-                style="?attr/borderlessButtonStyle"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/cancel"
-                android:textColor="@android:color/white" />
+            <!-- Regular Action Bar: Cancel (text) | Save copy (pill) -->
+            <LinearLayout
+                android:id="@+id/regularActionBar"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
 
-            <View
-                android:layout_width="0dp"
-                android:layout_height="1dp"
-                android:layout_weight="1" />
+                <TextView
+                    android:id="@+id/cancelButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:padding="8dp"
+                    android:text="@string/cancel"
+                    android:textColor="@android:color/white"
+                    android:textSize="14sp" />
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/saveButton"
-                style="?attr/materialButtonStyle"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/editor_save" />
-        </LinearLayout>
+                <View
+                    android:layout_width="0dp"
+                    android:layout_height="1dp"
+                    android:layout_weight="1" />
+
+                <TextView
+                    android:id="@+id/saveButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/bg_google_photos_save_button"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:paddingHorizontal="24dp"
+                    android:paddingVertical="10dp"
+                    android:text="@string/editor_save"
+                    android:textColor="#001D35"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <!-- Sub-edit Action Bar: Clear | Undo | Done -->
+            <LinearLayout
+                android:id="@+id/subEditActionBar"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/subEditCancelButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:padding="8dp"
+                    android:text="@string/cancel"
+                    android:textColor="@android:color/white"
+                    android:textSize="14sp" />
+
+                <View
+                    android:layout_width="0dp"
+                    android:layout_height="1dp"
+                    android:layout_weight="1" />
+
+                <ImageView
+                    android:id="@+id/subEditUndoButton"
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:padding="6dp"
+                    android:src="@drawable/ic_undo"
+                    app:tint="@android:color/white" />
+
+                <View
+                    android:layout_width="0dp"
+                    android:layout_height="1dp"
+                    android:layout_weight="1" />
+
+                <TextView
+                    android:id="@+id/subEditDoneButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/bg_google_photos_save_button"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:paddingHorizontal="24dp"
+                    android:paddingVertical="10dp"
+                    android:text="@string/editor_done"
+                    android:textColor="#001D35"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+        </FrameLayout>
     </LinearLayout>
 
 </androidx.constraintlayout.widget.ConstraintLayout>
