@@ -426,8 +426,9 @@
             </LinearLayout>
         </FrameLayout>
 
-        <!-- Divider line -->
+        <!-- Top Divider line for Category Tabs -->
         <View
+            android:id="@+id/categoryTabsTopDivider"
             android:layout_width="match_parent"
             android:layout_height="0.5dp"
             android:background="#2A2A2A" />
@@ -449,8 +450,9 @@
                 android:orientation="horizontal" />
         </HorizontalScrollView>
 
-        <!-- Divider line -->
+        <!-- Bottom Divider line for Category Tabs -->
         <View
+            android:id="@+id/categoryTabsBottomDivider"
             android:layout_width="match_parent"
             android:layout_height="0.5dp"
             android:background="#2A2A2A" />

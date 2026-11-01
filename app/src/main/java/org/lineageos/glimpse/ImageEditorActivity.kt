@@ -140,6 +140,9 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
     private val watermarkLabel by lazy { findViewById<TextView>(R.id.watermarkLabel) }
 
     // Deck: Tabs & Action Bar
+    private val categoryTabsScroll by lazy { findViewById<View>(R.id.categoryTabsScroll) }
+    private val categoryTabsTopDivider by lazy { findViewById<View>(R.id.categoryTabsTopDivider) }
+    private val categoryTabsBottomDivider by lazy { findViewById<View>(R.id.categoryTabsBottomDivider) }
     private val categoryTabsContainer by lazy { findViewById<LinearLayout>(R.id.categoryTabsContainer) }
     private val regularActionBar by lazy { findViewById<View>(R.id.regularActionBar) }
     private val cancelButton by lazy { findViewById<View>(R.id.cancelButton) }
@@ -338,6 +341,12 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         }
     }
 
+    private fun setCategoryTabsVisible(visible: Boolean) {
+        categoryTabsScroll.isVisible = visible
+        categoryTabsTopDivider.isVisible = visible
+        categoryTabsBottomDivider.isVisible = visible
+    }
+
     private fun switchCategory(category: EditorCategory) {
         activeCategory = category
         setupCategoryTabs()
@@ -352,32 +361,23 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         cropImageView.showCropGuides = (category == EditorCategory.CROP)
         annotationOverlayView.isVisible = true
 
-        if (category == EditorCategory.MARKUP) {
-            regularActionBar.isVisible = false
-            subEditActionBar.isVisible = true
-            subEditCancelButton.setText(R.string.editor_markup_clear)
-            subEditCancelButton.setOnClickListener {
-                annotationOverlayView.clear()
-            }
-            subEditUndoButton.isVisible = true
-            subEditUndoButton.isEnabled = annotationOverlayView.hasAnnotations()
-            subEditUndoButton.alpha = if (annotationOverlayView.hasAnnotations()) 1f else 0.4f
-            subEditUndoButton.setOnClickListener {
-                annotationOverlayView.undo()
-            }
-            subEditDoneButton.setOnClickListener {
-                switchCategory(EditorCategory.CROP)
-            }
-            if (annotationOverlayView.activeTool == MarkupTool.NONE) {
-                selectMarkupTool(MarkupTool.DOODLE)
-            }
-        } else {
-            annotationOverlayView.activeTool = MarkupTool.NONE
-            if (activeAdjustParam == null) {
-                regularActionBar.isVisible = true
-                subEditActionBar.isVisible = false
-            }
+        // Exit adjust slider if active
+        if (activeAdjustParam != null) {
+            activeAdjustParam = null
+            updateAdjustToolItems()
+            adjustCarouselScroll.isVisible = true
+            adjustSliderLayout.isVisible = false
         }
+
+        // In Google Photos (e.g. google-photos-markup.jpg), categories start in neutral state:
+        // No tool is active, tool options are hidden, Category Tabs bar is visible, Cancel/Save copy action bar is visible.
+        annotationOverlayView.activeTool = MarkupTool.NONE
+        markupOptionsScroll.isVisible = false
+        updateMarkupToolButtons()
+
+        setCategoryTabsVisible(true)
+        regularActionBar.isVisible = true
+        subEditActionBar.isVisible = false
     }
 
     private fun updateFlipButtonUI() {
@@ -401,6 +401,14 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
     }
 
     private fun handleExitAttempt() {
+        if (activeAdjustParam != null) {
+            closeAdjustSlider()
+            return
+        }
+        if (activeCategory == EditorCategory.MARKUP && annotationOverlayView.activeTool != MarkupTool.NONE) {
+            exitMarkupSubEdit()
+            return
+        }
         if (!isDirty()) {
             finish()
             return
@@ -563,12 +571,18 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         adjustCarouselScroll.isVisible = false
         adjustSliderLayout.isVisible = true
 
+        // Category Tabs automatically disappear in sub-editing mode
+        setCategoryTabsVisible(false)
         regularActionBar.isVisible = false
         subEditActionBar.isVisible = true
         subEditUndoButton.isVisible = false
         subEditCancelButton.setText(R.string.cancel)
+
+        val initialVal = getAdjustParamValue(param)
         subEditCancelButton.setOnClickListener {
             // Revert slider change
+            setAdjustParamValue(param, initialVal)
+            refreshBaseBitmap()
             closeAdjustSlider()
         }
         subEditDoneButton.setOnClickListener {
@@ -587,7 +601,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             adjustSlider.stepSize = 1f
         }
 
-        val curVal = getAdjustParamValue(param)
+        val curVal = initialVal
         adjustSlider.value = curVal.toFloat()
         adjustValueText.text = if (curVal > 0 && param.isBipolar) "+$curVal" else "$curVal"
     }
@@ -597,6 +611,8 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         updateAdjustToolItems()
         adjustCarouselScroll.isVisible = true
         adjustSliderLayout.isVisible = false
+        // Category Tabs bar reappears when exiting sub-editing mode
+        setCategoryTabsVisible(true)
         regularActionBar.isVisible = true
         subEditActionBar.isVisible = false
     }
@@ -757,6 +773,39 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         annotationOverlayView.activeTool = tool
         updateMarkupToolButtons()
         showMarkupToolOptions(tool)
+
+        if (tool != MarkupTool.NONE) {
+            // Category Tabs automatically disappear in sub-editing mode (text-on-images.jpg & use-arrow-tool.jpg)
+            setCategoryTabsVisible(false)
+            regularActionBar.isVisible = false
+            subEditActionBar.isVisible = true
+
+            subEditCancelButton.setText(R.string.editor_markup_clear)
+            subEditCancelButton.setOnClickListener {
+                annotationOverlayView.clear()
+            }
+            subEditUndoButton.isVisible = true
+            subEditUndoButton.isEnabled = annotationOverlayView.hasAnnotations()
+            subEditUndoButton.alpha = if (annotationOverlayView.hasAnnotations()) 1f else 0.4f
+            subEditUndoButton.setOnClickListener {
+                annotationOverlayView.undo()
+            }
+            subEditDoneButton.setOnClickListener {
+                exitMarkupSubEdit()
+            }
+        } else {
+            exitMarkupSubEdit()
+        }
+    }
+
+    private fun exitMarkupSubEdit() {
+        annotationOverlayView.activeTool = MarkupTool.NONE
+        updateMarkupToolButtons()
+        markupOptionsScroll.isVisible = false
+        // Category Tabs bar reappears when exiting sub-editing mode (google-photos-markup.jpg)
+        setCategoryTabsVisible(true)
+        regularActionBar.isVisible = true
+        subEditActionBar.isVisible = false
     }
 
     private fun showMarkupToolOptions(tool: MarkupTool) {
