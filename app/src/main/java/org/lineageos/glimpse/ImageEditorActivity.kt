@@ -51,6 +51,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.lineageos.glimpse.ext.editSaveBehavior
 import org.lineageos.glimpse.ext.createWriteRequest
+import org.lineageos.glimpse.ui.views.AngleRulerView
 import org.lineageos.glimpse.ui.views.AnnotationItem
 import org.lineageos.glimpse.ui.views.AnnotationOverlayView
 import org.lineageos.glimpse.ui.views.CropImageView
@@ -64,6 +65,7 @@ import org.lineageos.glimpse.utils.media.ImageToolbox
 import java.io.ByteArrayOutputStream
 import kotlin.math.abs
 import kotlin.math.max
+import kotlin.math.roundToInt
 
 /**
  * Image Editor aligned directly with Google Photos Editor UI specifications:
@@ -105,6 +107,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
 
     // Strip Controls: Crop
     private val cropAngleText by lazy { findViewById<TextView>(R.id.cropAngleText) }
+    private val cropAngleRuler by lazy { findViewById<AngleRulerView>(R.id.cropAngleRuler) }
     private val cropRatioItem by lazy { findViewById<View>(R.id.cropRatioItem) }
     private val cropRatioLabel by lazy { findViewById<TextView>(R.id.cropRatioLabel) }
     private val cropRotateItem by lazy { findViewById<View>(R.id.cropRotateItem) }
@@ -152,7 +155,9 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
     private var sourceMimeType: String? = null
     private var baseBitmap: Bitmap? = null
     private var rotation: Int = 0
+    private var fineRotation: Float = 0f
     private var currentFilter: ImageFilter = ImageFilter.NONE
+    private var filterThumbnails: Map<ImageFilter, Bitmap>? = null
     private var adjustParameters = AdjustParameters()
     private var activeAdjustParam: AdjustParam? = null
 
@@ -209,7 +214,14 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         // Crop Controls
         cropRotateItem.setOnClickListener {
             rotation = (rotation + 90) % 360
-            cropAngleText.text = "${rotation}°"
+            val totalDeg = (rotation + fineRotation).roundToInt()
+            cropAngleText.text = "${totalDeg}°"
+            refreshBaseBitmap()
+        }
+        cropAngleRuler.onAngleChanged = { angle ->
+            fineRotation = angle
+            val totalDeg = (rotation + fineRotation).roundToInt()
+            cropAngleText.text = "${totalDeg}°"
             refreshBaseBitmap()
         }
         cropRatioItem.setOnClickListener {
@@ -222,13 +234,14 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         }
         cropResetButton.setOnClickListener {
             rotation = 0
+            fineRotation = 0f
+            cropAngleRuler.currentAngle = 0f
             isFlippedHorizontal = false
             isFramingModified = false
             cropAngleText.text = "0°"
-            baseBitmap?.let { bmp ->
-                cropImageView.aspectRatio = bmp.width.toFloat() / bmp.height.toFloat()
-            }
-            cropRatioLabel.setText(R.string.editor_crop)
+            cropImageView.aspectRatio = 0f
+            cropImageView.reset()
+            cropRatioLabel.setText(R.string.editor_crop_free)
             updateFlipButtonUI()
             refreshBaseBitmap()
         }
@@ -270,8 +283,24 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                 return@launch
             }
             baseBitmap = bmp
-            cropImageView.aspectRatio = bmp.width.toFloat() / bmp.height.toFloat()
+            cropImageView.aspectRatio = 0f
+            cropImageView.showFaceGuide = false
             refreshBaseBitmap()
+
+            // Precompute filter thumbnail previews (128x128)
+            val thumbs = withContext(Dispatchers.Default) {
+                val thumbSize = 128
+                val maxDim = max(bmp.width, bmp.height)
+                val scale = thumbSize.toFloat() / maxDim
+                val tw = max((bmp.width * scale).toInt(), 1)
+                val th = max((bmp.height * scale).toInt(), 1)
+                val scaled = Bitmap.createScaledBitmap(bmp, tw, th, true)
+                ImageFilter.values().associateWith { f ->
+                    applyFilter(scaled, f)
+                }
+            }
+            filterThumbnails = thumbs
+            setupFilterCards()
         }
     }
 
@@ -361,7 +390,8 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
     }
 
     private fun isDirty(): Boolean {
-        return rotation != 0 ||
+        return abs(fineRotation) > 0.1f ||
+                rotation != 0 ||
                 isFlippedHorizontal ||
                 currentFilter != ImageFilter.NONE ||
                 !adjustParameters.isDefault ||
@@ -393,7 +423,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
 
         data class RatioItem(val labelRes: Int, val ratio: Float)
         val ratios = listOf(
-            RatioItem(R.string.editor_crop, 0f),
+            RatioItem(R.string.editor_crop_free, 0f),
             RatioItem(R.string.ratio_square, 1f),
             RatioItem(R.string.ratio_5_7, 5f / 7f),
             RatioItem(R.string.ratio_7_9, 7f / 9f),
@@ -409,11 +439,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                         (abs(cropImageView.aspectRatio - item.ratio) < 0.01f)
                 setTextColor(if (isSelected) Color.parseColor("#A8C7FA") else Color.WHITE)
                 setOnClickListener {
-                    cropImageView.aspectRatio = if (item.ratio == 0f) {
-                        baseBitmap?.let { it.width.toFloat() / it.height.toFloat() } ?: 0f
-                    } else {
-                        item.ratio
-                    }
+                    cropImageView.aspectRatio = item.ratio
                     cropRatioLabel.text = getString(item.labelRes)
                     dialog.dismiss()
                 }
@@ -581,6 +607,8 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
 
         val filters = listOf(
             ImageFilter.NONE to R.string.editor_filter_none,
+            ImageFilter.WARM to R.string.editor_filter_warm,
+            ImageFilter.COOL to R.string.editor_filter_cool,
             ImageFilter.GRAYSCALE to R.string.editor_filter_grayscale,
             ImageFilter.SEPIA to R.string.editor_filter_sepia,
             ImageFilter.INVERT to R.string.editor_filter_invert,
@@ -606,19 +634,47 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                 val cardSize = (56 * density).toInt()
                 layoutParams = LinearLayout.LayoutParams(cardSize, cardSize)
                 cardElevation = 0f
-                strokeWidth = if (isSelected) (2 * density).toInt() else 0
-                strokeColor = Color.WHITE
-                setCardBackgroundColor(if (isSelected) Color.parseColor("#383838") else Color.parseColor("#222222"))
+                strokeWidth = if (isSelected) (2.5f * density).toInt() else 0
+                strokeColor = Color.parseColor("#A8C7FA")
+                setCardBackgroundColor(Color.parseColor("#222222"))
 
-                val iv = ImageView(this@ImageEditorActivity).apply {
-                    val iconSize = (24 * density).toInt()
-                    layoutParams = FrameLayout.LayoutParams(iconSize, iconSize).apply {
-                        gravity = Gravity.CENTER
+                val thumb = filterThumbnails?.get(filter)
+                if (thumb != null) {
+                    val iv = ImageView(this@ImageEditorActivity).apply {
+                        layoutParams = FrameLayout.LayoutParams(
+                            FrameLayout.LayoutParams.MATCH_PARENT,
+                            FrameLayout.LayoutParams.MATCH_PARENT
+                        )
+                        scaleType = ImageView.ScaleType.CENTER_CROP
+                        setImageBitmap(thumb)
                     }
-                    setImageResource(if (isSelected) R.drawable.ic_check else R.drawable.ic_image)
-                    imageTintList = ColorStateList.valueOf(Color.WHITE)
+                    addView(iv)
+
+                    if (isSelected) {
+                        val checkBadge = ImageView(this@ImageEditorActivity).apply {
+                            val badgeSize = (20 * density).toInt()
+                            layoutParams = FrameLayout.LayoutParams(badgeSize, badgeSize).apply {
+                                gravity = Gravity.BOTTOM or Gravity.END
+                                setMargins(0, 0, (4 * density).toInt(), (4 * density).toInt())
+                            }
+                            setBackgroundResource(R.drawable.bg_circle_tool_selected)
+                            setImageResource(R.drawable.ic_check)
+                            imageTintList = ColorStateList.valueOf(Color.parseColor("#001D35"))
+                            setPadding((2 * density).toInt(), (2 * density).toInt(), (2 * density).toInt(), (2 * density).toInt())
+                        }
+                        addView(checkBadge)
+                    }
+                } else {
+                    val iv = ImageView(this@ImageEditorActivity).apply {
+                        val iconSize = (24 * density).toInt()
+                        layoutParams = FrameLayout.LayoutParams(iconSize, iconSize).apply {
+                            gravity = Gravity.CENTER
+                        }
+                        setImageResource(if (isSelected) R.drawable.ic_check else R.drawable.ic_image)
+                        imageTintList = ColorStateList.valueOf(Color.WHITE)
+                    }
+                    addView(iv)
                 }
-                addView(iv)
             }
 
             val label = TextView(this).apply {
@@ -792,7 +848,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                     setPadding((8 * density).toInt(), 0, (8 * density).toInt(), 0)
                 }
 
-                val currentBrushDp = (annotationOverlayView.activeMosaicBrushSize / density).coerceIn(10f, 60f)
+                val currentBrushDp = (kotlin.math.round((annotationOverlayView.activeMosaicBrushSize / density) / 2f) * 2f).coerceIn(10f, 60f)
                 val brushLabel = TextView(this).apply {
                     text = "${getString(R.string.editor_markup_mosaic_brush)}: ${currentBrushDp.toInt()}dp"
                     setTextColor(Color.WHITE)
@@ -837,7 +893,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                     }
                     chip.setOnClickListener {
                         annotationOverlayView.activeMosaicBrushSize = bs
-                        val dp = (bs / density).coerceIn(10f, 60f)
+                        val dp = (kotlin.math.round((bs / density) / 2f) * 2f).coerceIn(10f, 60f)
                         brushSlider.value = dp
                         brushLabel.text = "${getString(R.string.editor_markup_mosaic_brush)}: ${dp.toInt()}dp"
                     }
@@ -899,7 +955,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             setPadding((8 * density).toInt(), 0, (8 * density).toInt(), 0)
         }
 
-        val currentDp = (annotationOverlayView.activeStrokeWidth / density).coerceIn(2f, 40f)
+        val currentDp = kotlin.math.round(annotationOverlayView.activeStrokeWidth / density).coerceIn(2f, 40f)
 
         val dotPreview = View(this).apply {
             val sizePx = (currentDp * density).toInt().coerceIn(4, 28)
@@ -947,7 +1003,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             }
             chip.setOnClickListener {
                 annotationOverlayView.activeStrokeWidth = sizePx
-                val dp = (sizePx / density).coerceIn(2f, 40f)
+                val dp = kotlin.math.round(sizePx / density).coerceIn(2f, 40f)
                 slider.value = dp
                 label.text = "${getString(R.string.editor_markup_stroke_width)}: ${dp.toInt()}dp"
                 val previewSize = sizePx.toInt().coerceIn(4, 28)
@@ -1045,7 +1101,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         val bmp = baseBitmap ?: return
         lifecycleScope.launch {
             val displayed = withContext(Dispatchers.Default) {
-                val transformed = transformBitmap(bmp, rotation, isFlippedHorizontal)
+                val transformed = transformBitmap(bmp, rotation.toFloat() + fineRotation, isFlippedHorizontal)
                 val filtered = applyFilter(transformed, currentFilter)
                 if (filtered !== transformed && transformed !== bmp) transformed.recycle()
                 val adjusted = ImageAdjuster.applyAdjustments(filtered, adjustParameters)
@@ -1063,7 +1119,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             cropped
         } else {
             val bmp = baseBitmap ?: return
-            val transformed = transformBitmap(bmp, rotation, isFlippedHorizontal)
+            val transformed = transformBitmap(bmp, rotation.toFloat() + fineRotation, isFlippedHorizontal)
             val filtered = applyFilter(transformed, currentFilter)
             if (filtered !== transformed && transformed !== bmp) transformed.recycle()
             val adjusted = ImageAdjuster.applyAdjustments(filtered, adjustParameters)
@@ -1315,10 +1371,10 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         }
     }.getOrNull()
 
-    private fun transformBitmap(src: Bitmap, degrees: Int, flipHorizontal: Boolean): Bitmap {
-        if (degrees % 360 == 0 && !flipHorizontal) return src
+    private fun transformBitmap(src: Bitmap, degrees: Float, flipHorizontal: Boolean): Bitmap {
+        if (abs(degrees % 360f) < 0.01f && !flipHorizontal) return src
         val m = Matrix().apply {
-            if (degrees % 360 != 0) postRotate(degrees.toFloat())
+            if (abs(degrees % 360f) >= 0.01f) postRotate(degrees)
             if (flipHorizontal) postScale(-1f, 1f)
         }
         return Bitmap.createBitmap(src, 0, 0, src.width, src.height, m, true)

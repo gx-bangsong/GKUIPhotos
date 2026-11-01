@@ -19,6 +19,8 @@ import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
+import kotlin.math.abs
+import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
 
@@ -41,16 +43,17 @@ class CropImageView @JvmOverloads constructor(
     private val drawMatrix = Matrix()
     private val inverseMatrix = Matrix()
 
-    /** Aspect ratio of the locked crop rectangle (w:h). */
-    var aspectRatio: Float = 1f
+    /** Aspect ratio of the locked crop rectangle (w:h). 0f = freeform crop (match image). */
+    var aspectRatio: Float = 0f
         set(value) {
-            field = value.coerceAtLeast(0.1f)
+            field = value.coerceAtLeast(0f)
+            computeCropRect()
             requestLayout()
             invalidate()
         }
 
-    /** When true the face-alignment oval is drawn inside the crop rectangle. */
-    var showFaceGuide: Boolean = true
+    /** When true the face-alignment oval is drawn inside the crop rectangle. Default is false. */
+    var showFaceGuide: Boolean = false
 
     /** When true (default), the dimming scrim, rule-of-thirds grid, and crop borders are drawn. */
     var showCropGuides: Boolean = true
@@ -59,7 +62,7 @@ class CropImageView @JvmOverloads constructor(
             invalidate()
         }
 
-    /** Callback invoked whenever the user modifies framing via pan or zoom gestures. */
+    /** Callback invoked whenever the user modifies framing via pan, zoom, or handle drag gestures. */
     var onFramingModified: (() -> Unit)? = null
 
     /** Tiled repeating privacy watermark text drawn live inside the crop area. */
@@ -68,6 +71,21 @@ class CropImageView @JvmOverloads constructor(
             field = value
             invalidate()
         }
+
+    private enum class DragHandle {
+        NONE,
+        CORNER_TL,
+        CORNER_TR,
+        CORNER_BL,
+        CORNER_BR,
+        EDGE_TOP,
+        EDGE_BOTTOM,
+        EDGE_LEFT,
+        EDGE_RIGHT,
+        PAN,
+    }
+
+    private var activeDragHandle = DragHandle.NONE
 
     // Gesture state
     private var scaleFactor = 1f
@@ -89,6 +107,11 @@ class CropImageView @JvmOverloads constructor(
         color = Color.argb(180, 255, 255, 255)
         strokeWidth = 1.5f
         style = Paint.Style.STROKE
+    }
+    private val cornerHandlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE
+        style = Paint.Style.FILL
+        setShadowLayer(4f, 0f, 2f, Color.argb(160, 0, 0, 0))
     }
     private val ovalPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.argb(200, 255, 255, 255)
@@ -118,6 +141,7 @@ class CropImageView @JvmOverloads constructor(
         } else {
             initialized = false
         }
+        cropRect.setEmpty()
         requestLayout()
         invalidate()
     }
@@ -136,11 +160,12 @@ class CropImageView @JvmOverloads constructor(
         scaleFactor = fitScale()
         translateX = 0f
         translateY = 0f
+        computeCropRect()
         invalidate()
     }
 
     fun getCropRect(): RectF {
-        computeCropRect()
+        if (cropRect.isEmpty) computeCropRect()
         return RectF(cropRect)
     }
 
@@ -159,6 +184,7 @@ class CropImageView @JvmOverloads constructor(
             translateX = 0f
             translateY = 0f
             scaleFactor = max(scaleFactor, fitScale())
+            computeCropRect()
             invalidate()
         }
     }
@@ -167,6 +193,7 @@ class CropImageView @JvmOverloads constructor(
         super.onMeasure(widthMeasureSpec, heightMeasureSpec)
         if (!initialized && bitmap != null && width > 0 && height > 0) {
             scaleFactor = fitScale()
+            computeCropRect()
             initialized = true
         }
     }
@@ -194,8 +221,10 @@ class CropImageView @JvmOverloads constructor(
         )
         canvas.drawBitmap(bmp, drawMatrix, bitmapPaint)
 
-        // Compute the centered crop rectangle respecting aspect ratio.
-        computeCropRect()
+        // Compute the centered crop rectangle if not yet initialized.
+        if (cropRect.isEmpty) {
+            computeCropRect()
+        }
 
         // Draw live tiled privacy watermark inside cropRect if configured
         val watermark = watermarkText
@@ -254,15 +283,25 @@ class CropImageView @JvmOverloads constructor(
         canvas.restore()
     }
 
-    private fun computeCropRect() {
-        val padding = 24f
+    fun computeCropRect() {
+        if (width <= 0 || height <= 0) return
+        val density = resources.displayMetrics.density
+        val padding = 24f * density
         val maxW = width - padding * 2
         val maxH = height - padding * 2
+        val bmp = bitmap
+        val ratio = if (aspectRatio > 0.01f) {
+            aspectRatio
+        } else if (bmp != null && bmp.height > 0) {
+            bmp.width.toFloat() / bmp.height.toFloat()
+        } else {
+            1f
+        }
         var w = maxW
-        var h = w / aspectRatio
+        var h = w / ratio
         if (h > maxH) {
             h = maxH
-            w = h * aspectRatio
+            w = h * ratio
         }
         val left = (width - w) / 2f
         val top = (height - h) / 2f
@@ -272,8 +311,7 @@ class CropImageView @JvmOverloads constructor(
     private fun drawGuides(canvas: Canvas) {
         if (!showCropGuides) return
 
-        // Dim everything except the crop rectangle. Scrim + erase must share a
-        // layer so the CLEAR xfermode actually punches a hole through the scrim.
+        // Dim everything except the crop rectangle.
         val full = RectF(0f, 0f, width.toFloat(), height.toFloat())
         val saveCount = canvas.saveLayer(full, null)
         canvas.drawRect(full, scrimPaint)
@@ -289,7 +327,14 @@ class CropImageView @JvmOverloads constructor(
         canvas.drawLine(cropRect.left, cropRect.top + 2 * thirdH, cropRect.right, cropRect.top + 2 * thirdH, gridPaint)
         canvas.drawRect(cropRect, gridPaint)
 
-        // Dashed face-alignment oval (about 60% of the crop height, near the top).
+        // Google Photos corner handles: 4 white circles with shadow
+        val handleR = 6f * resources.displayMetrics.density
+        canvas.drawCircle(cropRect.left, cropRect.top, handleR, cornerHandlePaint)
+        canvas.drawCircle(cropRect.right, cropRect.top, handleR, cornerHandlePaint)
+        canvas.drawCircle(cropRect.left, cropRect.bottom, handleR, cornerHandlePaint)
+        canvas.drawCircle(cropRect.right, cropRect.bottom, handleR, cornerHandlePaint)
+
+        // Dashed face-alignment oval (only when showFaceGuide is explicitly enabled by ID photo).
         if (showFaceGuide) {
             val ovalH = cropRect.height() * 0.6f
             val ovalW = ovalH * 0.75f
@@ -305,24 +350,110 @@ class CropImageView @JvmOverloads constructor(
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         scaleDetector.onTouchEvent(event)
+        val density = resources.displayMetrics.density
+        val handleRadius = 36f * density
+        val minCropSize = 48f * density
+        val padding = 16f * density
+
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 lastTouchX = event.x
                 lastTouchY = event.y
+
+                activeDragHandle = when {
+                    hypot(event.x - cropRect.left, event.y - cropRect.top) <= handleRadius -> DragHandle.CORNER_TL
+                    hypot(event.x - cropRect.right, event.y - cropRect.top) <= handleRadius -> DragHandle.CORNER_TR
+                    hypot(event.x - cropRect.left, event.y - cropRect.bottom) <= handleRadius -> DragHandle.CORNER_BL
+                    hypot(event.x - cropRect.right, event.y - cropRect.bottom) <= handleRadius -> DragHandle.CORNER_BR
+                    aspectRatio <= 0.01f && abs(event.y - cropRect.top) <= handleRadius && event.x in cropRect.left..cropRect.right -> DragHandle.EDGE_TOP
+                    aspectRatio <= 0.01f && abs(event.y - cropRect.bottom) <= handleRadius && event.x in cropRect.left..cropRect.right -> DragHandle.EDGE_BOTTOM
+                    aspectRatio <= 0.01f && abs(event.x - cropRect.left) <= handleRadius && event.y in cropRect.top..cropRect.bottom -> DragHandle.EDGE_LEFT
+                    aspectRatio <= 0.01f && abs(event.x - cropRect.right) <= handleRadius && event.y in cropRect.top..cropRect.bottom -> DragHandle.EDGE_RIGHT
+                    else -> DragHandle.PAN
+                }
             }
             MotionEvent.ACTION_MOVE -> {
-                if (!scaleDetector.isInProgress) {
-                    val dx = event.x - lastTouchX
-                    val dy = event.y - lastTouchY
-                    if (dx != 0f || dy != 0f) {
+                val dx = event.x - lastTouchX
+                val dy = event.y - lastTouchY
+                lastTouchX = event.x
+                lastTouchY = event.y
+
+                if (activeDragHandle != DragHandle.PAN && activeDragHandle != DragHandle.NONE) {
+                    val maxR = width - padding
+                    val maxB = height - padding
+
+                    when (activeDragHandle) {
+                        DragHandle.CORNER_TL -> {
+                            var newLeft = (cropRect.left + dx).coerceIn(padding, cropRect.right - minCropSize)
+                            var newTop = (cropRect.top + dy).coerceIn(padding, cropRect.bottom - minCropSize)
+                            if (aspectRatio > 0.01f) {
+                                val w = cropRect.right - newLeft
+                                val h = w / aspectRatio
+                                newTop = (cropRect.bottom - h).coerceIn(padding, cropRect.bottom - minCropSize)
+                            }
+                            cropRect.left = newLeft
+                            cropRect.top = newTop
+                        }
+                        DragHandle.CORNER_TR -> {
+                            var newRight = (cropRect.right + dx).coerceIn(cropRect.left + minCropSize, maxR)
+                            var newTop = (cropRect.top + dy).coerceIn(padding, cropRect.bottom - minCropSize)
+                            if (aspectRatio > 0.01f) {
+                                val w = newRight - cropRect.left
+                                val h = w / aspectRatio
+                                newTop = (cropRect.bottom - h).coerceIn(padding, cropRect.bottom - minCropSize)
+                            }
+                            cropRect.right = newRight
+                            cropRect.top = newTop
+                        }
+                        DragHandle.CORNER_BL -> {
+                            var newLeft = (cropRect.left + dx).coerceIn(padding, cropRect.right - minCropSize)
+                            var newBottom = (cropRect.bottom + dy).coerceIn(cropRect.top + minCropSize, maxB)
+                            if (aspectRatio > 0.01f) {
+                                val w = cropRect.right - newLeft
+                                val h = w / aspectRatio
+                                newBottom = (cropRect.top + h).coerceIn(cropRect.top + minCropSize, maxB)
+                            }
+                            cropRect.left = newLeft
+                            cropRect.bottom = newBottom
+                        }
+                        DragHandle.CORNER_BR -> {
+                            var newRight = (cropRect.right + dx).coerceIn(cropRect.left + minCropSize, maxR)
+                            var newBottom = (cropRect.bottom + dy).coerceIn(cropRect.top + minCropSize, maxB)
+                            if (aspectRatio > 0.01f) {
+                                val w = newRight - cropRect.left
+                                val h = w / aspectRatio
+                                newBottom = (cropRect.top + h).coerceIn(cropRect.top + minCropSize, maxB)
+                            }
+                            cropRect.right = newRight
+                            cropRect.bottom = newBottom
+                        }
+                        DragHandle.EDGE_TOP -> {
+                            cropRect.top = (cropRect.top + dy).coerceIn(padding, cropRect.bottom - minCropSize)
+                        }
+                        DragHandle.EDGE_BOTTOM -> {
+                            cropRect.bottom = (cropRect.bottom + dy).coerceIn(cropRect.top + minCropSize, maxB)
+                        }
+                        DragHandle.EDGE_LEFT -> {
+                            cropRect.left = (cropRect.left + dx).coerceIn(padding, cropRect.right - minCropSize)
+                        }
+                        DragHandle.EDGE_RIGHT -> {
+                            cropRect.right = (cropRect.right + dx).coerceIn(cropRect.left + minCropSize, maxR)
+                        }
+                        else -> {}
+                    }
+                    onFramingModified?.invoke()
+                    invalidate()
+                } else if (activeDragHandle == DragHandle.PAN) {
+                    if (!scaleDetector.isInProgress && (dx != 0f || dy != 0f)) {
                         translateX += dx
                         translateY += dy
                         onFramingModified?.invoke()
-                        lastTouchX = event.x
-                        lastTouchY = event.y
                         invalidate()
                     }
                 }
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                activeDragHandle = DragHandle.NONE
             }
         }
         return true
@@ -334,7 +465,7 @@ class CropImageView @JvmOverloads constructor(
      */
     fun crop(): Bitmap? {
         val bmp = bitmap ?: return null
-        computeCropRect()
+        if (cropRect.isEmpty) computeCropRect()
         drawMatrix.invert(inverseMatrix)
         val srcCorners = floatArrayOf(
             cropRect.left, cropRect.top,
@@ -354,7 +485,7 @@ class CropImageView @JvmOverloads constructor(
      */
     fun getNormalizedCropRect(): RectF? {
         val bmp = bitmap ?: return null
-        computeCropRect()
+        if (cropRect.isEmpty) computeCropRect()
         drawMatrix.invert(inverseMatrix)
         val srcCorners = floatArrayOf(
             cropRect.left, cropRect.top,

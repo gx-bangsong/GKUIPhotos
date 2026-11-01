@@ -85,12 +85,12 @@
                     android:textColor="#E0E0E0"
                     android:textSize="13sp" />
 
-                <ImageView
+                <org.lineageos.glimpse.ui.views.AngleRulerView
                     android:id="@+id/cropAngleRuler"
-                    android:layout_width="200dp"
-                    android:layout_height="12dp"
-                    android:layout_marginBottom="12dp"
-                    android:src="@drawable/bg_ruler_ticks" />
+                    android:layout_width="match_parent"
+                    android:layout_height="24dp"
+                    android:layout_marginHorizontal="24dp"
+                    android:layout_marginBottom="12dp" />
 
                 <LinearLayout
                     android:layout_width="match_parent"

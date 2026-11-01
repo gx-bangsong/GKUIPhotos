@@ -203,6 +203,7 @@
     <string name="editor_done">完成</string>
     <string name="editor_markup_add_text">新增文字</string>
     <string name="editor_flip">水平翻轉</string>
+    <string name="editor_crop_free">自由</string>
     <string name="editor_markup_stroke_width">線條粗細</string>
     <string name="editor_markup_mosaic_brush">塗抹粗細</string>
     <string name="editor_markup_text_hint">點擊編輯文字</string>
