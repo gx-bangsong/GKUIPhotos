@@ -679,8 +679,6 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             ImageFilter.GRAYSCALE to R.string.editor_filter_grayscale,
             ImageFilter.SEPIA to R.string.editor_filter_sepia,
             ImageFilter.INVERT to R.string.editor_filter_invert,
-            ImageFilter.WARM to R.string.editor_filter_warm,
-            ImageFilter.COOL to R.string.editor_filter_cool,
         )
         filters.forEachIndexed { index, (filter, label) ->
             val chip = Chip(this).apply {

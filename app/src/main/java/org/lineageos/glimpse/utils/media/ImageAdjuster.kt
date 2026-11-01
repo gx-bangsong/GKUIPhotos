@@ -30,66 +30,7 @@ object ImageAdjuster {
      * Compute combined ColorMatrix for Saturation, Contrast, and Temperature.
      */
     fun buildColorMatrix(params: AdjustParameters): ColorMatrix? {
-        if (params.saturation == 0 && params.contrast == 0 && params.temperature == 0) {
-            return null
-        }
-
-        val matrix = ColorMatrix()
-
-        // 1. Saturation: -100..100 -> 0.0f..2.0f
-        if (params.saturation != 0) {
-            val sat = 1f + (params.saturation / 100f)
-            val satMat = ColorMatrix().apply { setSaturation(sat.coerceAtLeast(0f)) }
-            matrix.postConcat(satMat)
-        }
-
-        // 2. Contrast: -100..100 -> 0.5f..1.5f
-        if (params.contrast != 0) {
-            val c = 1f + (params.contrast / 100f) * 0.5f
-            val t = (-0.5f * c + 0.5f) * 255f
-            val contrastMat = ColorMatrix(
-                floatArrayOf(
-                    c, 0f, 0f, 0f, t,
-                    0f, c, 0f, 0f, t,
-                    0f, 0f, c, 0f, t,
-                    0f, 0f, 0f, 1f, 0f,
-                )
-            )
-            matrix.postConcat(contrastMat)
-        }
-
-        // 3. Color Temperature (Warm / Cool shift)
-        if (params.temperature != 0) {
-            val factor = params.temperature / 100f
-            val rScale: Float
-            val gScale: Float
-            val bScale: Float
-
-            if (factor > 0) {
-                // Warm: boost Red and slight Green, reduce Blue
-                rScale = 1f + factor * 0.25f
-                gScale = 1f + factor * 0.05f
-                bScale = 1f - factor * 0.25f
-            } else {
-                // Cool: boost Blue, reduce Red
-                val absF = abs(factor)
-                rScale = 1f - absF * 0.25f
-                gScale = 1f
-                bScale = 1f + absF * 0.25f
-            }
-
-            val tempMat = ColorMatrix(
-                floatArrayOf(
-                    rScale, 0f, 0f, 0f, 0f,
-                    0f, gScale, 0f, 0f, 0f,
-                    0f, 0f, bScale, 0f, 0f,
-                    0f, 0f, 0f, 1f, 0f,
-                )
-            )
-            matrix.postConcat(tempMat)
-        }
-
-        return matrix
+        return ColorMatrixMath.buildColorMatrixArray(params)?.let { ColorMatrix(it) }
     }
 
     /**

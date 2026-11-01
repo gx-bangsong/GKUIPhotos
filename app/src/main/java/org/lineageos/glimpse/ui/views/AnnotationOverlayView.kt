@@ -183,7 +183,7 @@ sealed interface AnnotationItem {
     }
 
     data class Mosaic(
-        val path: Path,
+        val path: Path? = null,
         val brushSize: Float,
         val cellSize: Int,
     ) : AnnotationItem {
@@ -391,7 +391,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
         for (item in annotations) {
             if (item is AnnotationItem.Mosaic) {
                 val shader = getOrCreateMosaicShader(item.cellSize)
-                if (shader != null) {
+                if (shader != null && item.path != null) {
                     val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                         this.shader = shader
                         style = Paint.Style.STROKE
@@ -724,7 +724,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
         for (item in annotations) {
             if (item is AnnotationItem.Mosaic) {
                 val shader = exportShaders[item.cellSize] ?: getOrCreateMosaicShader(item.cellSize)
-                if (shader != null) {
+                if (shader != null && item.path != null) {
                     val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                         this.shader = shader
                         style = Paint.Style.STROKE

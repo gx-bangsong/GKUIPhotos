@@ -5,10 +5,9 @@
 
 package org.lineageos.glimpse.ui.views
 
-import android.graphics.Color
-import android.graphics.Path
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -40,7 +39,7 @@ class AnnotationItemTest {
             startY = 20f,
             endX = 100f,
             endY = 200f,
-            color = Color.RED,
+            color = 0xFFFF0000.toInt(),
             strokeWidth = 8f,
         )
 
@@ -60,8 +59,8 @@ class AnnotationItemTest {
         val stack = mutableListOf<AnnotationItem>()
         assertTrue(stack.isEmpty())
 
-        val shape1 = AnnotationItem.Shape(ShapeType.RECTANGLE, 0f, 0f, 10f, 10f, Color.WHITE, 4f)
-        val shape2 = AnnotationItem.Shape(ShapeType.LINE, 5f, 5f, 20f, 20f, Color.BLUE, 8f)
+        val shape1 = AnnotationItem.Shape(ShapeType.RECTANGLE, 0f, 0f, 10f, 10f, 0xFFFFFFFF.toInt(), 4f)
+        val shape2 = AnnotationItem.Shape(ShapeType.LINE, 5f, 5f, 20f, 20f, 0xFF0000FF.toInt(), 8f)
 
         stack.add(shape1)
         stack.add(shape2)
@@ -83,7 +82,7 @@ class AnnotationItemTest {
             centerY = 200f,
             baseTextSize = 32f,
             scale = 1.5f,
-            color = Color.YELLOW,
+            color = 0xFFFFFF00.toInt(),
             hasBackgroundPill = true,
         )
 
@@ -97,15 +96,14 @@ class AnnotationItemTest {
 
     @Test
     fun testMosaicAnnotation() {
-        val path = Path()
         val mosaic = AnnotationItem.Mosaic(
-            path = path,
+            path = null,
             brushSize = 32f,
             cellSize = 16,
         )
 
         assertEquals(32f, mosaic.brushSize, 0.01f)
         assertEquals(16, mosaic.cellSize)
-        assertEquals(path, mosaic.path)
+        assertNull(mosaic.path)
     }
 }
