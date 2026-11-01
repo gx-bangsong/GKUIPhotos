@@ -265,7 +265,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         EditorCategory.values().forEach { category ->
             val tv = TextView(this).apply {
                 text = getString(category.titleRes)
-                textSize = 13sp
+                textSize = 13f
                 gravity = Gravity.CENTER
                 setPadding((16 * density).toInt(), (8 * density).toInt(), (16 * density).toInt(), (8 * density).toInt())
                 val isSelected = category == activeCategory
@@ -351,7 +351,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         MaterialAlertDialogBuilder(this)
             .setTitle(R.string.editor_discard_title)
             .setMessage(R.string.editor_discard_message)
-            .setPositiveButton(R.string.editor_discard_positive) { _, _ -> finish() }
+            .setPositiveButton(R.string.editor_discard_confirm) { _, _ -> finish() }
             .setNegativeButton(R.string.cancel, null)
             .show()
     }
@@ -376,7 +376,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         ratios.forEach { item ->
             val tv = TextView(this).apply {
                 text = getString(item.labelRes)
-                textSize = 15sp
+                textSize = 15f
                 setPadding(24, 20, 24, 20)
                 val isSelected = (item.ratio == 0f && cropImageView.aspectRatio == 0f) ||
                         (abs(cropImageView.aspectRatio - item.ratio) < 0.01f)
@@ -492,7 +492,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
 
             val label = TextView(this).apply {
                 text = getString(param.labelRes)
-                textSize = 11sp
+                textSize = 11f
                 setTextColor(if (isApplied || isSelected) Color.parseColor("#A8C7FA") else Color.parseColor("#B0B0B0"))
                 setPadding(0, (4 * density).toInt(), 0, 0)
             }
@@ -596,7 +596,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
 
             val label = TextView(this).apply {
                 text = getString(labelRes)
-                textSize = 11sp
+                textSize = 11f
                 setTextColor(if (isSelected) Color.WHITE else Color.parseColor("#A0A0A0"))
                 setPadding(0, (4 * density).toInt(), 0, 0)
             }
@@ -659,7 +659,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
 
             val label = TextView(this).apply {
                 text = getString(labelRes)
-                textSize = 11sp
+                textSize = 11f
                 setTextColor(if (isSelected) Color.parseColor("#A8C7FA") else Color.parseColor("#B0B0B0"))
                 setPadding(0, (4 * density).toInt(), 0, 0)
             }
@@ -705,7 +705,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                     text = getString(R.string.editor_markup_add_text)
                     setBackgroundResource(R.drawable.bg_google_photos_pill_selected)
                     setTextColor(Color.WHITE)
-                    textSize = 12sp
+                    textSize = 12f
                     setPadding(32, 16, 32, 16)
                     setOnClickListener {
                         val rect = cropImageView.getCropRect()
@@ -1158,8 +1158,13 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
 
     private fun showSaving() { savingOverlay.isVisible = true }
     private fun hideSaving() { savingOverlay.isVisible = false }
-    private fun showFailed() { Toast.makeText(this, R.string.failed_to_save, Toast.LENGTH_LONG).show() }
+    private fun showFailed() {
+        hideSaving()
+        Toast.makeText(this, R.string.editor_save_failed, Toast.LENGTH_LONG).show()
+    }
     private fun finishWithSaved() {
+        hideSaving()
+        Toast.makeText(this, R.string.editor_saved, Toast.LENGTH_SHORT).show()
         setResult(Activity.RESULT_OK)
         finish()
     }
@@ -1213,7 +1218,17 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
     }
 
     companion object {
-        const val EXTRA_MEDIA_URI = "extra_media_uri"
-        const val EXTRA_MIME_TYPE = "extra_mime_type"
+        const val EXTRA_MEDIA_URI = "media_uri"
+        const val EXTRA_MIME_TYPE = "mime_type"
+
+        fun createIntent(context: android.content.Context, uri: Uri, mimeType: String?) =
+            Intent(context, ImageEditorActivity::class.java).apply {
+                if (mimeType != null) {
+                    setDataAndType(uri, mimeType)
+                } else {
+                    data = uri
+                }
+                putExtra(EXTRA_MEDIA_URI, uri)
+            }
     }
 }
