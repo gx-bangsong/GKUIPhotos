@@ -35,7 +35,7 @@
         android:id="@+id/previewContainer"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:layout_marginBottom="160dp"
+        android:layout_marginBottom="230dp"
         app:layout_behavior="@string/appbar_scrolling_view_behavior">
 
         <org.lineageos.glimpse.ui.views.CropImageView
@@ -76,13 +76,13 @@
 
     </FrameLayout>
 
-    <!-- Bottom Controls Area: Fixed, Dark, Multi-layer -->
+    <!-- Bottom Controls Area: Fixed, Dark, Multi-layer MD3 Deck -->
     <LinearLayout
         android:id="@+id/bottomControls"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom"
-        android:background="?attr/colorSurfaceContainer"
+        android:background="@android:color/black"
         android:orientation="vertical">
 
         <!-- CONTENT LAYER 1: Specs Mode (规格) -->
@@ -140,26 +140,45 @@
                 <!-- Custom ID Photo Template square button (Fixed on left, does not scroll with rail) -->
                 <com.google.android.material.card.MaterialCardView
                     android:id="@+id/customTemplateButton"
-                    android:layout_width="48dp"
-                    android:layout_height="52dp"
+                    android:layout_width="72dp"
+                    android:layout_height="72dp"
                     android:layout_marginEnd="8dp"
                     android:clickable="true"
                     android:focusable="true"
                     android:foreground="?attr/selectableItemBackground"
-                    app:cardBackgroundColor="?attr/colorSurfaceContainerHigh"
-                    app:cardCornerRadius="10dp"
+                    app:cardBackgroundColor="#202225"
+                    app:cardCornerRadius="16dp"
                     app:cardElevation="0dp"
-                    app:strokeColor="?attr/colorOutlineVariant"
-                    app:strokeWidth="1dp">
+                    app:strokeWidth="0dp">
 
-                    <ImageView
-                        android:id="@+id/customTemplateIcon"
-                        android:layout_width="22dp"
-                        android:layout_height="22dp"
-                        android:layout_gravity="center"
-                        android:contentDescription="@string/id_photo_custom_title"
-                        android:src="@drawable/ic_custom_template"
-                        app:tint="?attr/colorOnSurface" />
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:gravity="center"
+                        android:orientation="vertical"
+                        android:paddingHorizontal="6dp"
+                        android:paddingVertical="8dp">
+
+                        <ImageView
+                            android:id="@+id/customTemplateIcon"
+                            android:layout_width="22dp"
+                            android:layout_height="22dp"
+                            android:layout_marginBottom="6dp"
+                            android:contentDescription="@string/id_photo_custom_title"
+                            android:src="@drawable/ic_custom_template"
+                            app:tint="#C4C7C5" />
+
+                        <TextView
+                            android:id="@+id/customTemplateLabel"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:ellipsize="end"
+                            android:gravity="center"
+                            android:maxLines="1"
+                            android:text="@string/id_photo_custom_title"
+                            android:textColor="#C4C7C5"
+                            android:textSize="12sp" />
+                    </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
 
                 <!-- Scrollable Preset Cards -->
@@ -244,50 +263,103 @@
             </com.google.android.material.button.MaterialButtonToggleGroup>
         </LinearLayout>
 
-        <!-- Divider line -->
+        <!-- Top Divider line for Category Tabs -->
         <View
             android:layout_width="match_parent"
             android:layout_height="0.5dp"
             android:layout_marginTop="8dp"
-            android:background="?attr/colorOutlineVariant" />
+            android:background="#2A2A2A" />
 
-        <!-- BOTTOM-MOST TAB BAR: "规格" (Specs) and "背景" (Background) -->
+        <!-- TIER 2: Category Pill Tabs (Identical to ImageEditorActivity) -->
         <LinearLayout
             android:id="@+id/bottomTabBar"
             android:layout_width="match_parent"
-            android:layout_height="46dp"
+            android:layout_height="wrap_content"
             android:gravity="center"
-            android:orientation="horizontal">
+            android:orientation="horizontal"
+            android:paddingVertical="8dp">
 
             <TextView
                 android:id="@+id/tabSpecsButton"
-                android:layout_width="0dp"
-                android:layout_height="match_parent"
-                android:layout_weight="1"
-                android:background="?attr/selectableItemBackground"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginHorizontal="6dp"
+                android:background="@drawable/bg_google_photos_pill_selected"
                 android:clickable="true"
                 android:focusable="true"
                 android:gravity="center"
+                android:paddingHorizontal="20dp"
+                android:paddingVertical="8dp"
                 android:text="@string/id_photo_tab_spec"
-                android:textAppearance="?attr/textAppearanceLabelLarge"
-                android:textColor="?attr/colorPrimary"
-                android:textSize="14sp"
+                android:textColor="@android:color/white"
+                android:textSize="13sp"
                 android:textStyle="bold" />
 
             <TextView
                 android:id="@+id/tabBackgroundButton"
-                android:layout_width="0dp"
-                android:layout_height="match_parent"
-                android:layout_weight="1"
-                android:background="?attr/selectableItemBackground"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginHorizontal="6dp"
                 android:clickable="true"
                 android:focusable="true"
                 android:gravity="center"
+                android:paddingHorizontal="20dp"
+                android:paddingVertical="8dp"
                 android:text="@string/id_photo_tab_background"
-                android:textAppearance="?attr/textAppearanceLabelLarge"
-                android:textColor="?attr/colorOnSurfaceVariant"
-                android:textSize="14sp" />
+                android:textColor="#A0A0A0"
+                android:textSize="13sp" />
         </LinearLayout>
+
+        <!-- Bottom Divider line for Category Tabs -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="0.5dp"
+            android:background="#2A2A2A" />
+
+        <!-- TIER 3: Bottom Action Bar (Identical to ImageEditorActivity) -->
+        <FrameLayout
+            android:id="@+id/actionBarContainer"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:paddingHorizontal="16dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/bottomCancelButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:padding="8dp"
+                    android:text="@string/cancel"
+                    android:textColor="@android:color/white"
+                    android:textSize="14sp" />
+
+                <View
+                    android:layout_width="0dp"
+                    android:layout_height="1dp"
+                    android:layout_weight="1" />
+
+                <TextView
+                    android:id="@+id/bottomSaveButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/bg_google_photos_save_button"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:paddingHorizontal="24dp"
+                    android:paddingVertical="10dp"
+                    android:text="@string/editor_save"
+                    android:textColor="#001D35"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+        </FrameLayout>
 
     </LinearLayout>
 

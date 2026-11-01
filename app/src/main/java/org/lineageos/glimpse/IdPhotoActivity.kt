@@ -90,6 +90,7 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
     private val categoryTabsContainer by lazy { findViewById<LinearLayout>(R.id.categoryTabsContainer) }
     private val customTemplateButton by lazy { findViewById<MaterialCardView>(R.id.customTemplateButton) }
     private val customTemplateIcon by lazy { findViewById<ImageView>(R.id.customTemplateIcon) }
+    private val customTemplateLabel by lazy { findViewById<TextView>(R.id.customTemplateLabel) }
     private val presetRailRecyclerView by lazy { findViewById<RecyclerView>(R.id.presetRailRecyclerView) }
 
     // Background mode views
@@ -99,6 +100,10 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
     // Bottom tab bar views
     private val tabSpecsButton by lazy { findViewById<TextView>(R.id.tabSpecsButton) }
     private val tabBackgroundButton by lazy { findViewById<TextView>(R.id.tabBackgroundButton) }
+
+    // Bottom action bar views
+    private val bottomCancelButton by lazy { findViewById<TextView>(R.id.bottomCancelButton) }
+    private val bottomSaveButton by lazy { findViewById<TextView>(R.id.bottomSaveButton) }
 
     // Print sheet / Single image toggle views
     private val printSheetToggleRow by lazy { findViewById<View>(R.id.printSheetToggleRow) }
@@ -240,6 +245,12 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
         }
         customTemplateButton.setOnClickListener {
             showCustomSizeDialog()
+        }
+        bottomCancelButton.setOnClickListener {
+            handleBackNavigation()
+        }
+        bottomSaveButton.setOnClickListener {
+            onSaveClicked()
         }
 
         observeViewModelState()
@@ -467,29 +478,30 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
     }
 
     private fun updateBottomTabUI(tab: IdPhotoBottomTab) {
-        val colorPrimary = getThemeColor(this, "colorPrimary", Color.WHITE)
-        val colorOnSurfaceVariant = getThemeColor(this, "colorOnSurfaceVariant", Color.GRAY)
-
         when (tab) {
             IdPhotoBottomTab.SPECS -> {
                 specsContainer.isVisible = true
                 backgroundContainer.isVisible = false
-                tabSpecsButton.setTextColor(colorPrimary)
+                tabSpecsButton.setBackgroundResource(R.drawable.bg_google_photos_pill_selected)
+                tabSpecsButton.setTextColor(Color.WHITE)
                 tabSpecsButton.setTypeface(null, Typeface.BOLD)
-                tabBackgroundButton.setTextColor(colorOnSurfaceVariant)
+
+                tabBackgroundButton.background = null
+                tabBackgroundButton.setTextColor(Color.parseColor("#A0A0A0"))
                 tabBackgroundButton.setTypeface(null, Typeface.NORMAL)
             }
             IdPhotoBottomTab.BACKGROUND -> {
                 specsContainer.isVisible = false
                 backgroundContainer.isVisible = true
-                tabSpecsButton.setTextColor(colorOnSurfaceVariant)
+                tabSpecsButton.background = null
+                tabSpecsButton.setTextColor(Color.parseColor("#A0A0A0"))
                 tabSpecsButton.setTypeface(null, Typeface.NORMAL)
-                tabBackgroundButton.setTextColor(colorPrimary)
+
+                tabBackgroundButton.setBackgroundResource(R.drawable.bg_google_photos_pill_selected)
+                tabBackgroundButton.setTextColor(Color.WHITE)
                 tabBackgroundButton.setTypeface(null, Typeface.BOLD)
             }
         }
-        tabSpecsButton.invalidate()
-        tabBackgroundButton.invalidate()
     }
 
     private fun applyPresetLive(preset: IdPhotoPreset) {
@@ -544,27 +556,20 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
     }
 
     private fun updateCustomTemplateButtonState(selected: IdPhotoPreset) {
-        val density = resources.displayMetrics.density
         val isCustomActive = selected.id.startsWith("custom_")
 
         if (isCustomActive) {
-            val primaryContainer = getThemeColor(this, "colorPrimaryContainer", Color.parseColor("#F5C542"))
-            val onPrimaryContainer = getThemeColor(this, "colorOnPrimaryContainer", Color.BLACK)
-            val primary = getThemeColor(this, "colorPrimary", Color.parseColor("#F5C542"))
-
-            customTemplateButton.setCardBackgroundColor(primaryContainer)
-            customTemplateButton.strokeWidth = (2 * density).toInt()
-            customTemplateButton.setStrokeColor(primary)
-            customTemplateIcon.imageTintList = android.content.res.ColorStateList.valueOf(onPrimaryContainer)
+            customTemplateButton.setCardBackgroundColor(Color.parseColor("#4D6A90"))
+            customTemplateButton.strokeWidth = 0
+            customTemplateIcon.imageTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
+            customTemplateLabel.setTextColor(Color.WHITE)
+            customTemplateLabel.setTypeface(null, Typeface.BOLD)
         } else {
-            val surfaceContainer = getThemeColor(this, "colorSurfaceContainerHigh", Color.DKGRAY)
-            val outlineVariant = getThemeColor(this, "colorOutlineVariant", Color.GRAY)
-            val onSurface = getThemeColor(this, "colorOnSurface", Color.WHITE)
-
-            customTemplateButton.setCardBackgroundColor(surfaceContainer)
-            customTemplateButton.strokeWidth = (1 * density).toInt()
-            customTemplateButton.setStrokeColor(outlineVariant)
-            customTemplateIcon.imageTintList = android.content.res.ColorStateList.valueOf(onSurface)
+            customTemplateButton.setCardBackgroundColor(Color.parseColor("#202225"))
+            customTemplateButton.strokeWidth = 0
+            customTemplateIcon.imageTintList = android.content.res.ColorStateList.valueOf(Color.parseColor("#C4C7C5"))
+            customTemplateLabel.setTextColor(Color.parseColor("#C4C7C5"))
+            customTemplateLabel.setTypeface(null, Typeface.NORMAL)
         }
     }
 
@@ -753,65 +758,44 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
     ) : RecyclerView.ViewHolder(itemView) {
 
         private val card = itemView.findViewById<MaterialCardView>(R.id.railCardView)
+        private val iconView = itemView.findViewById<ImageView>(R.id.railChipIcon)
         private val nameText = itemView.findViewById<TextView>(R.id.railChipName)
-        private val pxText = itemView.findViewById<TextView>(R.id.railChipPx)
 
         fun bind(preset: IdPhotoPreset, isSelected: Boolean) {
             val context = itemView.context
-            val density = context.resources.displayMetrics.density
 
-            if (preset.id == CUSTOM_ADD_PRESET.id) {
-                nameText.setText(preset.nameRes)
-                pxText.text = context.getString(R.string.id_photo_custom_dialog_title)
-
-                val surfaceContainer = getThemeColor(context, "colorSurfaceContainerHigh", Color.DKGRAY)
-                val primary = getThemeColor(context, "colorPrimary", Color.WHITE)
-
-                card.setCardBackgroundColor(surfaceContainer)
-                card.strokeWidth = (1 * density).toInt()
-                card.setStrokeColor(primary)
-                nameText.setTextColor(primary)
-                pxText.setTextColor(primary)
-
-                itemView.setOnClickListener { onPresetSelected(preset) }
-                itemView.setOnLongClickListener(null)
-                return
+            val iconRes = when {
+                preset.id.startsWith("custom_") -> R.drawable.ic_custom_template
+                preset.id.contains("id_card") || preset.id.contains("driver") || preset.id.contains("social") -> R.drawable.ic_id_card
+                preset.id.contains("visa") || preset.id.contains("passport") -> R.drawable.ic_contact_page
+                preset.id.contains("exam") -> R.drawable.ic_edit
+                else -> R.drawable.ic_photo_size_select_actual
             }
+            iconView.setImageResource(iconRes)
 
             if (preset.id.startsWith("custom_")) {
-                nameText.text = "${context.getString(R.string.id_photo_custom_title)} ${preset.widthMm}×${preset.heightMm}"
-                pxText.text = "${preset.targetWidthPx}×${preset.targetHeightPx}"
+                nameText.text = "${preset.widthMm}×${preset.heightMm}"
                 itemView.setOnLongClickListener {
                     onCustomLongPressed(preset)
                     true
                 }
             } else {
                 nameText.setText(preset.nameRes)
-                pxText.text = "${preset.targetWidthPx}×${preset.targetHeightPx}"
                 itemView.setOnLongClickListener(null)
             }
 
             if (isSelected) {
-                val primaryContainer = getThemeColor(context, "colorPrimaryContainer", Color.WHITE)
-                val onPrimaryContainer = getThemeColor(context, "colorOnPrimaryContainer", Color.BLACK)
-                val primary = getThemeColor(context, "colorPrimary", Color.WHITE)
-
-                card.setCardBackgroundColor(primaryContainer)
-                card.strokeWidth = (2 * density).toInt()
-                card.setStrokeColor(primary)
-                nameText.setTextColor(onPrimaryContainer)
-                pxText.setTextColor(onPrimaryContainer)
+                card.setCardBackgroundColor(Color.parseColor("#4D6A90"))
+                card.strokeWidth = 0
+                iconView.imageTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
+                nameText.setTextColor(Color.WHITE)
+                nameText.setTypeface(null, Typeface.BOLD)
             } else {
-                val surfaceContainer = getThemeColor(context, "colorSurfaceContainerHigh", Color.DKGRAY)
-                val onSurface = getThemeColor(context, "colorOnSurface", Color.WHITE)
-                val onSurfaceVariant = getThemeColor(context, "colorOnSurfaceVariant", Color.GRAY)
-                val outlineVariant = getThemeColor(context, "colorOutlineVariant", Color.GRAY)
-
-                card.setCardBackgroundColor(surfaceContainer)
-                card.strokeWidth = (1 * density).toInt()
-                card.setStrokeColor(outlineVariant)
-                nameText.setTextColor(onSurface)
-                pxText.setTextColor(onSurfaceVariant)
+                card.setCardBackgroundColor(Color.parseColor("#202225"))
+                card.strokeWidth = 0
+                iconView.imageTintList = android.content.res.ColorStateList.valueOf(Color.parseColor("#C4C7C5"))
+                nameText.setTextColor(Color.parseColor("#C4C7C5"))
+                nameText.setTypeface(null, Typeface.NORMAL)
             }
 
             itemView.setOnClickListener { onPresetSelected(preset) }

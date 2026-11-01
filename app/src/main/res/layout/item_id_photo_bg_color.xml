@@ -6,18 +6,18 @@
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/colorSwatchRoot"
-    android:layout_width="54dp"
-    android:layout_height="54dp"
-    android:layout_marginEnd="10dp"
+    android:layout_width="56dp"
+    android:layout_height="56dp"
+    android:layout_marginEnd="8dp"
     android:clickable="true"
     android:focusable="true">
 
     <com.google.android.material.card.MaterialCardView
         android:id="@+id/colorSwatchCard"
-        android:layout_width="44dp"
-        android:layout_height="44dp"
+        android:layout_width="52dp"
+        android:layout_height="52dp"
         android:layout_gravity="center"
-        app:cardCornerRadius="10dp"
+        app:cardCornerRadius="14dp"
         app:cardElevation="0dp"
         app:strokeColor="?attr/colorOutlineVariant"
         app:strokeWidth="1dp">
