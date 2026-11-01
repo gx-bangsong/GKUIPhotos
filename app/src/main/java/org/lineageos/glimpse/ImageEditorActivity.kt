@@ -59,8 +59,11 @@ import org.lineageos.glimpse.models.CustomCropRatioManager
 import org.lineageos.glimpse.ui.views.AngleRulerView
 import org.lineageos.glimpse.ui.views.AnnotationItem
 import org.lineageos.glimpse.ui.views.AnnotationOverlayView
+import org.lineageos.glimpse.ui.views.BrushType
 import org.lineageos.glimpse.ui.views.CropImageView
 import org.lineageos.glimpse.ui.views.MarkupTool
+import org.lineageos.glimpse.ui.views.MosaicEffect
+import org.lineageos.glimpse.ui.views.ShapeStyle
 import org.lineageos.glimpse.ui.views.ShapeType
 import org.lineageos.glimpse.utils.EditSaveBehavior
 import org.lineageos.glimpse.utils.media.AdjustParameters
@@ -186,6 +189,19 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         } else {
             pendingOverwrite = null
             hideSaving()
+        }
+    }
+
+    private val pickCustomStickerLauncher = registerForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            val bmp = loadStickerBitmap(uri)
+            if (bmp != null) {
+                annotationOverlayView.addSticker(bmp)
+            } else {
+                Toast.makeText(this, R.string.editor_sticker_failed, Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
@@ -893,6 +909,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             MarkupTool.SHAPES to (R.string.editor_markup_shapes to R.drawable.ic_crop_ratio),
             MarkupTool.TEXT to (R.string.editor_markup_text to R.drawable.ic_contact_page),
             MarkupTool.MOSAIC to (R.string.editor_markup_mosaic to R.drawable.ic_compress),
+            MarkupTool.STICKER to (R.string.editor_markup_sticker to R.drawable.ic_image),
         )
 
         tools.forEach { (tool, pair) ->
@@ -999,6 +1016,31 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
 
         when (tool) {
             MarkupTool.DOODLE -> {
+                val brushTypes = listOf(
+                    BrushType.NORMAL to R.string.editor_brush_normal,
+                    BrushType.HIGHLIGHTER to R.string.editor_brush_highlighter,
+                    BrushType.NEON to R.string.editor_brush_neon,
+                    BrushType.DASHED to R.string.editor_brush_dashed,
+                )
+                val typeGroup = ChipGroup(this).apply {
+                    isSingleSelection = true
+                    isSingleLine = true
+                    isSelectionRequired = true
+                }
+                brushTypes.forEachIndexed { index, (bt, labelRes) ->
+                    val chip = Chip(this).apply {
+                        text = getString(labelRes)
+                        isCheckable = true
+                        id = index
+                        isChecked = bt == annotationOverlayView.activeBrushType
+                    }
+                    chip.setOnClickListener {
+                        annotationOverlayView.activeBrushType = bt
+                    }
+                    typeGroup.addView(chip)
+                }
+                markupOptionsContent.addView(typeGroup)
+
                 addStrokeWidthSlider()
                 addColorPalette()
             }
@@ -1028,66 +1070,153 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                 }
             }
             MarkupTool.MOSAIC -> {
-                val cellSizes = listOf(
-                    8 to R.string.editor_mosaic_low,
-                    16 to R.string.editor_mosaic_medium,
-                    24 to R.string.editor_mosaic_high,
-                )
-                val cellGroup = ChipGroup(this).apply {
+                val isNonImage = annotationOverlayView.activeMosaicEffect == MosaicEffect.PIXELATE ||
+                        annotationOverlayView.activeMosaicEffect == MosaicEffect.BLUR
+
+                val catGroup = ChipGroup(this).apply {
                     isSingleSelection = true
                     isSingleLine = true
                     isSelectionRequired = true
                 }
-                cellSizes.forEachIndexed { index, (cs, labelRes) ->
-                    val chip = Chip(this).apply {
-                        text = getString(labelRes)
-                        isCheckable = true
-                        id = index
-                        isChecked = cs == annotationOverlayView.activeMosaicCellSize
-                    }
-                    chip.setOnClickListener {
-                        annotationOverlayView.activeMosaicCellSize = cs
-                    }
-                    cellGroup.addView(chip)
+                val catNonImage = Chip(this).apply {
+                    text = getString(R.string.editor_mosaic_cat_non_image)
+                    isCheckable = true
+                    isChecked = isNonImage
                 }
-                markupOptionsContent.addView(cellGroup)
+                val catGraphical = Chip(this).apply {
+                    text = getString(R.string.editor_mosaic_cat_graphical)
+                    isCheckable = true
+                    isChecked = !isNonImage
+                }
+                catNonImage.setOnClickListener {
+                    annotationOverlayView.activeMosaicEffect = MosaicEffect.PIXELATE
+                    showMarkupToolOptions(MarkupTool.MOSAIC)
+                }
+                catGraphical.setOnClickListener {
+                    annotationOverlayView.activeMosaicEffect = MosaicEffect.BLACKOUT
+                    showMarkupToolOptions(MarkupTool.MOSAIC)
+                }
+                catGroup.addView(catNonImage)
+                catGroup.addView(catGraphical)
+                markupOptionsContent.addView(catGroup)
 
+                if (isNonImage) {
+                    val effects = listOf(
+                        MosaicEffect.PIXELATE to R.string.editor_mosaic_pixelate,
+                        MosaicEffect.BLUR to R.string.editor_mosaic_blur,
+                    )
+                    val effGroup = ChipGroup(this).apply {
+                        isSingleSelection = true
+                        isSingleLine = true
+                        isSelectionRequired = true
+                    }
+                    effects.forEachIndexed { index, (eff, labelRes) ->
+                        val chip = Chip(this).apply {
+                            text = getString(labelRes)
+                            isCheckable = true
+                            id = index
+                            isChecked = eff == annotationOverlayView.activeMosaicEffect
+                        }
+                        chip.setOnClickListener {
+                            annotationOverlayView.activeMosaicEffect = eff
+                            showMarkupToolOptions(MarkupTool.MOSAIC)
+                        }
+                        effGroup.addView(chip)
+                    }
+                    markupOptionsContent.addView(effGroup)
+
+                    if (annotationOverlayView.activeMosaicEffect == MosaicEffect.PIXELATE) {
+                        val cellSizes = listOf(
+                            8 to R.string.editor_mosaic_low,
+                            16 to R.string.editor_mosaic_medium,
+                            24 to R.string.editor_mosaic_high,
+                        )
+                        val cellGroup = ChipGroup(this).apply {
+                            isSingleSelection = true
+                            isSingleLine = true
+                            isSelectionRequired = true
+                        }
+                        cellSizes.forEachIndexed { index, (cs, labelRes) ->
+                            val chip = Chip(this).apply {
+                                text = getString(labelRes)
+                                isCheckable = true
+                                id = index
+                                isChecked = cs == annotationOverlayView.activeMosaicCellSize
+                            }
+                            chip.setOnClickListener {
+                                annotationOverlayView.activeMosaicCellSize = cs
+                            }
+                            cellGroup.addView(chip)
+                        }
+                        markupOptionsContent.addView(cellGroup)
+                    }
+                } else {
+                    val graphEffects = listOf(
+                        MosaicEffect.BLACKOUT to R.string.editor_mosaic_blackout,
+                        MosaicEffect.STRIPES to R.string.editor_mosaic_stripes,
+                        MosaicEffect.NOISE to R.string.editor_mosaic_noise,
+                    )
+                    val gGroup = ChipGroup(this).apply {
+                        isSingleSelection = true
+                        isSingleLine = true
+                        isSelectionRequired = true
+                    }
+                    graphEffects.forEachIndexed { index, (eff, labelRes) ->
+                        val chip = Chip(this).apply {
+                            text = getString(labelRes)
+                            isCheckable = true
+                            id = index
+                            isChecked = eff == annotationOverlayView.activeMosaicEffect
+                        }
+                        chip.setOnClickListener {
+                            annotationOverlayView.activeMosaicEffect = eff
+                        }
+                        gGroup.addView(chip)
+                    }
+                    markupOptionsContent.addView(gGroup)
+                }
+
+                addMosaicBrushSlider()
+            }
+            MarkupTool.STICKER -> {
+                val importBtn = TextView(this).apply {
+                    text = getString(R.string.editor_sticker_import)
+                    setBackgroundResource(R.drawable.bg_google_photos_pill_selected)
+                    setTextColor(Color.parseColor("#A8C7FA"))
+                    textSize = 13f
+                    setTypeface(null, Typeface.BOLD)
+                    setPadding(28, 14, 28, 14)
+                    setOnClickListener {
+                        pickCustomStickerLauncher.launch("image/*")
+                    }
+                }
                 val density = resources.displayMetrics.density
-                val mosaicBrushContainer = LinearLayout(this).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                    setPadding((12 * density).toInt(), 0, (12 * density).toInt(), 0)
+                val lp = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    marginEnd = (12 * density).toInt()
                 }
+                markupOptionsContent.addView(importBtn, lp)
 
-                val currentBrushDp = (kotlin.math.round((annotationOverlayView.activeMosaicBrushSize / density) / 2f) * 2f).coerceIn(10f, 60f)
-                val brushLabel = TextView(this).apply {
-                    text = "${getString(R.string.editor_markup_mosaic_brush)}: ${currentBrushDp.toInt()}dp"
-                    setTextColor(Color.WHITE)
-                    textSize = 12f
-                    minWidth = (96 * density).toInt()
-                }
-
-                val brushSlider = Slider(this).apply {
-                    layoutParams = LinearLayout.LayoutParams((150 * density).toInt(), LinearLayout.LayoutParams.WRAP_CONTENT)
-                    valueFrom = 10f
-                    valueTo = 60f
-                    stepSize = 2f
-                    value = currentBrushDp
-                    thumbTintList = ColorStateList.valueOf(Color.parseColor("#A8C7FA"))
-                    trackActiveTintList = ColorStateList.valueOf(Color.parseColor("#A8C7FA"))
-                    trackInactiveTintList = ColorStateList.valueOf(Color.parseColor("#3C4043"))
-                    haloTintList = ColorStateList.valueOf(Color.parseColor("#33A8C7FA"))
-
-                    addOnChangeListener { _, valDp, _ ->
-                        annotationOverlayView.activeMosaicBrushSize = valDp * density
-                        brushLabel.text = "${getString(R.string.editor_markup_mosaic_brush)}: ${valDp.toInt()}dp"
+                val presets = listOf("⭐", "❤️", "⭕", "❌", "🏷️", "📌", "🔒", "🔏")
+                presets.forEach { symbol ->
+                    val tv = TextView(this).apply {
+                        text = symbol
+                        textSize = 22f
+                        gravity = Gravity.CENTER
+                        val cardSize = (38 * density).toInt()
+                        layoutParams = LinearLayout.LayoutParams(cardSize, cardSize).apply {
+                            marginEnd = (8 * density).toInt()
+                        }
+                        setBackgroundResource(R.drawable.bg_circle_tool)
+                        setOnClickListener {
+                            val bmp = createPresetStickerBitmap(symbol)
+                            annotationOverlayView.addSticker(bmp)
+                        }
                     }
+                    markupOptionsContent.addView(tv)
                 }
-
-                mosaicBrushContainer.addView(brushLabel)
-                mosaicBrushContainer.addView(brushSlider)
-
-                markupOptionsContent.addView(mosaicBrushContainer)
             }
             MarkupTool.NONE -> {
                 markupOptionsScroll.isVisible = false
@@ -1098,9 +1227,14 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
     private fun addShapeTypeSelector() {
         val shapeTypes = listOf(
             ShapeType.ARROW to R.string.editor_shape_arrow,
+            ShapeType.DOUBLE_ARROW to R.string.editor_shape_double_arrow,
             ShapeType.RECTANGLE to R.string.editor_shape_rect,
+            ShapeType.ROUNDED_RECTANGLE to R.string.editor_shape_round_rect,
             ShapeType.ELLIPSE to R.string.editor_shape_circle,
             ShapeType.LINE to R.string.editor_shape_line,
+            ShapeType.TRIANGLE to R.string.editor_shape_triangle,
+            ShapeType.STAR to R.string.editor_shape_star,
+            ShapeType.DIAMOND to R.string.editor_shape_diamond,
         )
         val chipGroup = ChipGroup(this).apply {
             isSingleSelection = true
@@ -1127,9 +1261,14 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
     private fun addConfirmedShapeControls() {
         val currentShapeLabel = when (annotationOverlayView.selectedShapeType) {
             ShapeType.ARROW -> R.string.editor_shape_arrow
+            ShapeType.DOUBLE_ARROW -> R.string.editor_shape_double_arrow
             ShapeType.RECTANGLE -> R.string.editor_shape_rect
+            ShapeType.ROUNDED_RECTANGLE -> R.string.editor_shape_round_rect
             ShapeType.ELLIPSE -> R.string.editor_shape_circle
             ShapeType.LINE -> R.string.editor_shape_line
+            ShapeType.TRIANGLE -> R.string.editor_shape_triangle
+            ShapeType.STAR -> R.string.editor_shape_star
+            ShapeType.DIAMOND -> R.string.editor_shape_diamond
         }
 
         val shapeBtn = TextView(this).apply {
@@ -1152,6 +1291,35 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         }
         markupOptionsContent.addView(shapeBtn, lp)
 
+        // Shape style selector chips: 描边、实心、半透明
+        val styles = listOf(
+            ShapeStyle.OUTLINE to R.string.editor_shape_style_outline,
+            ShapeStyle.SOLID to R.string.editor_shape_style_solid,
+            ShapeStyle.TRANSLUCENT to R.string.editor_shape_style_translucent,
+        )
+        val styleGroup = ChipGroup(this).apply {
+            isSingleSelection = true
+            isSingleLine = true
+            isSelectionRequired = true
+        }
+        styles.forEachIndexed { index, (st, labelRes) ->
+            val chip = Chip(this).apply {
+                text = getString(labelRes)
+                isCheckable = true
+                id = index
+                isChecked = st == annotationOverlayView.activeShapeStyle
+            }
+            chip.setOnClickListener {
+                annotationOverlayView.activeShapeStyle = st
+                annotationOverlayView.activeShape?.let { s ->
+                    s.style = st
+                    annotationOverlayView.invalidate()
+                }
+            }
+            styleGroup.addView(chip)
+        }
+        markupOptionsContent.addView(styleGroup)
+
         addStrokeWidthSlider()
         addColorPalette { c ->
             annotationOverlayView.activeShape?.let { s ->
@@ -1159,6 +1327,78 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                 annotationOverlayView.invalidate()
             }
         }
+    }
+
+    private fun addMosaicBrushSlider() {
+        val density = resources.displayMetrics.density
+        val mosaicBrushContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding((12 * density).toInt(), 0, (12 * density).toInt(), 0)
+        }
+
+        val currentBrushDp = (kotlin.math.round((annotationOverlayView.activeMosaicBrushSize / density) / 2f) * 2f).coerceIn(10f, 60f)
+        val brushLabel = TextView(this).apply {
+            text = "${getString(R.string.editor_markup_mosaic_brush)}: ${currentBrushDp.toInt()}dp"
+            setTextColor(Color.WHITE)
+            textSize = 12f
+            minWidth = (96 * density).toInt()
+        }
+
+        val brushSlider = Slider(this).apply {
+            layoutParams = LinearLayout.LayoutParams((150 * density).toInt(), LinearLayout.LayoutParams.WRAP_CONTENT)
+            valueFrom = 10f
+            valueTo = 60f
+            stepSize = 2f
+            value = currentBrushDp
+            thumbTintList = ColorStateList.valueOf(Color.parseColor("#A8C7FA"))
+            trackActiveTintList = ColorStateList.valueOf(Color.parseColor("#A8C7FA"))
+            trackInactiveTintList = ColorStateList.valueOf(Color.parseColor("#3C4043"))
+            haloTintList = ColorStateList.valueOf(Color.parseColor("#33A8C7FA"))
+
+            addOnChangeListener { _, valDp, _ ->
+                annotationOverlayView.activeMosaicBrushSize = valDp * density
+                brushLabel.text = "${getString(R.string.editor_markup_mosaic_brush)}: ${valDp.toInt()}dp"
+            }
+        }
+
+        mosaicBrushContainer.addView(brushLabel)
+        mosaicBrushContainer.addView(brushSlider)
+        markupOptionsContent.addView(mosaicBrushContainer)
+    }
+
+    private fun loadStickerBitmap(uri: Uri): Bitmap? = runCatching {
+        val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        contentResolver.openInputStream(uri)?.use {
+            android.graphics.BitmapFactory.decodeStream(it, null, bounds)
+        }
+        val maxDim = max(bounds.outWidth, bounds.outHeight)
+        var sample = 1
+        while (maxDim / sample > 512) sample *= 2
+
+        val opts = android.graphics.BitmapFactory.Options().apply {
+            inPreferredConfig = Bitmap.Config.ARGB_8888
+            inSampleSize = sample
+        }
+        contentResolver.openInputStream(uri)?.use {
+            android.graphics.BitmapFactory.decodeStream(it, null, opts)
+        }
+    }.getOrNull()
+
+    private fun createPresetStickerBitmap(symbol: String, color: Int = Color.WHITE): Bitmap {
+        val density = resources.displayMetrics.density
+        val size = (72 * density).toInt()
+        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bmp)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            textSize = 42f * density
+            textAlign = Paint.Align.CENTER
+            this.color = color
+        }
+        val fm = paint.fontMetrics
+        val baseline = size / 2f - (fm.descent + fm.ascent) / 2f
+        canvas.drawText(symbol, size / 2f, baseline, paint)
+        return bmp
     }
 
     private fun addStrokeWidthSlider() {

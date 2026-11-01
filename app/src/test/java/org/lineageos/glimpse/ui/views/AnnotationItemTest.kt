@@ -15,24 +15,57 @@ class AnnotationItemTest {
 
     @Test
     fun testShapeTypeEnum() {
-        assertEquals(4, ShapeType.values().size)
+        assertEquals(9, ShapeType.values().size)
         assertTrue(ShapeType.values().contains(ShapeType.ARROW))
+        assertTrue(ShapeType.values().contains(ShapeType.DOUBLE_ARROW))
         assertTrue(ShapeType.values().contains(ShapeType.RECTANGLE))
+        assertTrue(ShapeType.values().contains(ShapeType.ROUNDED_RECTANGLE))
         assertTrue(ShapeType.values().contains(ShapeType.ELLIPSE))
         assertTrue(ShapeType.values().contains(ShapeType.LINE))
+        assertTrue(ShapeType.values().contains(ShapeType.TRIANGLE))
+        assertTrue(ShapeType.values().contains(ShapeType.STAR))
+        assertTrue(ShapeType.values().contains(ShapeType.DIAMOND))
     }
 
     @Test
     fun testMarkupToolEnum() {
-        assertEquals(5, MarkupTool.values().size)
+        assertEquals(6, MarkupTool.values().size)
         assertTrue(MarkupTool.values().contains(MarkupTool.DOODLE))
         assertTrue(MarkupTool.values().contains(MarkupTool.SHAPES))
         assertTrue(MarkupTool.values().contains(MarkupTool.TEXT))
         assertTrue(MarkupTool.values().contains(MarkupTool.MOSAIC))
+        assertTrue(MarkupTool.values().contains(MarkupTool.STICKER))
     }
 
     @Test
-    fun testShapeMutation() {
+    fun testShapeStyleEnum() {
+        assertEquals(3, ShapeStyle.values().size)
+        assertTrue(ShapeStyle.values().contains(ShapeStyle.OUTLINE))
+        assertTrue(ShapeStyle.values().contains(ShapeStyle.SOLID))
+        assertTrue(ShapeStyle.values().contains(ShapeStyle.TRANSLUCENT))
+    }
+
+    @Test
+    fun testBrushTypeEnum() {
+        assertEquals(4, BrushType.values().size)
+        assertTrue(BrushType.values().contains(BrushType.NORMAL))
+        assertTrue(BrushType.values().contains(BrushType.HIGHLIGHTER))
+        assertTrue(BrushType.values().contains(BrushType.NEON))
+        assertTrue(BrushType.values().contains(BrushType.DASHED))
+    }
+
+    @Test
+    fun testMosaicEffectEnum() {
+        assertEquals(5, MosaicEffect.values().size)
+        assertTrue(MosaicEffect.values().contains(MosaicEffect.PIXELATE))
+        assertTrue(MosaicEffect.values().contains(MosaicEffect.BLUR))
+        assertTrue(MosaicEffect.values().contains(MosaicEffect.BLACKOUT))
+        assertTrue(MosaicEffect.values().contains(MosaicEffect.STRIPES))
+        assertTrue(MosaicEffect.values().contains(MosaicEffect.NOISE))
+    }
+
+    @Test
+    fun testShapeMutationAndStyle() {
         val shape = AnnotationItem.Shape(
             type = ShapeType.ARROW,
             startX = 10f,
@@ -41,17 +74,21 @@ class AnnotationItemTest {
             endY = 200f,
             color = 0xFFFF0000.toInt(),
             strokeWidth = 8f,
+            style = ShapeStyle.OUTLINE,
         )
 
         assertEquals(10f, shape.startX)
         assertEquals(20f, shape.startY)
         assertEquals(100f, shape.endX)
         assertEquals(200f, shape.endY)
+        assertEquals(ShapeStyle.OUTLINE, shape.style)
 
         shape.endX = 150f
         shape.endY = 250f
+        shape.style = ShapeStyle.SOLID
         assertEquals(150f, shape.endX)
         assertEquals(250f, shape.endY)
+        assertEquals(ShapeStyle.SOLID, shape.style)
     }
 
     @Test
@@ -99,10 +136,12 @@ class AnnotationItemTest {
         val mosaic = AnnotationItem.Mosaic(
             path = null,
             brushSize = 32f,
+            effect = MosaicEffect.BLUR,
             cellSize = 16,
         )
 
         assertEquals(32f, mosaic.brushSize, 0.01f)
+        assertEquals(MosaicEffect.BLUR, mosaic.effect)
         assertEquals(16, mosaic.cellSize)
         assertNull(mosaic.path)
     }
