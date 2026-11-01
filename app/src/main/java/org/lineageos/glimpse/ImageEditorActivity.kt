@@ -55,6 +55,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.lineageos.glimpse.ext.editSaveBehavior
 import org.lineageos.glimpse.ext.createWriteRequest
+import org.lineageos.glimpse.models.CustomCropRatioManager
 import org.lineageos.glimpse.ui.views.AngleRulerView
 import org.lineageos.glimpse.ui.views.AnnotationItem
 import org.lineageos.glimpse.ui.views.AnnotationOverlayView
@@ -438,39 +439,190 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
 
     private fun showRatioBottomSheet() {
         val dialog = BottomSheetDialog(this)
+        val scrollView = androidx.core.widget.NestedScrollView(this)
         val list = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Color.parseColor("#1C1B1F"))
             setPadding(16, 24, 16, 32)
         }
 
-        data class RatioItem(val labelRes: Int, val ratio: Float)
-        val ratios = listOf(
-            RatioItem(R.string.editor_crop_free, 0f),
-            RatioItem(R.string.ratio_square, 1f),
-            RatioItem(R.string.ratio_5_7, 5f / 7f),
-            RatioItem(R.string.ratio_7_9, 7f / 9f),
-            RatioItem(R.string.ratio_11_16, 11f / 16f),
-        )
+        data class RatioItem(val label: String, val ratio: Float)
+        val originalRatio = baseBitmap?.let { bmp ->
+            if (bmp.height > 0) bmp.width.toFloat() / bmp.height.toFloat() else null
+        }
+
+        val ratios = mutableListOf<RatioItem>()
+        ratios.add(RatioItem(getString(R.string.editor_crop_free), 0f))
+        if (originalRatio != null && originalRatio > 0.01f) {
+            ratios.add(RatioItem(getString(R.string.ratio_original), originalRatio))
+        }
+        ratios.add(RatioItem(getString(R.string.ratio_square), 1f))
+        ratios.add(RatioItem(getString(R.string.ratio_4_3), 4f / 3f))
+        ratios.add(RatioItem(getString(R.string.ratio_3_4), 3f / 4f))
+        ratios.add(RatioItem(getString(R.string.ratio_16_9), 16f / 9f))
+        ratios.add(RatioItem(getString(R.string.ratio_9_16), 9f / 16f))
+        ratios.add(RatioItem(getString(R.string.ratio_3_2), 3f / 2f))
+        ratios.add(RatioItem(getString(R.string.ratio_2_3), 2f / 3f))
+        ratios.add(RatioItem(getString(R.string.ratio_5_7), 5f / 7f))
+
+        // Custom Presets Header if saved
+        val savedCustom = CustomCropRatioManager.getSavedRatios(this)
+        if (savedCustom.isNotEmpty()) {
+            val header = TextView(this).apply {
+                text = getString(R.string.ratio_custom_presets_header)
+                textSize = 12f
+                setTextColor(Color.parseColor("#8E9192"))
+                setPadding(24, 24, 24, 8)
+            }
+            list.addView(header)
+
+            savedCustom.forEach { custom ->
+                val tv = TextView(this).apply {
+                    text = custom.label
+                    textSize = 15f
+                    setPadding(24, 20, 24, 20)
+                    val isSelected = abs(cropImageView.aspectRatio - custom.ratio) < 0.01f
+                    setTextColor(if (isSelected) Color.parseColor("#A8C7FA") else Color.WHITE)
+                    setOnClickListener {
+                        val old = cropImageView.aspectRatio
+                        cropImageView.applyPresetRatio(custom.ratio, old)
+                        cropRatioLabel.text = custom.label
+                        dialog.dismiss()
+                    }
+                    setOnLongClickListener {
+                        MaterialAlertDialogBuilder(this@ImageEditorActivity)
+                            .setMessage("删除预设 \"${custom.label}\"？")
+                            .setPositiveButton("删除") { _, _ ->
+                                CustomCropRatioManager.deleteRatio(this@ImageEditorActivity, custom.ratio)
+                                dialog.dismiss()
+                                showRatioBottomSheet()
+                            }
+                            .setNegativeButton(R.string.cancel, null)
+                            .show()
+                        true
+                    }
+                }
+                list.addView(tv)
+            }
+        }
 
         ratios.forEach { item ->
             val tv = TextView(this).apply {
-                text = getString(item.labelRes)
+                text = item.label
                 textSize = 15f
                 setPadding(24, 20, 24, 20)
                 val isSelected = (item.ratio == 0f && cropImageView.aspectRatio == 0f) ||
-                        (abs(cropImageView.aspectRatio - item.ratio) < 0.01f)
+                        (item.ratio > 0f && abs(cropImageView.aspectRatio - item.ratio) < 0.01f)
                 setTextColor(if (isSelected) Color.parseColor("#A8C7FA") else Color.WHITE)
                 setOnClickListener {
-                    cropImageView.aspectRatio = item.ratio
-                    cropRatioLabel.text = getString(item.labelRes)
+                    val old = cropImageView.aspectRatio
+                    if (item.ratio == 0f) {
+                        cropImageView.aspectRatio = 0f
+                        cropImageView.computeCropRect()
+                        cropImageView.invalidate()
+                    } else {
+                        cropImageView.applyPresetRatio(item.ratio, old)
+                    }
+                    cropRatioLabel.text = item.label
                     dialog.dismiss()
                 }
             }
             list.addView(tv)
         }
-        dialog.setContentView(list)
+
+        val customBtn = TextView(this).apply {
+            text = "+ " + getString(R.string.ratio_custom)
+            textSize = 15f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Color.parseColor("#A8C7FA"))
+            setPadding(24, 24, 24, 20)
+            setOnClickListener {
+                dialog.dismiss()
+                showCustomRatioDialog()
+            }
+        }
+        list.addView(customBtn)
+
+        scrollView.addView(list)
+        dialog.setContentView(scrollView)
         dialog.show()
+    }
+
+    private fun showCustomRatioDialog() {
+        val density = resources.displayMetrics.density
+        val pad = (20 * density).toInt()
+
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(pad, (8 * density).toInt(), pad, 0)
+        }
+
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+
+        val widthInput = TextInputEditText(this).apply {
+            hint = getString(R.string.ratio_custom_width)
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+
+        val colonTv = TextView(this).apply {
+            text = " : "
+            textSize = 20f
+            setTextColor(Color.WHITE)
+            setPadding((12 * density).toInt(), 0, (12 * density).toInt(), 0)
+        }
+
+        val heightInput = TextInputEditText(this).apply {
+            hint = getString(R.string.ratio_custom_height)
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+
+        row.addView(widthInput)
+        row.addView(colonTv)
+        row.addView(heightInput)
+        container.addView(row)
+
+        val labelInput = TextInputEditText(this).apply {
+            hint = "预设名称（可选，如 21:9、A4）"
+            setPadding(0, (16 * density).toInt(), 0, (8 * density).toInt())
+        }
+        container.addView(labelInput)
+
+        val saveCheckBox = android.widget.CheckBox(this).apply {
+            text = getString(R.string.ratio_custom_save)
+            isChecked = true
+            setTextColor(Color.WHITE)
+        }
+        container.addView(saveCheckBox)
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.ratio_custom_title)
+            .setView(container)
+            .setPositiveButton("应用") { _, _ ->
+                val w = widthInput.text?.toString()?.toFloatOrNull()
+                val h = heightInput.text?.toString()?.toFloatOrNull()
+                if (w == null || h == null || !CustomCropRatioManager.validate(w, h)) {
+                    Toast.makeText(this, R.string.ratio_custom_error, Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                val ratio = w / h
+                val customName = labelInput.text?.toString()?.takeIf { it.isNotBlank() }
+                val label = CustomCropRatioManager.formatLabel(w, h, customName)
+
+                if (saveCheckBox.isChecked) {
+                    CustomCropRatioManager.saveRatio(this, CustomCropRatioManager.CustomRatio(label, w, h))
+                }
+
+                val old = cropImageView.aspectRatio
+                cropImageView.applyPresetRatio(ratio, old)
+                cropRatioLabel.text = label
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
     }
 
     private fun setupAdjustControls() {

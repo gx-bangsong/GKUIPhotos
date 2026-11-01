@@ -214,10 +214,24 @@
 
     <!-- Neutral crop ratios for ImageEditorActivity -->
     <string name="ratio_free">Free</string>
+    <string name="ratio_original">Original</string>
     <string name="ratio_square">1:1</string>
+    <string name="ratio_4_3">4:3</string>
+    <string name="ratio_3_4">3:4</string>
+    <string name="ratio_16_9">16:9</string>
+    <string name="ratio_9_16">9:16</string>
+    <string name="ratio_3_2">3:2</string>
+    <string name="ratio_2_3">2:3</string>
     <string name="ratio_5_7">5:7</string>
     <string name="ratio_7_9">7:9</string>
     <string name="ratio_11_16">11:16</string>
+    <string name="ratio_custom">Custom ratio…</string>
+    <string name="ratio_custom_title">Custom aspect ratio</string>
+    <string name="ratio_custom_width">Width ratio</string>
+    <string name="ratio_custom_height">Height ratio</string>
+    <string name="ratio_custom_save">Save to custom presets</string>
+    <string name="ratio_custom_error">Please enter valid positive numbers (e.g. 21 and 9)</string>
+    <string name="ratio_custom_presets_header">Custom presets</string>
 
     <!-- ID Photo tool presets and groups -->
     <string name="image_toolbox_id_photo">ID Photo</string>
