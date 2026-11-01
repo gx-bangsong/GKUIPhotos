@@ -467,12 +467,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             val intVal = value.toInt()
             adjustValueText.text = if (intVal > 0 && param.isBipolar) "+$intVal" else "$intVal"
 
-            adjustParameters = when (param) {
-                AdjustParam.SATURATION -> adjustParameters.copy(saturation = intVal)
-                AdjustParam.CONTRAST -> adjustParameters.copy(contrast = intVal)
-                AdjustParam.TEMPERATURE -> adjustParameters.copy(temperature = intVal)
-                AdjustParam.SHARPEN -> adjustParameters.copy(sharpen = intVal)
-            }
+            setAdjustParamValue(param, intVal)
             refreshBaseBitmap()
             updateAdjustToolItems()
         }
@@ -481,12 +476,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             val param = activeAdjustParam ?: return@setOnClickListener
             adjustSlider.value = 0f
             adjustValueText.text = "0"
-            adjustParameters = when (param) {
-                AdjustParam.SATURATION -> adjustParameters.copy(saturation = 0)
-                AdjustParam.CONTRAST -> adjustParameters.copy(contrast = 0)
-                AdjustParam.TEMPERATURE -> adjustParameters.copy(temperature = 0)
-                AdjustParam.SHARPEN -> adjustParameters.copy(sharpen = 0)
-            }
+            setAdjustParamValue(param, 0)
             refreshBaseBitmap()
             updateAdjustToolItems()
         }
@@ -497,6 +487,15 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         AdjustParam.CONTRAST -> adjustParameters.contrast
         AdjustParam.TEMPERATURE -> adjustParameters.temperature
         AdjustParam.SHARPEN -> adjustParameters.sharpen
+    }
+
+    private fun setAdjustParamValue(param: AdjustParam, value: Int) {
+        adjustParameters = when (param) {
+            AdjustParam.SATURATION -> adjustParameters.copy(saturation = value)
+            AdjustParam.CONTRAST -> adjustParameters.copy(contrast = value)
+            AdjustParam.TEMPERATURE -> adjustParameters.copy(temperature = value)
+            AdjustParam.SHARPEN -> adjustParameters.copy(sharpen = value)
+        }
     }
 
     private fun updateAdjustToolItems() {
