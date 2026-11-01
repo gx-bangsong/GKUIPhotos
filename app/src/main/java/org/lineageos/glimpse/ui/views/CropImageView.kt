@@ -172,6 +172,22 @@ class CropImageView @JvmOverloads constructor(
     fun getDisplayBitmap(): Bitmap? = bitmap
 
     /**
+     * Returns the current live transformation matrix mapping original bitmap coordinates to view space.
+     */
+    fun getImageMatrix(): Matrix {
+        val bmp = bitmap ?: return Matrix()
+        val matrix = Matrix()
+        val cx = width / 2f
+        val cy = height / 2f
+        matrix.postScale(scaleFactor, scaleFactor)
+        matrix.postTranslate(
+            cx - bmp.width / 2f * scaleFactor + translateX,
+            cy - bmp.height / 2f * scaleFactor + translateY,
+        )
+        return matrix
+    }
+
+    /**
      * Applies a new preset aspect ratio live.
      * If [oldRatio] shares the same aspect ratio (< 0.005 difference), current pan and zoom
      * coordinates are preserved pixel-identically.

@@ -11,6 +11,7 @@ import android.graphics.BitmapShader
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.DashPathEffect
+import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
@@ -70,27 +71,24 @@ sealed interface AnnotationItem {
         var startY: Float,
         var endX: Float,
         var endY: Float,
-        val color: Int,
-        val strokeWidth: Float,
+        var color: Int,
+        var strokeWidth: Float,
     ) : AnnotationItem {
-        private val strokePaint by lazy {
-            Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = this@Shape.color
-                strokeWidth = this@Shape.strokeWidth
-                style = Paint.Style.STROKE
-                strokeCap = Paint.Cap.ROUND
-                strokeJoin = Paint.Join.ROUND
-            }
+        private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeCap = Paint.Cap.ROUND
+            strokeJoin = Paint.Join.ROUND
         }
 
-        private val fillPaint by lazy {
-            Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = this@Shape.color
-                style = Paint.Style.FILL
-            }
+        private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.FILL
         }
 
         override fun draw(canvas: Canvas) {
+            strokePaint.color = color
+            strokePaint.strokeWidth = strokeWidth
+            fillPaint.color = color
+
             when (type) {
                 ShapeType.LINE -> {
                     canvas.drawLine(startX, startY, endX, endY, strokePaint)
@@ -229,6 +227,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
     var onTextEditRequested: ((AnnotationItem.Text) -> Unit)? = null
     var cropRectProvider: (() -> RectF)? = null
     var displayBitmapProvider: (() -> Bitmap?)? = null
+    var imageMatrixProvider: (() -> Matrix)? = null
 
     val annotations = mutableListOf<AnnotationItem>()
 
@@ -298,7 +297,10 @@ class AnnotationOverlayView @JvmOverloads constructor(
 
     private fun getOrCreateMosaicShader(cellSize: Int): BitmapShader? {
         val cached = mosaicShaderCache[cellSize]
-        if (cached != null) return cached
+        if (cached != null) {
+            imageMatrixProvider?.invoke()?.let { cached.setLocalMatrix(it) }
+            return cached
+        }
 
         val bmp = displayBitmapProvider?.invoke() ?: return null
         val cs = cellSize.coerceAtLeast(2)
@@ -309,6 +311,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
         if (sBmp !== mBmp && sBmp !== bmp) sBmp.recycle()
 
         val shader = BitmapShader(mBmp, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
+        imageMatrixProvider?.invoke()?.let { shader.setLocalMatrix(it) }
         mosaicShaderCache[cellSize] = shader
         return shader
     }
@@ -393,11 +396,16 @@ class AnnotationOverlayView @JvmOverloads constructor(
             canvas.clipRect(cropRect)
         }
 
+        val currentMatrix = imageMatrixProvider?.invoke()
+
         // 1. Draw committed annotations
         for (item in annotations) {
             if (item is AnnotationItem.Mosaic) {
                 val shader = getOrCreateMosaicShader(item.cellSize)
                 if (shader != null && item.path != null) {
+                    if (currentMatrix != null) {
+                        shader.setLocalMatrix(currentMatrix)
+                    }
                     val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                         this.shader = shader
                         style = Paint.Style.STROKE
@@ -429,6 +437,9 @@ class AnnotationOverlayView @JvmOverloads constructor(
         currentMosaicPath?.let { path ->
             val shader = getOrCreateMosaicShader(activeMosaicCellSize)
             if (shader != null) {
+                if (currentMatrix != null) {
+                    shader.setLocalMatrix(currentMatrix)
+                }
                 val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                     this.shader = shader
                     style = Paint.Style.STROKE

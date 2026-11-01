@@ -263,6 +263,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         // Annotation Overlay Callbacks
         annotationOverlayView.cropRectProvider = { cropImageView.getCropRect() }
         annotationOverlayView.displayBitmapProvider = { cropImageView.getDisplayBitmap() }
+        annotationOverlayView.imageMatrixProvider = { cropImageView.getImageMatrix() }
         annotationOverlayView.onAnnotationChanged = {
             subEditUndoButton.isEnabled = annotationOverlayView.hasAnnotations()
             subEditUndoButton.alpha = if (annotationOverlayView.hasAnnotations()) 1f else 0.4f
@@ -773,6 +774,13 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         updateMarkupToolButtons()
         showMarkupToolOptions(tool)
 
+        if (tool == MarkupTool.TEXT && annotationOverlayView.activeText == null) {
+            val rect = cropImageView.getCropRect()
+            val cx = if (!rect.isEmpty) rect.centerX() else cropImageView.width / 2f
+            val cy = if (!rect.isEmpty) rect.centerY() else cropImageView.height / 2f
+            annotationOverlayView.addTextItem("", cx, cy)
+        }
+
         if (tool != MarkupTool.NONE) {
             // Category Tabs automatically disappear in sub-editing mode (text-on-images.jpg & use-arrow-tool.jpg)
             setCategoryTabsVisible(false)
@@ -819,24 +827,14 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             MarkupTool.SHAPES -> {
                 addShapeTypeSelector()
                 addStrokeWidthSlider()
-                addColorPalette()
-            }
-            MarkupTool.TEXT -> {
-                val addTextBtn = TextView(this).apply {
-                    text = getString(R.string.editor_markup_add_text)
-                    setBackgroundResource(R.drawable.bg_google_photos_pill_selected)
-                    setTextColor(Color.WHITE)
-                    textSize = 12f
-                    setPadding(32, 16, 32, 16)
-                    setOnClickListener {
-                        val rect = cropImageView.getCropRect()
-                        val cx = if (!rect.isEmpty) rect.centerX() else cropImageView.width / 2f
-                        val cy = if (!rect.isEmpty) rect.centerY() else cropImageView.height / 2f
-                        annotationOverlayView.addTextItem("", cx, cy)
+                addColorPalette { c ->
+                    annotationOverlayView.activeShape?.let { s ->
+                        s.color = c
+                        annotationOverlayView.invalidate()
                     }
                 }
-                markupOptionsContent.addView(addTextBtn)
-
+            }
+            MarkupTool.TEXT -> {
                 val bgChip = Chip(this).apply {
                     text = getString(R.string.editor_markup_text_bg)
                     isCheckable = true
@@ -940,6 +938,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                 isCheckable = true
                 id = index
                 isChecked = st == annotationOverlayView.selectedShapeType
+                ensureMinTouchTargetSize(false)
             }
             chip.setOnClickListener {
                 annotationOverlayView.selectedShapeType = st
@@ -972,11 +971,11 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             text = "${getString(R.string.editor_markup_stroke_width)}: ${currentDp.toInt()}dp"
             setTextColor(Color.WHITE)
             textSize = 12f
-            minWidth = (96 * density).toInt()
+            minWidth = (80 * density).toInt()
         }
 
         val slider = Slider(this).apply {
-            layoutParams = LinearLayout.LayoutParams((150 * density).toInt(), LinearLayout.LayoutParams.WRAP_CONTENT)
+            layoutParams = LinearLayout.LayoutParams((120 * density).toInt(), LinearLayout.LayoutParams.WRAP_CONTENT)
             valueFrom = 2f
             valueTo = 40f
             stepSize = 1f
@@ -989,6 +988,10 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             addOnChangeListener { _, valDp, _ ->
                 val px = valDp * density
                 annotationOverlayView.activeStrokeWidth = px
+                annotationOverlayView.activeShape?.let { s ->
+                    s.strokeWidth = px
+                    annotationOverlayView.invalidate()
+                }
                 label.text = "${getString(R.string.editor_markup_stroke_width)}: ${valDp.toInt()}dp"
                 val previewSize = px.toInt().coerceIn(4, 28)
                 dotPreview.layoutParams = LinearLayout.LayoutParams(previewSize, previewSize).apply {
@@ -1005,6 +1008,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
     }
 
     private fun addColorPalette(onColorChanged: ((Int) -> Unit)? = null) {
+        val density = resources.displayMetrics.density
         val colors = listOf(
             Color.parseColor("#F44336"), // Red
             Color.WHITE,
@@ -1019,14 +1023,16 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             setPadding(8, 0, 8, 0)
         }
 
+        val cards = mutableListOf<Pair<Int, MaterialCardView>>()
+
         colors.forEach { c ->
             val card = MaterialCardView(this).apply {
-                radius = 14f * resources.displayMetrics.density
+                radius = 14f * density
                 cardElevation = 0f
-                strokeWidth = if (c == annotationOverlayView.activeColor) (2.5f * resources.displayMetrics.density).toInt() else 0
+                strokeWidth = if (c == annotationOverlayView.activeColor) (2.5f * density).toInt() else 0
                 strokeColor = Color.parseColor("#A8C7FA")
                 setCardBackgroundColor(c)
-                val size = (28f * resources.displayMetrics.density).toInt()
+                val size = (28f * density).toInt()
                 val lp = LinearLayout.LayoutParams(size, size).apply {
                     setMargins(6, 0, 6, 0)
                 }
@@ -1035,9 +1041,13 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                 setOnClickListener {
                     annotationOverlayView.activeColor = c
                     onColorChanged?.invoke(c)
-                    addColorPalette(onColorChanged)
+                    // Update selection borders on existing cards in place without duplicating palette
+                    cards.forEach { (cardColor, cardView) ->
+                        cardView.strokeWidth = if (cardColor == c) (2.5f * density).toInt() else 0
+                    }
                 }
             }
+            cards.add(c to card)
             paletteContainer.addView(card)
         }
         markupOptionsContent.addView(paletteContainer)
