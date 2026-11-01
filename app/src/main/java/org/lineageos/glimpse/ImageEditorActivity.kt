@@ -154,6 +154,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
     private var activeAdjustParam: AdjustParam? = null
 
     private var activeCategory = EditorCategory.CROP
+    private var isFramingModified = false
     private var pendingOverwrite: ByteArray? = null
 
     private val writeRequestContract = registerForActivityResult(
@@ -197,6 +198,10 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         sourceUri = uri
         sourceMimeType = intent.getStringExtra(EXTRA_MIME_TYPE) ?: contentResolver.getType(uri)
 
+        cropImageView.onFramingModified = {
+            isFramingModified = true
+        }
+
         // Crop Controls
         cropRotateItem.setOnClickListener {
             rotation = (rotation + 90) % 360
@@ -208,6 +213,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         }
         cropResetButton.setOnClickListener {
             rotation = 0
+            isFramingModified = false
             cropAngleText.text = "0°"
             baseBitmap?.let { bmp ->
                 cropImageView.aspectRatio = bmp.width.toFloat() / bmp.height.toFloat()
@@ -340,7 +346,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                 !adjustParameters.isDefault ||
                 annotationOverlayView.hasAnnotations() ||
                 !cropImageView.watermarkText.isNullOrBlank() ||
-                cropImageView.isCropModified()
+                isFramingModified
     }
 
     private fun handleExitAttempt() {
