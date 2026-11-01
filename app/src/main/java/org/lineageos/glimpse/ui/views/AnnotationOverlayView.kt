@@ -228,6 +228,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
 
     var onAnnotationChanged: (() -> Unit)? = null
     var onTextEditRequested: ((AnnotationItem.Text) -> Unit)? = null
+    var onShapeStarted: (() -> Unit)? = null
     var cropRectProvider: (() -> RectF)? = null
     var displayBitmapProvider: (() -> Bitmap?)? = null
     var imageMatrixProvider: (() -> Matrix)? = null
@@ -561,6 +562,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
                             strokeWidth = activeStrokeWidth,
                         )
                         draggedHandle = 1
+                        onShapeStarted?.invoke()
                         invalidate()
                         return true
                     }

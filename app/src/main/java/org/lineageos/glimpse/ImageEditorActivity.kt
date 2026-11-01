@@ -47,6 +47,9 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.slider.Slider
 import com.google.android.material.textfield.TextInputEditText
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.lineageos.glimpse.ext.editSaveBehavior
@@ -167,6 +170,8 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
     private var activeCategory = EditorCategory.CROP
     private var isFramingModified = false
     private var isFlippedHorizontal = false
+    private var isShapeConfirmed = false
+    private var refreshJob: Job? = null
     private var pendingOverwrite: ByteArray? = null
 
     private val writeRequestContract = registerForActivityResult(
@@ -270,6 +275,12 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         }
         annotationOverlayView.onTextEditRequested = { textItem ->
             showTextInputDialog(textItem)
+        }
+        annotationOverlayView.onShapeStarted = {
+            if (!isShapeConfirmed) {
+                isShapeConfirmed = true
+                showMarkupToolOptions(MarkupTool.SHAPES)
+            }
         }
 
         // Setup Strips
@@ -469,16 +480,24 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             adjustValueText.text = if (intVal > 0 && param.isBipolar) "+$intVal" else "$intVal"
 
             setAdjustParamValue(param, intVal)
-            refreshBaseBitmap()
-            updateAdjustToolItems()
+            refreshBaseBitmap(debounceMs = 32)
         }
+
+        adjustSlider.addOnSliderTouchListener(object : Slider.OnSliderTouchListener {
+            override fun onStartTrackingTouch(slider: Slider) {}
+
+            override fun onStopTrackingTouch(slider: Slider) {
+                refreshBaseBitmap(debounceMs = 0)
+                updateAdjustToolItems()
+            }
+        })
 
         adjustResetButton.setOnClickListener {
             val param = activeAdjustParam ?: return@setOnClickListener
             adjustSlider.value = 0f
             adjustValueText.text = "0"
             setAdjustParamValue(param, 0)
-            refreshBaseBitmap()
+            refreshBaseBitmap(debounceMs = 0)
             updateAdjustToolItems()
         }
     }
@@ -770,6 +789,9 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
     }
 
     private fun selectMarkupTool(tool: MarkupTool) {
+        if (tool != MarkupTool.SHAPES) {
+            isShapeConfirmed = false
+        }
         annotationOverlayView.activeTool = tool
         updateMarkupToolButtons()
         showMarkupToolOptions(tool)
@@ -806,6 +828,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
     }
 
     private fun exitMarkupSubEdit() {
+        isShapeConfirmed = false
         annotationOverlayView.activeTool = MarkupTool.NONE
         updateMarkupToolButtons()
         markupOptionsScroll.isVisible = false
@@ -825,13 +848,10 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                 addColorPalette()
             }
             MarkupTool.SHAPES -> {
-                addShapeTypeSelector()
-                addStrokeWidthSlider()
-                addColorPalette { c ->
-                    annotationOverlayView.activeShape?.let { s ->
-                        s.color = c
-                        annotationOverlayView.invalidate()
-                    }
+                if (!isShapeConfirmed) {
+                    addShapeTypeSelector()
+                } else {
+                    addConfirmedShapeControls()
                 }
             }
             MarkupTool.TEXT -> {
@@ -941,10 +961,49 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             }
             chip.setOnClickListener {
                 annotationOverlayView.selectedShapeType = st
+                isShapeConfirmed = true
+                showMarkupToolOptions(MarkupTool.SHAPES)
             }
             chipGroup.addView(chip)
         }
         markupOptionsContent.addView(chipGroup)
+    }
+
+    private fun addConfirmedShapeControls() {
+        val currentShapeLabel = when (annotationOverlayView.selectedShapeType) {
+            ShapeType.ARROW -> R.string.editor_shape_arrow
+            ShapeType.RECTANGLE -> R.string.editor_shape_rect
+            ShapeType.ELLIPSE -> R.string.editor_shape_circle
+            ShapeType.LINE -> R.string.editor_shape_line
+        }
+
+        val shapeBtn = TextView(this).apply {
+            text = "‹ ${getString(currentShapeLabel)}"
+            setBackgroundResource(R.drawable.bg_google_photos_pill_selected)
+            setTextColor(Color.WHITE)
+            textSize = 12f
+            setPadding(28, 14, 28, 14)
+            setOnClickListener {
+                isShapeConfirmed = false
+                showMarkupToolOptions(MarkupTool.SHAPES)
+            }
+        }
+        val density = resources.displayMetrics.density
+        val lp = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply {
+            marginEnd = (12 * density).toInt()
+        }
+        markupOptionsContent.addView(shapeBtn, lp)
+
+        addStrokeWidthSlider()
+        addColorPalette { c ->
+            annotationOverlayView.activeShape?.let { s ->
+                s.color = c
+                annotationOverlayView.invalidate()
+            }
+        }
     }
 
     private fun addStrokeWidthSlider() {
@@ -1088,13 +1147,20 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
     }
 
     /** Rebuild the displayed (rotated + flipped + filtered + adjusted) bitmap on the crop view. */
-    private fun refreshBaseBitmap() {
+    private fun refreshBaseBitmap(debounceMs: Long = 0) {
         val bmp = baseBitmap ?: return
-        lifecycleScope.launch {
+        refreshJob?.cancel()
+        refreshJob = lifecycleScope.launch {
+            if (debounceMs > 0) {
+                delay(debounceMs)
+            }
             val displayed = withContext(Dispatchers.Default) {
+                ensureActive()
                 val transformed = transformBitmap(bmp, rotation.toFloat() + fineRotation, isFlippedHorizontal)
+                ensureActive()
                 val filtered = applyFilter(transformed, currentFilter)
                 if (filtered !== transformed && transformed !== bmp) transformed.recycle()
+                ensureActive()
                 val adjusted = ImageAdjuster.applyAdjustments(filtered, adjustParameters)
                 if (adjusted !== filtered && filtered !== bmp) filtered.recycle()
                 adjusted
@@ -1354,7 +1420,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         }
         val maxDim = max(bounds.outWidth, bounds.outHeight)
         var sample = 1
-        while (maxDim / sample > 4096) sample *= 2
+        while (maxDim / sample > 2560) sample *= 2
         opts.inSampleSize = sample
 
         contentResolver.openInputStream(uri)?.use {

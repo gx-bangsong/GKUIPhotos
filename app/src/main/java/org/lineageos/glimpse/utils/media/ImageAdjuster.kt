@@ -40,6 +40,7 @@ object ImageAdjuster {
     fun applySharpen(source: Bitmap, strengthPercent: Int): Bitmap {
         val pct = strengthPercent.coerceIn(0, 100)
         if (pct == 0) return source
+        if (Thread.currentThread().isInterrupted) return source
 
         val w = source.width
         val h = source.height
@@ -51,6 +52,9 @@ object ImageAdjuster {
         val blend = (pct / 100f) * 0.6f
 
         for (y in 0 until h) {
+            if (y % 64 == 0 && Thread.currentThread().isInterrupted) {
+                return source
+            }
             val ym1 = if (y > 0) y - 1 else y
             val yp1 = if (y < h - 1) y + 1 else y
             val rowOffset = y * w
