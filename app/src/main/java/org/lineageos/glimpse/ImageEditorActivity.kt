@@ -765,22 +765,12 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
 
         when (tool) {
             MarkupTool.DOODLE -> {
-                val density = resources.displayMetrics.density
-                addStrokeSizeSelector(listOf(
-                    4f * density to R.string.editor_size_fine,
-                    8f * density to R.string.editor_size_medium,
-                    16f * density to R.string.editor_size_bold,
-                ))
+                addStrokeWidthSlider()
                 addColorPalette()
             }
             MarkupTool.SHAPES -> {
                 addShapeTypeSelector()
-                val density = resources.displayMetrics.density
-                addStrokeSizeSelector(listOf(
-                    4f * density to R.string.editor_size_fine,
-                    8f * density to R.string.editor_size_medium,
-                    16f * density to R.string.editor_size_bold,
-                ))
+                addStrokeWidthSlider()
                 addColorPalette()
             }
             MarkupTool.TEXT -> {
@@ -845,7 +835,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                 val mosaicBrushContainer = LinearLayout(this).apply {
                     orientation = LinearLayout.HORIZONTAL
                     gravity = Gravity.CENTER_VERTICAL
-                    setPadding((8 * density).toInt(), 0, (8 * density).toInt(), 0)
+                    setPadding((12 * density).toInt(), 0, (12 * density).toInt(), 0)
                 }
 
                 val currentBrushDp = (kotlin.math.round((annotationOverlayView.activeMosaicBrushSize / density) / 2f) * 2f).coerceIn(10f, 60f)
@@ -857,7 +847,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                 }
 
                 val brushSlider = Slider(this).apply {
-                    layoutParams = LinearLayout.LayoutParams((140 * density).toInt(), LinearLayout.LayoutParams.WRAP_CONTENT)
+                    layoutParams = LinearLayout.LayoutParams((150 * density).toInt(), LinearLayout.LayoutParams.WRAP_CONTENT)
                     valueFrom = 10f
                     valueTo = 60f
                     stepSize = 2f
@@ -873,37 +863,9 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                     }
                 }
 
-                val brushSizes = listOf(
-                    16f * density to R.string.editor_size_fine,
-                    32f * density to R.string.editor_size_medium,
-                    48f * density to R.string.editor_size_bold,
-                )
-                val brushGroup = ChipGroup(this).apply {
-                    isSingleSelection = true
-                    isSingleLine = true
-                    isSelectionRequired = true
-                    setPadding((8 * density).toInt(), 0, (8 * density).toInt(), 0)
-                }
-                brushSizes.forEachIndexed { index, (bs, labelRes) ->
-                    val chip = Chip(this).apply {
-                        text = getString(labelRes)
-                        isCheckable = true
-                        id = index
-                        isChecked = abs(bs - annotationOverlayView.activeMosaicBrushSize) < 2f
-                    }
-                    chip.setOnClickListener {
-                        annotationOverlayView.activeMosaicBrushSize = bs
-                        val dp = (kotlin.math.round((bs / density) / 2f) * 2f).coerceIn(10f, 60f)
-                        brushSlider.value = dp
-                        brushLabel.text = "${getString(R.string.editor_markup_mosaic_brush)}: ${dp.toInt()}dp"
-                    }
-                    brushGroup.addView(chip)
-                }
-
                 mosaicBrushContainer.addView(brushLabel)
                 mosaicBrushContainer.addView(brushSlider)
 
-                markupOptionsContent.addView(brushGroup)
                 markupOptionsContent.addView(mosaicBrushContainer)
             }
             MarkupTool.NONE -> {
@@ -939,20 +901,13 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         markupOptionsContent.addView(chipGroup)
     }
 
-    private fun addStrokeSizeSelector(sizes: List<Pair<Float, Int>>) {
+    private fun addStrokeWidthSlider() {
         val density = resources.displayMetrics.density
-
-        val chipGroup = ChipGroup(this).apply {
-            isSingleSelection = true
-            isSingleLine = true
-            isSelectionRequired = true
-            setPadding((8 * density).toInt(), 0, (8 * density).toInt(), 0)
-        }
 
         val sliderContainer = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding((8 * density).toInt(), 0, (8 * density).toInt(), 0)
+            setPadding((12 * density).toInt(), 0, (12 * density).toInt(), 0)
         }
 
         val currentDp = kotlin.math.round(annotationOverlayView.activeStrokeWidth / density).coerceIn(2f, 40f)
@@ -973,7 +928,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         }
 
         val slider = Slider(this).apply {
-            layoutParams = LinearLayout.LayoutParams((140 * density).toInt(), LinearLayout.LayoutParams.WRAP_CONTENT)
+            layoutParams = LinearLayout.LayoutParams((150 * density).toInt(), LinearLayout.LayoutParams.WRAP_CONTENT)
             valueFrom = 2f
             valueTo = 40f
             stepSize = 1f
@@ -994,31 +949,10 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             }
         }
 
-        sizes.forEachIndexed { index, (sizePx, labelRes) ->
-            val chip = Chip(this).apply {
-                text = getString(labelRes)
-                isCheckable = true
-                id = index
-                isChecked = abs(sizePx - annotationOverlayView.activeStrokeWidth) < 1f
-            }
-            chip.setOnClickListener {
-                annotationOverlayView.activeStrokeWidth = sizePx
-                val dp = kotlin.math.round(sizePx / density).coerceIn(2f, 40f)
-                slider.value = dp
-                label.text = "${getString(R.string.editor_markup_stroke_width)}: ${dp.toInt()}dp"
-                val previewSize = sizePx.toInt().coerceIn(4, 28)
-                dotPreview.layoutParams = LinearLayout.LayoutParams(previewSize, previewSize).apply {
-                    marginEnd = (8 * density).toInt()
-                }
-            }
-            chipGroup.addView(chip)
-        }
-
         sliderContainer.addView(dotPreview)
         sliderContainer.addView(label)
         sliderContainer.addView(slider)
 
-        markupOptionsContent.addView(chipGroup)
         markupOptionsContent.addView(sliderContainer)
     }
 
