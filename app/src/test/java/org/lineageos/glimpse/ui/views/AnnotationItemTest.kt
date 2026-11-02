@@ -172,30 +172,28 @@ class AnnotationItemTest {
 
     @Test
     fun testStampStrokeAnnotation() {
+        val pt = org.lineageos.glimpse.models.StampPoint(10f, 20f, 45f)
         val stroke = AnnotationItem.StampStroke(
             brushId = "brush_abc",
-            brushName = "Star Stamp",
-            colorMode = org.lineageos.glimpse.models.BrushColorMode.TINT,
-            tintColor = 0xFFFF0000.toInt(),
+            points = listOf(pt),
+            sizeInImage = 32f,
             sizeDp = 24f,
-            spacingPercent = 30,
+            color = 0xFFFF0000.toInt(),
             opacity = 80,
-            followDirection = true,
+            colorMode = org.lineageos.glimpse.models.BrushColorMode.TINT,
+            tipBitmap = null,
         )
 
         assertEquals("brush_abc", stroke.brushId)
-        assertEquals("Star Stamp", stroke.brushName)
-        assertEquals(org.lineageos.glimpse.models.BrushColorMode.TINT, stroke.colorMode)
-        assertEquals(24f, stroke.sizeDp, 0.01f)
-        assertEquals(30, stroke.spacingPercent)
-        assertEquals(80, stroke.opacity)
-        assertTrue(stroke.followDirection)
-        assertTrue(stroke.points.isEmpty())
-
-        stroke.points.add(org.lineageos.glimpse.models.StampPoint(10f, 20f, 45f))
         assertEquals(1, stroke.points.size)
         assertEquals(10f, stroke.points[0].x, 0.01f)
         assertEquals(20f, stroke.points[0].y, 0.01f)
         assertEquals(45f, stroke.points[0].angle, 0.01f)
+        assertEquals(32f, stroke.sizeInImage, 0.01f)
+        assertEquals(24f, stroke.sizeDp, 0.01f)
+        assertEquals(0xFFFF0000.toInt(), stroke.color)
+        assertEquals(80, stroke.opacity)
+        assertEquals(org.lineageos.glimpse.models.BrushColorMode.TINT, stroke.colorMode)
+        assertNull(stroke.tipBitmap)
     }
 }
