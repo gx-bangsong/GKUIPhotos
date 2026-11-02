@@ -14,12 +14,20 @@ import android.graphics.DashPathEffect
 import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffColorFilter
 import android.graphics.RectF
 import android.graphics.Shader
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
+import org.lineageos.glimpse.models.BrushColorMode
+import org.lineageos.glimpse.models.CustomBrush
+import org.lineageos.glimpse.models.CustomShape
+import org.lineageos.glimpse.models.StampPoint
+import org.lineageos.glimpse.models.StampStrokeSampler
+import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.hypot
@@ -46,6 +54,7 @@ enum class ShapeType {
     TRIANGLE,
     STAR,
     DIAMOND,
+    CUSTOM,
 }
 
 enum class ShapeStyle {
@@ -148,6 +157,8 @@ sealed interface AnnotationItem {
         var color: Int,
         var strokeWidth: Float,
         var style: ShapeStyle = ShapeStyle.OUTLINE,
+        var customShapeId: String? = null,
+        var customPathData: String? = null,
     ) : AnnotationItem {
         private var strokePaint: Paint? = null
         private var fillPaint: Paint? = null
@@ -183,6 +194,25 @@ sealed interface AnnotationItem {
             val cy = (t + b) / 2f
 
             when (type) {
+                ShapeType.CUSTOM -> {
+                    val pathData = customPathData
+                    if (!pathData.isNullOrBlank() && w > 0f && h > 0f) {
+                        val unitPath = getOrCreateCachedPath(pathData)
+                        val m = Matrix()
+                        m.setScale(w, h)
+                        m.postTranslate(l, t)
+                        val renderPath = Path()
+                        unitPath.transform(m, renderPath)
+                        when (style) {
+                            ShapeStyle.SOLID -> canvas.drawPath(renderPath, fPaint)
+                            ShapeStyle.TRANSLUCENT -> {
+                                canvas.drawPath(renderPath, tPaint)
+                                canvas.drawPath(renderPath, sPaint)
+                            }
+                            ShapeStyle.OUTLINE -> canvas.drawPath(renderPath, sPaint)
+                        }
+                    }
+                }
                 ShapeType.LINE -> {
                     canvas.drawLine(startX, startY, endX, endY, sPaint)
                 }
@@ -420,6 +450,62 @@ sealed interface AnnotationItem {
             canvas.restore()
         }
     }
+
+    data class StampStroke(
+        val brushId: String,
+        val points: List<StampPoint>,
+        val sizeInImage: Float,
+        val sizeDp: Float,
+        val color: Int,
+        val opacity: Int,
+        val colorMode: BrushColorMode,
+        val tipBitmap: Bitmap?,
+    ) : AnnotationItem {
+        override fun draw(canvas: Canvas) {
+            // Handled via drawWithMatrix
+        }
+
+        fun drawWithMatrix(canvas: Canvas, imageMatrix: Matrix?, reuseMatrix: Matrix, reusePaint: Paint) {
+            val bmp = tipBitmap ?: return
+            if (bmp.isRecycled || points.isEmpty()) return
+
+            val bw = bmp.width.toFloat()
+            val bh = bmp.height.toFloat()
+            val maxDim = max(bw, bh)
+            if (maxDim <= 0f) return
+            val tipScale = sizeInImage / maxDim
+            val halfW = bw / 2f
+            val halfH = bh / 2f
+
+            reusePaint.reset()
+            reusePaint.isAntiAlias = true
+            reusePaint.isFilterBitmap = true
+            reusePaint.alpha = (opacity * 255 / 100).coerceIn(0, 255)
+            if (colorMode == BrushColorMode.TINT) {
+                reusePaint.colorFilter = PorterDuffColorFilter(color, PorterDuff.Mode.SRC_IN)
+            } else {
+                reusePaint.colorFilter = null
+            }
+
+            canvas.save()
+            if (imageMatrix != null) {
+                canvas.concat(imageMatrix)
+            }
+
+            for (pt in points) {
+                reuseMatrix.reset()
+                reuseMatrix.postTranslate(-halfW, -halfH)
+                reuseMatrix.postScale(tipScale, tipScale)
+                if (pt.angle != 0f) {
+                    reuseMatrix.postRotate(pt.angle)
+                }
+                reuseMatrix.postTranslate(pt.x, pt.y)
+                canvas.drawBitmap(bmp, reuseMatrix, reusePaint)
+            }
+
+            canvas.restore()
+        }
+    }
 }
 
 class AnnotationOverlayView @JvmOverloads constructor(
@@ -448,12 +534,97 @@ class AnnotationOverlayView @JvmOverloads constructor(
     var activeMosaicEffect: MosaicEffect = MosaicEffect.PIXELATE
     var activeCustomBrushTexture: Bitmap? = null
     var activeCustomMosaicPattern: Bitmap? = null
+    var activeCustomBrush: CustomBrush? = null
+    var activeCustomBrushTipBitmap: Bitmap? = null
+    var activeCustomShape: CustomShape? = null
+
+    // Stamp stroke execution state
+    private val stampDrawMatrix = Matrix()
+    private val stampDrawPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    private var currentStampSampler: StampStrokeSampler? = null
+    private var currentStampSizeInImage: Float = 24f
 
     var activeColor: Int = Color.RED
     var activeStrokeWidth: Float = 8f
     var hasTextBackgroundPill: Boolean = true
     var activeMosaicCellSize: Int = 16
     var activeMosaicBrushSize: Float = 32f
+
+    companion object {
+        private val pathCache = mutableMapOf<String, Path>()
+
+        fun getOrCreateCachedPath(pathData: String): Path {
+            return pathCache.getOrPut(pathData) {
+                buildPathFromSvg(pathData)
+            }
+        }
+
+        private fun buildPathFromSvg(svgPath: String): Path {
+            val path = Path()
+            val tokenRegex = Regex("""([a-zA-Z])|([-+]?(?:\d*\.\d+|\d+)(?:[eE][-+]?\d+)?)""")
+            val tokens = tokenRegex.findAll(svgPath).map { it.value }.toList()
+            var i = 0
+            var cmd = ' '
+            fun nextF(): Float? {
+                if (i >= tokens.size) return null
+                val t = tokens[i]
+                if (t.length == 1 && t[0].isLetter()) return null
+                i++
+                return t.toFloatOrNull()
+            }
+            while (i < tokens.size) {
+                val tok = tokens[i]
+                if (tok.length == 1 && tok[0].isLetter()) {
+                    cmd = tok[0]
+                    i++
+                }
+                when (cmd) {
+                    'M' -> {
+                        val x = nextF() ?: break
+                        val y = nextF() ?: break
+                        path.moveTo(x, y)
+                        cmd = 'L'
+                    }
+                    'L' -> {
+                        val x = nextF() ?: break
+                        val y = nextF() ?: break
+                        path.lineTo(x, y)
+                    }
+                    'Q' -> {
+                        val x1 = nextF() ?: break
+                        val y1 = nextF() ?: break
+                        val x = nextF() ?: break
+                        val y = nextF() ?: break
+                        path.quadTo(x1, y1, x, y)
+                    }
+                    'C' -> {
+                        val x1 = nextF() ?: break
+                        val y1 = nextF() ?: break
+                        val x2 = nextF() ?: break
+                        val y2 = nextF() ?: break
+                        val x = nextF() ?: break
+                        val y = nextF() ?: break
+                        path.cubicTo(x1, y1, x2, y2, x, y)
+                    }
+                    'Z', 'z' -> {
+                        path.close()
+                        cmd = ' '
+                    }
+                    else -> i++
+                }
+            }
+            return path
+        }
+    }
+
+    private fun getMatrixScale(matrix: Matrix?): Float {
+        if (matrix == null) return 1f
+        val values = FloatArray(9)
+        matrix.getValues(values)
+        val sx = values[Matrix.MSCALE_X]
+        val sy = values[Matrix.MSCALE_Y]
+        return if (sx != 0f) abs(sx) else if (sy != 0f) abs(sy) else 1f
+    }
 
     var onAnnotationChanged: (() -> Unit)? = null
     var onTextEditRequested: ((AnnotationItem.Text) -> Unit)? = null
@@ -763,7 +934,9 @@ class AnnotationOverlayView @JvmOverloads constructor(
 
         // 1. Draw committed annotations
         for (item in annotations) {
-            if (item is AnnotationItem.Mosaic) {
+            if (item is AnnotationItem.StampStroke) {
+                item.drawWithMatrix(canvas, currentMatrix, stampDrawMatrix, stampDrawPaint)
+            } else if (item is AnnotationItem.Mosaic) {
                 if (item.path == null) continue
                 when (item.effect) {
                     MosaicEffect.PIXELATE -> {
@@ -848,15 +1021,32 @@ class AnnotationOverlayView @JvmOverloads constructor(
         }
 
         // 2. Draw active doodle in progress
-        currentDoodlePath?.let { path ->
-            val doodle = AnnotationItem.Doodle(
-                path = path,
+        val inProgressSampler = currentStampSampler
+        val activeBrush = activeCustomBrush
+        val activeTip = activeCustomBrushTipBitmap
+        if (inProgressSampler != null && activeBrush != null && activeTip != null && !activeTip.isRecycled) {
+            val stroke = AnnotationItem.StampStroke(
+                brushId = activeBrush.id,
+                points = inProgressSampler.stamps,
+                sizeInImage = currentStampSizeInImage,
+                sizeDp = activeBrush.sizeDp,
                 color = activeColor,
-                strokeWidth = activeStrokeWidth,
-                brushType = activeBrushType,
-                customTexture = activeCustomBrushTexture,
+                opacity = activeBrush.opacity,
+                colorMode = activeBrush.colorMode,
+                tipBitmap = activeTip,
             )
-            doodle.draw(canvas)
+            stroke.drawWithMatrix(canvas, currentMatrix, stampDrawMatrix, stampDrawPaint)
+        } else {
+            currentDoodlePath?.let { path ->
+                val doodle = AnnotationItem.Doodle(
+                    path = path,
+                    color = activeColor,
+                    strokeWidth = activeStrokeWidth,
+                    brushType = activeBrushType,
+                    customTexture = activeCustomBrushTexture,
+                )
+                doodle.draw(canvas)
+            }
         }
 
         // 3. Draw active mosaic in progress
@@ -1014,48 +1204,101 @@ class AnnotationOverlayView @JvmOverloads constructor(
 
         when (activeTool) {
             MarkupTool.DOODLE -> {
-                when (event.actionMasked) {
-                    MotionEvent.ACTION_DOWN -> {
-                        val path = Path().apply { moveTo(x, y) }
-                        currentDoodlePath = path
-                        lastDoodleX = x
-                        lastDoodleY = y
-                        onDoodleStarted?.invoke()
-                        invalidate()
-                        return true
-                    }
-                    MotionEvent.ACTION_MOVE -> {
-                        currentDoodlePath?.let { path ->
-                            val dx = kotlin.math.abs(x - lastDoodleX)
-                            val dy = kotlin.math.abs(y - lastDoodleY)
-                            if (dx >= 2 || dy >= 2) {
-                                path.quadTo(lastDoodleX, lastDoodleY, (x + lastDoodleX) / 2f, (y + lastDoodleY) / 2f)
-                                lastDoodleX = x
-                                lastDoodleY = y
+                val customBrush = activeCustomBrush
+                if (customBrush != null) {
+                    val invMatrix = Matrix()
+                    imageMatrixProvider?.invoke()?.invert(invMatrix)
+                    val pts = floatArrayOf(x, y)
+                    invMatrix.mapPoints(pts)
+                    val imgX = pts[0]
+                    val imgY = pts[1]
+
+                    when (event.actionMasked) {
+                        MotionEvent.ACTION_DOWN -> {
+                            val scale = getMatrixScale(imageMatrixProvider?.invoke())
+                            val sizeInImage = if (scale > 0f) activeStrokeWidth / scale else activeStrokeWidth
+                            currentStampSizeInImage = sizeInImage
+                            val step = max(1f, (customBrush.spacingPercent / 100f) * sizeInImage)
+                            currentStampSampler = StampStrokeSampler(step, customBrush.followDirection, 2000).apply {
+                                start(imgX, imgY)
+                            }
+                            onDoodleStarted?.invoke()
+                            invalidate()
+                            return true
+                        }
+                        MotionEvent.ACTION_MOVE -> {
+                            currentStampSampler?.moveTo(imgX, imgY)
+                            invalidate()
+                            return true
+                        }
+                        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                            val sampler = currentStampSampler
+                            val bmp = activeCustomBrushTipBitmap
+                            if (sampler != null && sampler.stamps.isNotEmpty() && bmp != null && !bmp.isRecycled) {
+                                annotations.add(
+                                    AnnotationItem.StampStroke(
+                                        brushId = customBrush.id,
+                                        points = sampler.stamps.toList(),
+                                        sizeInImage = currentStampSizeInImage,
+                                        sizeDp = customBrush.sizeDp,
+                                        color = activeColor,
+                                        opacity = customBrush.opacity,
+                                        colorMode = customBrush.colorMode,
+                                        tipBitmap = bmp,
+                                    )
+                                )
+                                currentStampSampler = null
+                                onAnnotationChanged?.invoke()
                                 invalidate()
                             }
+                            return true
                         }
-                        return true
+                        else -> return false
                     }
-                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                        currentDoodlePath?.let { path ->
-                            path.lineTo(x, y)
-                            annotations.add(
-                                AnnotationItem.Doodle(
-                                    path = path,
-                                    color = activeColor,
-                                    strokeWidth = activeStrokeWidth,
-                                    brushType = activeBrushType,
-                                    customTexture = activeCustomBrushTexture,
-                                )
-                            )
-                            currentDoodlePath = null
-                            onAnnotationChanged?.invoke()
+                } else {
+                    when (event.actionMasked) {
+                        MotionEvent.ACTION_DOWN -> {
+                            val path = Path().apply { moveTo(x, y) }
+                            currentDoodlePath = path
+                            lastDoodleX = x
+                            lastDoodleY = y
+                            onDoodleStarted?.invoke()
                             invalidate()
+                            return true
                         }
-                        return true
+                        MotionEvent.ACTION_MOVE -> {
+                            currentDoodlePath?.let { path ->
+                                val dx = kotlin.math.abs(x - lastDoodleX)
+                                val dy = kotlin.math.abs(y - lastDoodleY)
+                                if (dx >= 2 || dy >= 2) {
+                                    path.quadTo(lastDoodleX, lastDoodleY, (x + lastDoodleX) / 2f, (y + lastDoodleY) / 2f)
+                                    lastDoodleX = x
+                                    lastDoodleY = y
+                                    invalidate()
+                                }
+                            }
+                            return true
+                        }
+                        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                            currentDoodlePath?.let { path ->
+                                path.lineTo(x, y)
+                                annotations.add(
+                                    AnnotationItem.Doodle(
+                                        path = path,
+                                        color = activeColor,
+                                        strokeWidth = activeStrokeWidth,
+                                        brushType = activeBrushType,
+                                        customTexture = null,
+                                    )
+                                )
+                                currentDoodlePath = null
+                                onAnnotationChanged?.invoke()
+                                invalidate()
+                            }
+                            return true
+                        }
+                        else -> return false
                     }
-                    else -> return false
                 }
             }
 
@@ -1082,6 +1325,8 @@ class AnnotationOverlayView @JvmOverloads constructor(
                             color = activeColor,
                             strokeWidth = activeStrokeWidth,
                             style = activeShapeStyle,
+                            customShapeId = activeCustomShape?.id,
+                            customPathData = activeCustomShape?.pathData,
                         )
                         draggedHandle = 1
                         onShapeStarted?.invoke()
@@ -1352,7 +1597,10 @@ class AnnotationOverlayView @JvmOverloads constructor(
         } else null
 
         for (item in annotations) {
-            if (item is AnnotationItem.Mosaic) {
+            if (item is AnnotationItem.StampStroke) {
+                val matrix = imageMatrixProvider?.invoke()
+                item.drawWithMatrix(canvas, matrix, stampDrawMatrix, stampDrawPaint)
+            } else if (item is AnnotationItem.Mosaic) {
                 if (item.path == null) continue
                 when (item.effect) {
                     MosaicEffect.PIXELATE -> {

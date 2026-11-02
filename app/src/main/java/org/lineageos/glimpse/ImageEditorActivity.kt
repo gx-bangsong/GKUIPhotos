@@ -55,8 +55,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.lineageos.glimpse.ext.editSaveBehavior
 import org.lineageos.glimpse.ext.createWriteRequest
+import org.lineageos.glimpse.models.BrushColorMode
+import org.lineageos.glimpse.models.CustomBrush
 import org.lineageos.glimpse.models.CustomCropRatioManager
 import org.lineageos.glimpse.models.CustomEditorAssetManager
+import org.lineageos.glimpse.models.CustomShape
+import org.lineageos.glimpse.models.CustomShapeParseResult
 import org.lineageos.glimpse.ui.views.AngleRulerView
 import org.lineageos.glimpse.ui.views.AnnotationItem
 import org.lineageos.glimpse.ui.views.AnnotationOverlayView
@@ -212,17 +216,63 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         }
     }
 
+    private fun getFileNameFromUri(uri: Uri): String? {
+        if (uri.scheme == "content") {
+            contentResolver.query(uri, arrayOf(MediaStore.MediaColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val idx = cursor.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
+                    if (idx != -1) return cursor.getString(idx)
+                }
+            }
+        }
+        return uri.path?.substringAfterLast('/')
+    }
+
     private val pickBrushTextureLauncher = registerForActivityResult(
         ActivityResultContracts.GetContent()
     ) { uri ->
         if (uri != null) {
-            val asset = CustomEditorAssetManager.importCustomBrush(this, uri)
-            val bmp = asset?.loadBitmap()
-            if (bmp != null) {
+            val name = getFileNameFromUri(uri)?.substringBeforeLast(".") ?: getString(R.string.editor_brush_import)
+            val brush = CustomEditorAssetManager.importCustomBrush(this, uri, name)
+            if (brush != null) {
                 annotationOverlayView.activeBrushType = BrushType.CUSTOM_TEXTURE
-                annotationOverlayView.activeCustomBrushTexture = bmp
+                annotationOverlayView.activeCustomBrush = brush
+                annotationOverlayView.activeCustomBrushTipBitmap = brush.loadTipBitmap()
+                annotationOverlayView.activeStrokeWidth = brush.sizeDp * resources.displayMetrics.density
                 isDoodleConfirmed = true
                 showMarkupToolOptions(MarkupTool.DOODLE)
+            } else {
+                Toast.makeText(this, R.string.editor_brush_import_failed, Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private val pickCustomShapeLauncher = registerForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            val content = runCatching {
+                contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+            }.getOrNull()
+            if (!content.isNullOrBlank()) {
+                val name = getFileNameFromUri(uri)?.substringBeforeLast(".") ?: getString(R.string.editor_shape_custom)
+                when (val result = CustomEditorAssetManager.importCustomShape(this, content, name)) {
+                    is CustomShapeParseResult.Success -> {
+                        val shapes = CustomEditorAssetManager.getCustomShapes(this)
+                        val imported = shapes.firstOrNull()
+                        if (imported != null) {
+                            annotationOverlayView.selectedShapeType = ShapeType.CUSTOM
+                            annotationOverlayView.activeCustomShape = imported
+                            isShapeConfirmed = true
+                            showMarkupToolOptions(MarkupTool.SHAPES)
+                        }
+                    }
+                    is CustomShapeParseResult.Error -> {
+                        Toast.makeText(this, result.message, Toast.LENGTH_LONG).show()
+                    }
+                }
+            } else {
+                Toast.makeText(this, R.string.editor_shape_import_failed, Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -1171,11 +1221,12 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                 text = getString(labelRes)
                 isCheckable = true
                 id = index
-                isChecked = bt == annotationOverlayView.activeBrushType && annotationOverlayView.activeCustomBrushTexture == null
+                isChecked = bt == annotationOverlayView.activeBrushType && annotationOverlayView.activeCustomBrush == null
             }
             chip.setOnClickListener {
                 annotationOverlayView.activeBrushType = bt
-                annotationOverlayView.activeCustomBrushTexture = null
+                annotationOverlayView.activeCustomBrush = null
+                annotationOverlayView.activeCustomBrushTipBitmap = null
                 isDoodleConfirmed = true
                 showMarkupToolOptions(MarkupTool.DOODLE)
             }
@@ -1183,25 +1234,42 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         }
         markupOptionsContent.addView(typeGroup)
 
-        val customBrushes = CustomEditorAssetManager.getCustomBrushes(this)
+        val customBrushes = CustomEditorAssetManager.getCustomBrushesList(this)
         if (customBrushes.isNotEmpty()) {
             val cGroup = ChipGroup(this).apply {
                 isSingleSelection = true
                 isSingleLine = true
             }
-            customBrushes.forEach { asset ->
+            customBrushes.forEach { brush ->
                 val chip = Chip(this).apply {
-                    text = asset.name
+                    text = brush.name
                     isCheckable = true
+                    isChecked = annotationOverlayView.activeCustomBrush?.id == brush.id
                 }
                 chip.setOnClickListener {
-                    val bmp = asset.loadBitmap()
-                    if (bmp != null) {
-                        annotationOverlayView.activeBrushType = BrushType.CUSTOM_TEXTURE
-                        annotationOverlayView.activeCustomBrushTexture = bmp
-                        isDoodleConfirmed = true
-                        showMarkupToolOptions(MarkupTool.DOODLE)
-                    }
+                    annotationOverlayView.activeBrushType = BrushType.CUSTOM_TEXTURE
+                    annotationOverlayView.activeCustomBrush = brush
+                    annotationOverlayView.activeCustomBrushTipBitmap = brush.loadTipBitmap()
+                    annotationOverlayView.activeStrokeWidth = brush.sizeDp * density
+                    isDoodleConfirmed = true
+                    showMarkupToolOptions(MarkupTool.DOODLE)
+                }
+                chip.setOnLongClickListener {
+                    MaterialAlertDialogBuilder(this@ImageEditorActivity)
+                        .setTitle(R.string.editor_brush_delete_title)
+                        .setMessage(R.string.editor_brush_delete_message)
+                        .setPositiveButton(R.string.delete) { _, _ ->
+                            CustomEditorAssetManager.deleteCustomBrush(this@ImageEditorActivity, brush.id)
+                            if (annotationOverlayView.activeCustomBrush?.id == brush.id) {
+                                annotationOverlayView.activeCustomBrush = null
+                                annotationOverlayView.activeCustomBrushTipBitmap = null
+                                annotationOverlayView.activeBrushType = BrushType.NORMAL
+                            }
+                            showMarkupToolOptions(MarkupTool.DOODLE)
+                        }
+                        .setNegativeButton(R.string.cancel, null)
+                        .show()
+                    true
                 }
                 cGroup.addView(chip)
             }
@@ -1229,12 +1297,17 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
 
     private fun addConfirmedDoodleControls() {
         val density = resources.displayMetrics.density
-        val brushLabel = when (annotationOverlayView.activeBrushType) {
-            BrushType.NORMAL -> getString(R.string.editor_brush_normal)
-            BrushType.HIGHLIGHTER -> getString(R.string.editor_brush_highlighter)
-            BrushType.NEON -> getString(R.string.editor_brush_neon)
-            BrushType.DASHED -> getString(R.string.editor_brush_dashed)
-            BrushType.CUSTOM_TEXTURE -> getString(R.string.editor_brush_custom_texture)
+        val customBrush = annotationOverlayView.activeCustomBrush
+        val brushLabel = if (customBrush != null) {
+            customBrush.name
+        } else {
+            when (annotationOverlayView.activeBrushType) {
+                BrushType.NORMAL -> getString(R.string.editor_brush_normal)
+                BrushType.HIGHLIGHTER -> getString(R.string.editor_brush_highlighter)
+                BrushType.NEON -> getString(R.string.editor_brush_neon)
+                BrushType.DASHED -> getString(R.string.editor_brush_dashed)
+                BrushType.CUSTOM_TEXTURE -> getString(R.string.editor_brush_custom_texture)
+            }
         }
 
         val backBtn = TextView(this).apply {
@@ -1257,12 +1330,126 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         markupOptionsContent.addView(backBtn, lp)
 
         addStrokeWidthSlider()
-        if (annotationOverlayView.activeBrushType != BrushType.CUSTOM_TEXTURE) {
+
+        if (customBrush != null) {
+            if (customBrush.colorMode == BrushColorMode.ORIGINAL) {
+                val hint = TextView(this).apply {
+                    text = getString(R.string.editor_brush_original_hint)
+                    setTextColor(Color.parseColor("#9AA0A6"))
+                    textSize = 11f
+                    setPadding((8 * density).toInt(), 0, (12 * density).toInt(), 0)
+                }
+                markupOptionsContent.addView(hint)
+            } else {
+                addColorPalette()
+            }
+            addCustomBrushControls(customBrush)
+        } else {
             addColorPalette()
         }
     }
 
+    private fun addCustomBrushControls(brush: CustomBrush) {
+        val density = resources.displayMetrics.density
+
+        // Spacing slider (5%..200%)
+        val spacingContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding((8 * density).toInt(), 0, (8 * density).toInt(), 0)
+        }
+        val spacingLabel = TextView(this).apply {
+            text = "${getString(R.string.editor_brush_spacing)}: ${brush.spacingPercent}%"
+            setTextColor(Color.WHITE)
+            textSize = 12f
+            minWidth = (80 * density).toInt()
+        }
+        val spacingSlider = Slider(this).apply {
+            layoutParams = LinearLayout.LayoutParams((120 * density).toInt(), LinearLayout.LayoutParams.WRAP_CONTENT)
+            valueFrom = 5f
+            valueTo = 200f
+            stepSize = 5f
+            value = brush.spacingPercent.toFloat().coerceIn(5f, 200f)
+            thumbTintList = ColorStateList.valueOf(Color.parseColor("#A8C7FA"))
+            trackActiveTintList = ColorStateList.valueOf(Color.parseColor("#A8C7FA"))
+            trackInactiveTintList = ColorStateList.valueOf(Color.parseColor("#3C4043"))
+            haloTintList = ColorStateList.valueOf(Color.parseColor("#33A8C7FA"))
+            addOnChangeListener { _, value, fromUser ->
+                if (fromUser) {
+                    brush.spacingPercent = value.toInt()
+                    spacingLabel.text = "${getString(R.string.editor_brush_spacing)}: ${brush.spacingPercent}%"
+                    val all = CustomEditorAssetManager.getCustomBrushesList(this@ImageEditorActivity).toMutableList()
+                    val idx = all.indexOfFirst { it.id == brush.id }
+                    if (idx != -1) {
+                        all[idx] = brush
+                        CustomEditorAssetManager.saveCustomBrushesList(this@ImageEditorActivity, all)
+                    }
+                }
+            }
+        }
+        spacingContainer.addView(spacingLabel)
+        spacingContainer.addView(spacingSlider)
+        markupOptionsContent.addView(spacingContainer)
+
+        // Opacity slider (10%..100%)
+        val opacityContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding((8 * density).toInt(), 0, (8 * density).toInt(), 0)
+        }
+        val opacityLabel = TextView(this).apply {
+            text = "${getString(R.string.editor_brush_opacity)}: ${brush.opacity}%"
+            setTextColor(Color.WHITE)
+            textSize = 12f
+            minWidth = (80 * density).toInt()
+        }
+        val opacitySlider = Slider(this).apply {
+            layoutParams = LinearLayout.LayoutParams((120 * density).toInt(), LinearLayout.LayoutParams.WRAP_CONTENT)
+            valueFrom = 10f
+            valueTo = 100f
+            stepSize = 5f
+            value = brush.opacity.toFloat().coerceIn(10f, 100f)
+            thumbTintList = ColorStateList.valueOf(Color.parseColor("#A8C7FA"))
+            trackActiveTintList = ColorStateList.valueOf(Color.parseColor("#A8C7FA"))
+            trackInactiveTintList = ColorStateList.valueOf(Color.parseColor("#3C4043"))
+            haloTintList = ColorStateList.valueOf(Color.parseColor("#33A8C7FA"))
+            addOnChangeListener { _, value, fromUser ->
+                if (fromUser) {
+                    brush.opacity = value.toInt()
+                    opacityLabel.text = "${getString(R.string.editor_brush_opacity)}: ${brush.opacity}%"
+                    val all = CustomEditorAssetManager.getCustomBrushesList(this@ImageEditorActivity).toMutableList()
+                    val idx = all.indexOfFirst { it.id == brush.id }
+                    if (idx != -1) {
+                        all[idx] = brush
+                        CustomEditorAssetManager.saveCustomBrushesList(this@ImageEditorActivity, all)
+                    }
+                }
+            }
+        }
+        opacityContainer.addView(opacityLabel)
+        opacityContainer.addView(opacitySlider)
+        markupOptionsContent.addView(opacityContainer)
+
+        // Follow direction toggle chip
+        val followChip = Chip(this).apply {
+            text = getString(R.string.editor_brush_follow_direction)
+            isCheckable = true
+            isChecked = brush.followDirection
+            setOnCheckedChangeListener { _, isChecked ->
+                brush.followDirection = isChecked
+                val all = CustomEditorAssetManager.getCustomBrushesList(this@ImageEditorActivity).toMutableList()
+                val idx = all.indexOfFirst { it.id == brush.id }
+                if (idx != -1) {
+                    all[idx] = brush
+                    CustomEditorAssetManager.saveCustomBrushesList(this@ImageEditorActivity, all)
+                }
+            }
+        }
+        markupOptionsContent.addView(followChip)
+    }
+
     private fun addShapeTypeSelector() {
+        val density = resources.displayMetrics.density
         val shapeTypes = listOf(
             ShapeType.ARROW to R.string.editor_shape_arrow,
             ShapeType.DOUBLE_ARROW to R.string.editor_shape_double_arrow,
@@ -1284,33 +1471,98 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                 text = getString(labelRes)
                 isCheckable = true
                 id = index
-                isChecked = st == annotationOverlayView.selectedShapeType
+                isChecked = st == annotationOverlayView.selectedShapeType && annotationOverlayView.activeCustomShape == null
             }
             chip.setOnClickListener {
                 annotationOverlayView.selectedShapeType = st
+                annotationOverlayView.activeCustomShape = null
                 isShapeConfirmed = true
                 showMarkupToolOptions(MarkupTool.SHAPES)
             }
             chipGroup.addView(chip)
         }
         markupOptionsContent.addView(chipGroup)
+
+        val customShapes = CustomEditorAssetManager.getCustomShapes(this)
+        if (customShapes.isNotEmpty()) {
+            val sGroup = ChipGroup(this).apply {
+                isSingleSelection = true
+                isSingleLine = true
+            }
+            customShapes.forEach { shape ->
+                val chip = Chip(this).apply {
+                    text = shape.name
+                    isCheckable = true
+                    isChecked = annotationOverlayView.activeCustomShape?.id == shape.id
+                }
+                chip.setOnClickListener {
+                    annotationOverlayView.selectedShapeType = ShapeType.CUSTOM
+                    annotationOverlayView.activeCustomShape = shape
+                    isShapeConfirmed = true
+                    showMarkupToolOptions(MarkupTool.SHAPES)
+                }
+                chip.setOnLongClickListener {
+                    MaterialAlertDialogBuilder(this@ImageEditorActivity)
+                        .setTitle(R.string.editor_shape_delete_title)
+                        .setMessage(R.string.editor_shape_delete_message)
+                        .setPositiveButton(R.string.delete) { _, _ ->
+                            CustomEditorAssetManager.deleteCustomShape(this@ImageEditorActivity, shape.id)
+                            if (annotationOverlayView.activeCustomShape?.id == shape.id) {
+                                annotationOverlayView.activeCustomShape = null
+                                annotationOverlayView.selectedShapeType = ShapeType.ARROW
+                            }
+                            showMarkupToolOptions(MarkupTool.SHAPES)
+                        }
+                        .setNegativeButton(R.string.cancel, null)
+                        .show()
+                    true
+                }
+                sGroup.addView(chip)
+            }
+            markupOptionsContent.addView(sGroup)
+        }
+
+        val importShapeBtn = TextView(this).apply {
+            text = getString(R.string.editor_shape_import)
+            setBackgroundResource(R.drawable.bg_google_photos_pill_selected)
+            setTextColor(Color.parseColor("#A8C7FA"))
+            textSize = 12f
+            setPadding((14 * density).toInt(), (8 * density).toInt(), (14 * density).toInt(), (8 * density).toInt())
+            setOnClickListener {
+                pickCustomShapeLauncher.launch("*/*")
+            }
+        }
+        val lp = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply {
+            marginStart = (8 * density).toInt()
+        }
+        markupOptionsContent.addView(importShapeBtn, lp)
     }
 
     private fun addConfirmedShapeControls() {
-        val currentShapeLabel = when (annotationOverlayView.selectedShapeType) {
-            ShapeType.ARROW -> R.string.editor_shape_arrow
-            ShapeType.DOUBLE_ARROW -> R.string.editor_shape_double_arrow
-            ShapeType.RECTANGLE -> R.string.editor_shape_rect
-            ShapeType.ROUNDED_RECTANGLE -> R.string.editor_shape_round_rect
-            ShapeType.ELLIPSE -> R.string.editor_shape_circle
-            ShapeType.LINE -> R.string.editor_shape_line
-            ShapeType.TRIANGLE -> R.string.editor_shape_triangle
-            ShapeType.STAR -> R.string.editor_shape_star
-            ShapeType.DIAMOND -> R.string.editor_shape_diamond
+        val customShape = annotationOverlayView.activeCustomShape
+        val shapeTitle = if (customShape != null) {
+            customShape.name
+        } else {
+            val currentShapeLabel = when (annotationOverlayView.selectedShapeType) {
+                ShapeType.ARROW -> R.string.editor_shape_arrow
+                ShapeType.DOUBLE_ARROW -> R.string.editor_shape_double_arrow
+                ShapeType.RECTANGLE -> R.string.editor_shape_rect
+                ShapeType.ROUNDED_RECTANGLE -> R.string.editor_shape_round_rect
+                ShapeType.ELLIPSE -> R.string.editor_shape_circle
+                ShapeType.LINE -> R.string.editor_shape_line
+                ShapeType.TRIANGLE -> R.string.editor_shape_triangle
+                ShapeType.STAR -> R.string.editor_shape_star
+                ShapeType.DIAMOND -> R.string.editor_shape_diamond
+                ShapeType.CUSTOM -> R.string.editor_shape_custom
+            }
+            getString(currentShapeLabel)
         }
 
         val shapeBtn = TextView(this).apply {
-            text = "‹ ${getString(currentShapeLabel)}"
+            text = "‹ $shapeTitle"
             setBackgroundResource(R.drawable.bg_google_photos_pill_selected)
             setTextColor(Color.WHITE)
             textSize = 12f
@@ -1741,6 +1993,15 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             addOnChangeListener { _, valDp, _ ->
                 val px = valDp * density
                 annotationOverlayView.activeStrokeWidth = px
+                annotationOverlayView.activeCustomBrush?.let { brush ->
+                    brush.sizeDp = valDp
+                    val all = CustomEditorAssetManager.getCustomBrushesList(this@ImageEditorActivity).toMutableList()
+                    val idx = all.indexOfFirst { it.id == brush.id }
+                    if (idx != -1) {
+                        all[idx] = brush
+                        CustomEditorAssetManager.saveCustomBrushesList(this@ImageEditorActivity, all)
+                    }
+                }
                 annotationOverlayView.activeShape?.let { s ->
                     s.strokeWidth = px
                     annotationOverlayView.invalidate()

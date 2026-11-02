@@ -15,7 +15,7 @@ class AnnotationItemTest {
 
     @Test
     fun testShapeTypeEnum() {
-        assertEquals(9, ShapeType.values().size)
+        assertEquals(10, ShapeType.values().size)
         assertTrue(ShapeType.values().contains(ShapeType.ARROW))
         assertTrue(ShapeType.values().contains(ShapeType.DOUBLE_ARROW))
         assertTrue(ShapeType.values().contains(ShapeType.RECTANGLE))
@@ -25,6 +25,7 @@ class AnnotationItemTest {
         assertTrue(ShapeType.values().contains(ShapeType.TRIANGLE))
         assertTrue(ShapeType.values().contains(ShapeType.STAR))
         assertTrue(ShapeType.values().contains(ShapeType.DIAMOND))
+        assertTrue(ShapeType.values().contains(ShapeType.CUSTOM))
     }
 
     @Test
@@ -146,5 +147,55 @@ class AnnotationItemTest {
         assertEquals(MosaicEffect.BLUR, mosaic.effect)
         assertEquals(16, mosaic.cellSize)
         assertNull(mosaic.path)
+    }
+
+    @Test
+    fun testCustomShapeAnnotation() {
+        val customShape = AnnotationItem.Shape(
+            type = ShapeType.CUSTOM,
+            startX = 10f,
+            startY = 20f,
+            endX = 110f,
+            endY = 120f,
+            color = 0xFF00FF00.toInt(),
+            strokeWidth = 6f,
+            style = ShapeStyle.TRANSLUCENT,
+            customShapeId = "shape_123",
+            customPathData = "M 0 0 L 1 0 L 0.5 1 Z",
+        )
+
+        assertEquals(ShapeType.CUSTOM, customShape.type)
+        assertEquals("shape_123", customShape.customShapeId)
+        assertEquals("M 0 0 L 1 0 L 0.5 1 Z", customShape.customPathData)
+        assertEquals(ShapeStyle.TRANSLUCENT, customShape.style)
+    }
+
+    @Test
+    fun testStampStrokeAnnotation() {
+        val stroke = AnnotationItem.StampStroke(
+            brushId = "brush_abc",
+            brushName = "Star Stamp",
+            colorMode = org.lineageos.glimpse.models.BrushColorMode.TINT,
+            tintColor = 0xFFFF0000.toInt(),
+            sizeDp = 24f,
+            spacingPercent = 30,
+            opacity = 80,
+            followDirection = true,
+        )
+
+        assertEquals("brush_abc", stroke.brushId)
+        assertEquals("Star Stamp", stroke.brushName)
+        assertEquals(org.lineageos.glimpse.models.BrushColorMode.TINT, stroke.colorMode)
+        assertEquals(24f, stroke.sizeDp, 0.01f)
+        assertEquals(30, stroke.spacingPercent)
+        assertEquals(80, stroke.opacity)
+        assertTrue(stroke.followDirection)
+        assertTrue(stroke.points.isEmpty())
+
+        stroke.points.add(org.lineageos.glimpse.models.StampPoint(10f, 20f, 45f))
+        assertEquals(1, stroke.points.size)
+        assertEquals(10f, stroke.points[0].x, 0.01f)
+        assertEquals(20f, stroke.points[0].y, 0.01f)
+        assertEquals(45f, stroke.points[0].angle, 0.01f)
     }
 }
