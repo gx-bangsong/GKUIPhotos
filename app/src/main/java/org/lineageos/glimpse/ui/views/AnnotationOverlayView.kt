@@ -197,7 +197,7 @@ sealed interface AnnotationItem {
                 ShapeType.CUSTOM -> {
                     val pathData = customPathData
                     if (!pathData.isNullOrBlank() && w > 0f && h > 0f) {
-                        val unitPath = getOrCreateCachedPath(pathData)
+                        val unitPath = AnnotationOverlayView.getOrCreateCachedPath(pathData)
                         val m = Matrix()
                         m.setScale(w, h)
                         m.postTranslate(l, t)

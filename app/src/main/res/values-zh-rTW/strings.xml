@@ -168,6 +168,7 @@
     <string name="image_toolbox_id_photo">證件照製作</string>
     <string name="image_toolbox_id_photo_desc">一鍵製作標準寸照、官方證件照、出國簽證與各類考試照</string>
     <string name="cancel">取消</string>
+    <string name="delete">刪除</string>
     <string name="id_photo_all_specs">全部規格</string>
     <string name="id_photo_tab_spec">規格</string>
     <string name="id_photo_tab_background">背景</string>

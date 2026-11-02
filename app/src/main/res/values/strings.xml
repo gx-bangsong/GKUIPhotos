@@ -237,6 +237,7 @@
     <string name="image_toolbox_id_photo">ID Photo</string>
     <string name="image_toolbox_id_photo_desc">Create standard passport, visa, and exam ID photos</string>
     <string name="cancel">Cancel</string>
+    <string name="delete">Delete</string>
     <string name="id_photo_all_specs">All specs</string>
     <string name="id_photo_tab_spec">Specs</string>
     <string name="id_photo_tab_background">Background</string>
