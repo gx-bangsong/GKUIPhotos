@@ -322,11 +322,13 @@
                 android:orientation="vertical"
                 android:visibility="gone">
 
-                <!-- Markup Tools Row (Pen, Shapes, Text, Mosaic) -->
+                <!-- Markup Tools Row (Pen, Shapes, Text, Mosaic, Sticker) -->
                 <LinearLayout
                     android:id="@+id/markupToolsRow"
-                    android:layout_width="wrap_content"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:clipChildren="false"
+                    android:clipToPadding="false"
                     android:gravity="center"
                     android:orientation="horizontal" />
 

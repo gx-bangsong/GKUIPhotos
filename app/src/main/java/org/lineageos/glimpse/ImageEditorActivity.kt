@@ -989,7 +989,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             MarkupTool.SHAPES to (R.string.editor_markup_shapes to R.drawable.ic_crop_ratio),
             MarkupTool.TEXT to (R.string.editor_markup_text to R.drawable.ic_contact_page),
             MarkupTool.MOSAIC to (R.string.editor_markup_mosaic to R.drawable.ic_compress),
-            MarkupTool.STICKER to (R.string.editor_markup_sticker to R.drawable.ic_image),
+            MarkupTool.STICKER to (R.string.editor_markup_sticker to R.drawable.ic_sticker),
         )
 
         tools.forEach { (tool, pair) ->
@@ -999,7 +999,8 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             val itemLayout = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER
-                setPadding((12 * density).toInt(), 0, (12 * density).toInt(), 0)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                setPadding((4 * density).toInt(), 0, (4 * density).toInt(), 0)
                 isClickable = true
                 isFocusable = true
                 setOnClickListener {
@@ -1579,9 +1580,11 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         presets.forEach { symbol ->
             val tv = TextView(this).apply {
                 text = symbol
-                textSize = 22f
+                textSize = 18f
                 gravity = Gravity.CENTER
-                val cardSize = (38 * density).toInt()
+                includeFontPadding = false
+                setPadding(0, 0, 0, 0)
+                val cardSize = (40 * density).toInt()
                 layoutParams = LinearLayout.LayoutParams(cardSize, cardSize).apply {
                     marginEnd = (8 * density).toInt()
                 }
@@ -1677,17 +1680,24 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
 
     private fun createPresetStickerBitmap(symbol: String, color: Int = Color.WHITE): Bitmap {
         val density = resources.displayMetrics.density
-        val size = (72 * density).toInt()
-        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(bmp)
+        val baseSize = (72 * density).toInt()
         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            textSize = 42f * density
+            textSize = 38f * density
             textAlign = Paint.Align.CENTER
             this.color = color
         }
         val fm = paint.fontMetrics
-        val baseline = size / 2f - (fm.descent + fm.ascent) / 2f
-        canvas.drawText(symbol, size / 2f, baseline, paint)
+        val textWidth = paint.measureText(symbol)
+        val textHeight = fm.descent - fm.ascent
+        val pad = 16f * density
+
+        val w = max(baseSize.toFloat(), textWidth + pad).toInt()
+        val h = max(baseSize.toFloat(), textHeight + pad).toInt()
+
+        val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bmp)
+        val baseline = h / 2f - (fm.descent + fm.ascent) / 2f
+        canvas.drawText(symbol, w / 2f, baseline, paint)
         return bmp
     }
 
