@@ -37,6 +37,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.fragment.findNavController
 import androidx.navigation.ui.setupWithNavController
+import androidx.preference.PreferenceManager
 import androidx.recyclerview.selection.SelectionPredicates
 import androidx.recyclerview.selection.SelectionTracker
 import androidx.recyclerview.selection.StorageStrategy
@@ -44,9 +45,11 @@ import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.appbar.AppBarLayout
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.shape.MaterialShapeDrawable
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.lineageos.glimpse.R
 import org.lineageos.glimpse.ViewActivity
 import org.lineageos.glimpse.datasources.MediaError
@@ -57,17 +60,22 @@ import org.lineageos.glimpse.ext.getParcelable
 import org.lineageos.glimpse.ext.getSerializable
 import org.lineageos.glimpse.ext.getViewProperty
 import org.lineageos.glimpse.ext.kill
+import org.lineageos.glimpse.ext.quickSelectDateEnabled
 import org.lineageos.glimpse.models.Album
 import org.lineageos.glimpse.models.AlbumType
 import org.lineageos.glimpse.models.Media
 import org.lineageos.glimpse.models.MediaType
 import org.lineageos.glimpse.models.RequestStatus
+import org.lineageos.glimpse.ui.dialogs.ImageToolboxBottomSheet
+import org.lineageos.glimpse.ui.dialogs.PrivacyPinDialog
 import org.lineageos.glimpse.ui.recyclerview.ThumbnailAdapter
 import org.lineageos.glimpse.ui.recyclerview.ThumbnailItemDetailsLookup
 import org.lineageos.glimpse.ui.recyclerview.ThumbnailLayoutManager
 import org.lineageos.glimpse.utils.MediaDialogsUtils
 import org.lineageos.glimpse.utils.PermissionsChecker
 import org.lineageos.glimpse.utils.PermissionsUtils
+import org.lineageos.glimpse.utils.privacy.LockedVaultRepository
+import org.lineageos.glimpse.utils.privacy.VaultItem
 import org.lineageos.glimpse.viewmodels.AlbumViewModel
 import org.lineageos.glimpse.viewmodels.IntentsViewModel
 import kotlin.reflect.safeCast
@@ -134,6 +142,18 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
                 },
                 menu
             )
+
+            val colorOnSurface = com.google.android.material.color.MaterialColors.getColor(
+                toolbar, com.google.android.material.R.attr.colorOnSurface
+            )
+            for (i in 0 until (menu?.size() ?: 0)) {
+                val menuItem = menu?.getItem(i) ?: continue
+                menuItem.icon?.let { icon ->
+                    val wrapped = androidx.core.graphics.drawable.DrawableCompat.wrap(icon.mutate())
+                    androidx.core.graphics.drawable.DrawableCompat.setTint(wrapped, colorOnSurface)
+                    menuItem.icon = wrapped
+                }
+            }
             return true
         }
 
@@ -169,6 +189,108 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
                     R.id.share -> {
                         requireActivity().startActivity(buildShareIntent(*selection))
 
+                        true
+                    }
+
+                    R.id.toolbox -> {
+                        val imageMedias = selection.filter { it.mediaType == MediaType.IMAGE }
+                        if (imageMedias.isEmpty()) {
+                            Toast.makeText(
+                                requireContext(),
+                                R.string.toolbox_no_images_selected,
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        } else {
+                            ImageToolboxBottomSheet(
+                                requireContext(),
+                                viewLifecycleOwner,
+                                imageMedias,
+                            ) {
+                                selectionTracker?.clearSelection()
+                            }.show()
+                        }
+
+                        true
+                    }
+
+                    R.id.lockMedia -> {
+                        PrivacyPinDialog(requireContext()) {
+                            viewLifecycleOwner.lifecycleScope.launch {
+                                val context = requireContext()
+                                val staged = withContext(Dispatchers.IO) {
+                                    selection.mapNotNull { media ->
+                                        LockedVaultRepository.importToVault(context, media.uri)?.let {
+                                            it to media.uri
+                                        }
+                                    }
+                                }
+
+                                if (staged.isEmpty()) {
+                                    Toast.makeText(
+                                        context,
+                                        R.string.privacy_locked_move_failed,
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                    selectionTracker?.clearSelection()
+                                    return@launch
+                                }
+
+                                val canDirectDelete = withContext(Dispatchers.IO) {
+                                    LockedVaultRepository.canDirectDelete(context, staged.map { it.second })
+                                }
+
+                                if (canDirectDelete) {
+                                    val deletedCount = withContext(Dispatchers.IO) {
+                                        var count = 0
+                                        staged.forEach { (item, uri) ->
+                                            val deleted = runCatching {
+                                                context.contentResolver.delete(uri, null, null) > 0
+                                            }.getOrDefault(false)
+                                            if (deleted) {
+                                                count++
+                                            } else {
+                                                LockedVaultRepository.deleteItem(context, item)
+                                            }
+                                        }
+                                        count
+                                    }
+
+                                    if (deletedCount > 0) {
+                                        Toast.makeText(
+                                            context,
+                                            getString(R.string.privacy_locked_import_success, deletedCount),
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    } else {
+                                        Toast.makeText(
+                                            context,
+                                            R.string.privacy_locked_move_failed,
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                    selectionTracker?.clearSelection()
+                                } else {
+                                    val uris = staged.map { it.second }.toTypedArray()
+                                    runCatching {
+                                        val intentSenderRequest =
+                                            context.contentResolver.createDeleteRequest(*uris)
+                                        pendingLockMoveStaged = staged
+                                        lastProcessedSelection = selection
+                                        lockDeleteForeverContract.launch(intentSenderRequest)
+                                    }.onFailure {
+                                        withContext(Dispatchers.IO) {
+                                            LockedVaultRepository.deleteItems(context, staged.map { it.first })
+                                        }
+                                        Toast.makeText(
+                                            context,
+                                            R.string.privacy_locked_move_failed,
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                        selectionTracker?.clearSelection()
+                                    }
+                                }
+                            }
+                        }.show(forcePrompt = true)
                         true
                     }
 
@@ -209,6 +331,39 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
             )
 
             lastProcessedSelection = null
+            selectionTracker?.clearSelection()
+        }
+
+    private var pendingLockMoveStaged: List<Pair<VaultItem, Uri>>? = null
+
+    private val lockDeleteForeverContract =
+        registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
+            val staged = pendingLockMoveStaged
+            pendingLockMoveStaged = null
+            lastProcessedSelection = null
+
+            if (result.resultCode == Activity.RESULT_OK) {
+                val count = staged?.size ?: 0
+                if (count > 0) {
+                    Toast.makeText(
+                        requireContext(),
+                        getString(R.string.privacy_locked_import_success, count),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            } else {
+                // User denied or dismissed consent dialog: ROLLBACK
+                staged?.let { items ->
+                    viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+                        LockedVaultRepository.deleteItems(requireContext(), items.map { it.first })
+                    }
+                }
+                Toast.makeText(
+                    requireContext(),
+                    R.string.privacy_locked_move_canceled,
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
             selectionTracker?.clearSelection()
         }
 
@@ -364,9 +519,24 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
             ThumbnailItemDetailsLookup(recyclerView),
             StorageStrategy.createParcelableStorage(Media::class.java),
         ).withSelectionPredicate(
-            when (intentsViewModel.allowMultipleSelection.value) {
-                true -> SelectionPredicates.createSelectAnything()
-                false -> SelectionPredicates.createSelectSingleAnything()
+            object : SelectionTracker.SelectionPredicate<Media>() {
+                private val delegate = when (intentsViewModel.allowMultipleSelection.value) {
+                    true -> SelectionPredicates.createSelectAnything<Media>()
+                    false -> SelectionPredicates.createSelectSingleAnything<Media>()
+                }
+
+                override fun canSetStateForKey(key: Media, nextState: Boolean): Boolean {
+                    if (key == ThumbnailAdapter.DATE_HEADER_KEY) return false
+                    return delegate.canSetStateForKey(key, nextState)
+                }
+
+                override fun canSetStateAtPosition(position: Int, nextState: Boolean): Boolean {
+                    val item = thumbnailAdapter.currentList.getOrNull(position)
+                    if (item is AlbumViewModel.AlbumContent.DateHeader) return false
+                    return delegate.canSetStateAtPosition(position, nextState)
+                }
+
+                override fun canSelectMultiple(): Boolean = delegate.canSelectMultiple()
             }
         ).build().also {
             thumbnailAdapter.selectionTracker = it
@@ -380,6 +550,12 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
                 }
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        thumbnailAdapter.isQuickSelectEnabled =
+            PreferenceManager.getDefaultSharedPreferences(requireContext()).quickSelectDateEnabled
     }
 
     override fun onDestroyView() {

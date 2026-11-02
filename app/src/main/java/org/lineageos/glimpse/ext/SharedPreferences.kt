@@ -69,6 +69,18 @@ var SharedPreferences.edgeTapNavigationEnabled: Boolean
         putBoolean(EDGE_TAP_NAVIGATION_ENABLED_KEY, value)
     }
 
+// Quick select photos by date
+private const val QUICK_SELECT_DATE_ENABLED_KEY = "quick_select_date_enabled"
+private const val QUICK_SELECT_DATE_ENABLED_DEFAULT = true
+var SharedPreferences.quickSelectDateEnabled: Boolean
+    get() = getBoolean(
+        QUICK_SELECT_DATE_ENABLED_KEY,
+        QUICK_SELECT_DATE_ENABLED_DEFAULT
+    )
+    set(value) = edit {
+        putBoolean(QUICK_SELECT_DATE_ENABLED_KEY, value)
+    }
+
 // Remember last playback position for videos
 private const val REMEMBER_VIDEO_PLAYBACK_POSITION_ENABLED_KEY =
     "remember_video_playback_position_enabled"

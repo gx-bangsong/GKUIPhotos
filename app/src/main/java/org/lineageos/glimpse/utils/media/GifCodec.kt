@@ -63,7 +63,7 @@ object GifCodec {
         // Logical Screen Descriptor
         val width = u16(src, p).also { p += 2 }
         val height = u16(src, p).also { p += 2 }
-        val packed = src[p].toInt() and 0xFF
+        val packed = src[p++].toInt() and 0xFF
         val gctFlag = (packed and 0x80) != 0
         val gctSize = 2 shl (packed and 0x07)
         p += 2 // background color index + pixel aspect ratio
@@ -359,10 +359,9 @@ object GifCodec {
         val indexMap = HashMap<Int, Int>(palette.colors.size)
         palette.colors.forEachIndexed { i, c -> indexMap[c] = i }
 
-        // Per-pixel nearest-color cache (shared across frames). Video frames share
-        // most of their colors, so this turns O(pixels*256) into ~O(unique colors).
-        val pixelToIndex = HashMap<Int, Int>(indexMap.size * 2)
-        pixelToIndex.putAll(indexMap)
+        // Fast 15-bit RGB color cache (32x32x32 = 32768 bins, 64KB array) to avoid
+        // repeated Euclidean distance scans and HashMap boxing overhead.
+        val colorCache = ShortArray(32768) { -1 }
 
         val header = byteArrayOf('G'.code.toByte(), 'I'.code.toByte(), 'F'.code.toByte(),
             '8'.code.toByte(), '9'.code.toByte(), 'a'.code.toByte())
@@ -413,9 +412,16 @@ object GifCodec {
             out.write(minCodeSize)
             val indexed = ByteArray(frame.pixels.size) { i ->
                 val px = frame.pixels[i]
-                pixelToIndex.getOrPut(px) {
-                    indexMap[px] ?: nearestColor(palette.colors, px)
-                }.toByte()
+                val r5 = (Color.red(px) shr 3) and 0x1F
+                val g5 = (Color.green(px) shr 3) and 0x1F
+                val b5 = (Color.blue(px) shr 3) and 0x1F
+                val c15 = (r5 shl 10) or (g5 shl 5) or b5
+                var idx = colorCache[c15].toInt()
+                if (idx < 0) {
+                    idx = indexMap[px] ?: nearestColor(palette.colors, px)
+                    colorCache[c15] = idx.toShort()
+                }
+                idx.toByte()
             }
             val compressed = lzwEncode(indexed, minCodeSize)
             writeSubBlocks(out, compressed)
@@ -457,14 +463,11 @@ object GifCodec {
         val clearCode = 1 shl minCodeSize
         val endCode = clearCode + 1
         var codeSize = minCodeSize + 1
-        var dict = HashMap<List<Byte>, Int>(4096)
-        // Only the literal color entries belong in the initial dictionary; the
-        // clear/end codes must NOT be present (adding them collided with colors
-        // 0/1 because e.g. 256.toByte() == 0.toByte()).
-        for (i in 0 until clearCode) {
-            dict[listOf(i.toByte())] = i
-        }
-        var nextCode = endCode + 1
+        val maxCode = 4096
+
+        val HSIZE = 5003 // Prime table size > 4096 for open addressing
+        val htab = IntArray(HSIZE) { -1 }
+        val codetab = IntArray(HSIZE)
 
         val out = ByteArrayOutputStream()
         var bitBuffer = 0
@@ -480,6 +483,11 @@ object GifCodec {
             }
         }
 
+        fun clearTable() {
+            htab.fill(-1)
+            codeSize = minCodeSize + 1
+        }
+
         writeCode(clearCode)
         if (indexed.isEmpty()) {
             writeCode(endCode)
@@ -487,36 +495,47 @@ object GifCodec {
             return out.toByteArray()
         }
 
-        var index = 0
-        var w = listOf(indexed[0])
-        index++
-        while (index < indexed.size) {
-            val k = indexed[index]
-            index++
-            val wk = w + k
-            if (dict.containsKey(wk)) {
-                w = wk
-            } else {
-                writeCode(dict[w]!!)
-                if (nextCode < 4096) {
-                    dict[wk] = nextCode
-                    nextCode++
-                    if (nextCode == (1 shl codeSize) + 1 && codeSize < 12) {
+        var prefix = indexed[0].toInt() and 0xFF
+        var freeCode = endCode + 1
+
+        for (i in 1 until indexed.size) {
+            val suffix = indexed[i].toInt() and 0xFF
+            val key = (prefix shl 8) or suffix
+            var hpos = ((suffix shl 4) xor prefix) % HSIZE
+            if (hpos < 0) hpos += HSIZE
+            var disp = ((suffix shl 4) xor prefix)
+            if (disp == 0) disp = 1
+
+            var found = false
+            while (htab[hpos] != -1) {
+                if (htab[hpos] == key) {
+                    prefix = codetab[hpos]
+                    found = true
+                    break
+                }
+                hpos -= disp
+                if (hpos < 0) hpos += HSIZE
+            }
+
+            if (!found) {
+                writeCode(prefix)
+                if (freeCode < maxCode) {
+                    codetab[hpos] = freeCode
+                    htab[hpos] = key
+                    freeCode++
+                    if (freeCode == (1 shl codeSize) && codeSize < 12) {
                         codeSize++
                     }
                 } else {
                     writeCode(clearCode)
-                    codeSize = minCodeSize + 1
-                    dict = HashMap(4096)
-                    for (i in 0 until clearCode) {
-                        dict[listOf(i.toByte())] = i
-                    }
-                    nextCode = endCode + 1
+                    clearTable()
+                    freeCode = endCode + 1
                 }
-                w = listOf(k)
+                prefix = suffix
             }
         }
-        writeCode(dict[w]!!)
+
+        writeCode(prefix)
         writeCode(endCode)
         if (bitsInBuffer > 0) out.write(bitBuffer and 0xFF)
         return out.toByteArray()

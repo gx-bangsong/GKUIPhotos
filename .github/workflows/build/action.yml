@@ -13,7 +13,7 @@ runs:
 
     - name: Build with Gradle
       shell: bash
-      run: ./gradlew assembleDebug
+      run: ./gradlew testDebugUnitTest assembleDebug
 
     - name: Generate Android.bp
       shell: bash

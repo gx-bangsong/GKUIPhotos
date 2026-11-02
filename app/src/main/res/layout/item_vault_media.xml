@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+     SPDX-FileCopyrightText: The LineageOS Project
+     SPDX-License-Identifier: Apache-2.0
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="120dp"
+    android:layout_margin="1dp"
+    android:foreground="?attr/selectableItemBackground">
+
+    <ImageView
+        android:id="@+id/thumbnailImage"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:contentDescription="@string/privacy_locked_album"
+        android:scaleType="centerCrop" />
+
+    <ImageView
+        android:id="@+id/videoBadge"
+        android:layout_width="24dp"
+        android:layout_height="24dp"
+        android:layout_gravity="bottom|start"
+        android:layout_margin="6dp"
+        android:contentDescription="@string/album_videos"
+        android:src="@drawable/ic_play_circle_outline"
+        android:visibility="gone"
+        app:tint="@android:color/white" />
+
+    <ImageView
+        android:id="@+id/checkIndicator"
+        android:layout_width="28dp"
+        android:layout_height="28dp"
+        android:layout_gravity="top|end"
+        android:layout_margin="6dp"
+        android:contentDescription="@string/quick_select_date"
+        android:src="@drawable/ic_check_circle"
+        android:visibility="gone"
+        app:tint="?attr/colorPrimary" />
+
+</FrameLayout>
