@@ -12,5 +12,6 @@ local.properties
 # Keystores and release distribution artifacts
 *.jks
 *.keystore
+*.b64
 dist/
 

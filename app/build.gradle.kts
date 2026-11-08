@@ -4,40 +4,40 @@
  */
 
 import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import java.util.TimeZone
+import java.time.LocalDate
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.lineageos.generatebp)
 }
 
-fun getGitVersionCode(): Int {
-    return try {
-        val process = ProcessBuilder("git", "rev-list", "--count", "HEAD").start()
-        val output = process.inputStream.bufferedReader().readText().trim()
-        val exitCode = process.waitFor()
-        if (exitCode == 0 && output.isNotEmpty()) {
-            output.toInt()
-        } else {
-            1
-        }
-    } catch (e: Exception) {
-        1
-    }
+val isCi = System.getenv("CI")?.equals("true", ignoreCase = true) == true
+val gitCommitCount = try {
+    val process = ProcessBuilder("git", "rev-list", "--count", "HEAD")
+        .directory(rootDir)
+        .redirectErrorStream(true)
+        .start()
+    val output = process.inputStream.bufferedReader().use { it.readText() }.trim()
+    if (process.waitFor() == 0) output.toIntOrNull() else null
+} catch (_: Exception) {
+    null
 }
-
-fun getAppVersionName(versionCode: Int): String {
-    val dateFormat = SimpleDateFormat("yyyyMMdd", Locale.US).apply {
-        timeZone = TimeZone.getTimeZone("UTC")
-    }
-    return "${dateFormat.format(Date())}.$versionCode"
+if (isCi && (gitCommitCount == null || gitCommitCount < 1)) {
+    throw GradleException("CI requires a complete Git checkout to derive versionCode")
 }
+val buildVersionCode = gitCommitCount?.takeIf { it > 0 } ?: 1
+val buildVersionName = System.getenv("VERSION_NAME")?.takeIf { it.isNotBlank() }
+    ?: "${LocalDate.now(ZoneOffset.UTC).format(DateTimeFormatter.BASIC_ISO_DATE)}.$buildVersionCode"
 
-val calculatedVersionCode = getGitVersionCode()
-val calculatedVersionName = getAppVersionName(calculatedVersionCode)
+val keystoreFile = System.getenv("KEYSTORE_FILE")?.takeIf { it.isNotBlank() }
+val keystorePassword = System.getenv("KEYSTORE_PASS")?.takeIf { it.isNotBlank() }
+val keyAliasName = System.getenv("KEY_ALIAS")?.takeIf { it.isNotBlank() }
+val keyPasswordValue = System.getenv("KEY_PASS")?.takeIf { it.isNotBlank() }
+val signingValues = listOf(keystoreFile, keystorePassword, keyAliasName, keyPasswordValue)
+val hasCompleteReleaseSigning = signingValues.all { it != null }
+val hasPartialReleaseSigning = signingValues.any { it != null } && !hasCompleteReleaseSigning
 
 android {
     namespace = "org.lineageos.glimpse"
@@ -47,28 +47,27 @@ android {
         applicationId = "org.lineageos.glimpse"
         minSdk = 30
         targetSdk = 36
-        versionCode = calculatedVersionCode
-        versionName = calculatedVersionName
+        versionCode = buildVersionCode
+        versionName = buildVersionName
     }
-
-    val keystoreFile = System.getenv("KEYSTORE_FILE")?.takeIf { it.isNotBlank() }
-    val keystorePassword = System.getenv("KEYSTORE_PASS")?.takeIf { it.isNotBlank() } ?: System.getenv("KEYSTORE_PASSWORD")?.takeIf { it.isNotBlank() }
-    val keyAliasName = System.getenv("KEY_ALIAS")?.takeIf { it.isNotBlank() }
-    val keyPasswordValue = System.getenv("KEY_PASS")?.takeIf { it.isNotBlank() } ?: System.getenv("KEY_PASSWORD")?.takeIf { it.isNotBlank() }
-    val signingValues = listOf(keystoreFile, keystorePassword, keyAliasName, keyPasswordValue)
-    val hasCompleteReleaseSigning = signingValues.all { it != null }
 
     val productionReleaseSigning = if (hasCompleteReleaseSigning) {
         signingConfigs.create("productionRelease") {
             storeFile = file(keystoreFile!!)
             storePassword = keystorePassword
             keyAlias = keyAliasName
-            keyPassword = keyPasswordValue  // 严格注意赋值方向
+            keyPassword = keyPasswordValue
         }
-    } else { null }
+    } else {
+        null
+    }
 
     buildTypes {
-        release {
+        getByName("release") {
+            // A production release never inherits the debug package identity or debug flag.
+            applicationIdSuffix = null
+            versionNameSuffix = null
+            isDebuggable = false
             signingConfig = productionReleaseSigning
 
             // Enables code shrinking, obfuscation, and optimization.
@@ -83,7 +82,7 @@ android {
             )
         }
 
-        debug {
+        getByName("debug") {
             // Append .dev to package name so we won't conflict with AOSP build.
             applicationIdSuffix = ".dev"
         }
@@ -102,6 +101,36 @@ android {
         unitTests {
             isReturnDefaultValues = false
         }
+    }
+}
+
+// Do not break ordinary CI/debug builds that do not need release credentials. As soon as a
+// release task enters the graph, however, CI requires all production secrets. Local release
+// builds without them remain unsigned (never debug-signed) and emit a prominent warning.
+gradle.taskGraph.whenReady {
+    val releaseRequested = allTasks.any { task ->
+        task.name.contains("release", ignoreCase = true)
+    }
+    if (!releaseRequested) {
+        return@whenReady
+    }
+    if (hasPartialReleaseSigning) {
+        val message = "Release signing is incomplete; set KEYSTORE_FILE, KEYSTORE_PASS, " +
+                "KEY_ALIAS, and KEY_PASS together"
+        if (isCi) {
+            throw GradleException(message)
+        }
+        logger.warn("WARNING: $message. The local release APK will be unsigned.")
+    } else if (!hasCompleteReleaseSigning) {
+        if (isCi) {
+            throw GradleException("CI release builds require production signing credentials")
+        }
+        logger.warn(
+            "WARNING: Production signing credentials are missing; " +
+                    "the local release APK will be unsigned (never debug-signed)."
+        )
+    } else if (!file(keystoreFile!!).isFile) {
+        throw GradleException("KEYSTORE_FILE does not exist or is not a file: $keystoreFile")
     }
 }
 
