@@ -17,6 +17,13 @@
             app:summary="@string/edge_tap_navigation_enabled_description"
             app:title="@string/edge_tap_navigation_enable_title" />
 
+        <SwitchPreferenceCompat
+            app:defaultValue="true"
+            app:iconSpaceReserved="false"
+            app:key="quick_select_date_enabled"
+            app:summary="@string/quick_select_date_description"
+            app:title="@string/quick_select_date_title" />
+
     </PreferenceCategory>
 
     <PreferenceCategory

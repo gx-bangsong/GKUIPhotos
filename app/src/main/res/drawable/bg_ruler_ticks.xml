@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+     SPDX-FileCopyrightText: The LineageOS Project
+     SPDX-License-Identifier: Apache-2.0
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="200dp"
+    android:height="12dp"
+    android:viewportWidth="200"
+    android:viewportHeight="12">
+    <!-- Regular tick marks -->
+    <path
+        android:strokeColor="#555555"
+        android:strokeWidth="1.2"
+        android:pathData="M20,3v6 M28,3v6 M36,3v6 M44,3v6 M52,3v6 M60,3v6 M68,3v6 M76,3v6 M84,3v6 M92,3v6 M108,3v6 M116,3v6 M124,3v6 M132,3v6 M140,3v6 M148,3v6 M156,3v6 M164,3v6 M172,3v6 M180,3v6" />
+    <!-- Center highlighted tick mark -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.8"
+        android:pathData="M100,0v12" />
+</vector>

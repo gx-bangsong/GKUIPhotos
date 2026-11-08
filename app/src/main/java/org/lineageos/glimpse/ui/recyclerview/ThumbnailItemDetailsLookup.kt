@@ -16,8 +16,10 @@ class ThumbnailItemDetailsLookup(
 ) : ItemDetailsLookup<Media>() {
     override fun getItemDetails(e: MotionEvent) =
         recyclerView.findChildViewUnder(e.x, e.y)?.let { childView ->
-            recyclerView.getChildViewHolder(childView)?.let { viewHolder ->
-                ThumbnailAdapter.ThumbnailViewHolder::class.safeCast(viewHolder)?.itemDetails
+            when (val viewHolder = recyclerView.getChildViewHolder(childView)) {
+                is ThumbnailAdapter.ThumbnailViewHolder -> viewHolder.itemDetails
+                is ThumbnailAdapter.DateHeaderViewHolder -> viewHolder.itemDetails
+                else -> null
             }
         }
 }

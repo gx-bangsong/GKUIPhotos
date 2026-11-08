@@ -5,6 +5,7 @@
 
 package org.lineageos.glimpse.fragments
 
+import android.content.Intent
 import android.os.Bundle
 import android.view.View
 import android.view.ViewGroup
@@ -14,10 +15,13 @@ import androidx.core.view.updateLayoutParams
 import androidx.core.widget.NestedScrollView
 import androidx.fragment.app.Fragment
 import androidx.navigation.fragment.findNavController
+import org.lineageos.glimpse.IdLicenseActivity
+import org.lineageos.glimpse.LockedAlbumActivity
 import org.lineageos.glimpse.R
 import org.lineageos.glimpse.ext.getViewProperty
 import org.lineageos.glimpse.models.AlbumType
 import org.lineageos.glimpse.models.MediaType
+import org.lineageos.glimpse.ui.dialogs.PrivacyPinDialog
 import org.lineageos.glimpse.ui.views.ListItem
 
 /**
@@ -30,6 +34,8 @@ class LibraryFragment : Fragment(R.layout.fragment_library) {
     private val libraryNestedScrollView by getViewProperty<NestedScrollView>(R.id.libraryNestedScrollView)
     private val trashAlbumListItem by getViewProperty<ListItem>(R.id.trashAlbumListItem)
     private val videosAlbumListItem by getViewProperty<ListItem>(R.id.videosAlbumListItem)
+    private val lockedAlbumListItem by getViewProperty<ListItem>(R.id.lockedAlbumListItem)
+    private val idLicenseListItem by getViewProperty<ListItem>(R.id.idLicenseListItem)
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
@@ -61,6 +67,18 @@ class LibraryFragment : Fragment(R.layout.fragment_library) {
 
         trashAlbumListItem.setOnClickListener {
             openAlbum(AlbumType.TRASH)
+        }
+
+        lockedAlbumListItem.setOnClickListener {
+            PrivacyPinDialog(requireContext()) {
+                startActivity(Intent(requireContext(), LockedAlbumActivity::class.java))
+            }.show(forcePrompt = true)
+        }
+
+        idLicenseListItem.setOnClickListener {
+            PrivacyPinDialog(requireContext()) {
+                startActivity(Intent(requireContext(), IdLicenseActivity::class.java))
+            }.show(forcePrompt = true)
         }
     }
 
