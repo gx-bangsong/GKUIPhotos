@@ -5,11 +5,13 @@ SPDX-License-Identifier: Apache-2.0
 
 # GKUIPhotos (Glimpse)
 
-> ⚠️ **重要版本升级与数据保留说明 (Upgrade & Data Migration Notice)**
+> [!CAUTION]
+> **Switching from a `dev`/`debug` version to a `release` version requires an uninstallation and
+> fresh installation, which will result in data loss.** The packages have different application
+> IDs (`org.lineageos.glimpse.dev` vs. `org.lineageos.glimpse`) and Android cannot treat them as an in-place upgrade.
 >
-> 从此前 GitHub Releases 发布的开发/调试版本（包名带 `.dev` 后缀且为 debug keystore 签名，例如 `org.lineageos.glimpse.dev`）切换至正式 Release 版本（包名 `org.lineageos.glimpse`，正式 Release 签名）时：
-> 受限于 Android 系统的安全机制，**不同签名和不同包名的应用绝对无法直接覆盖更新**。
-> 首次切换至正式 Release 版本前，**必须先备份应用内私密数据（如证件夹与私密相册）并彻底卸载旧版**，随后重新安装 Release 安装包。
+> **从 `dev`/`debug` 版本切换到 `release` 版本需卸载重装，应用内私密数据会丢失。**
+> 包名由 `org.lineageos.glimpse.dev` 变更为 `org.lineageos.glimpse`，系统无法进行原地覆盖更新。
 
 ---
 
@@ -19,60 +21,138 @@ GKUIPhotos 基于 LineageOS 原生开源图库 **Glimpse** 构建，深度增强
 
 ---
 
-## 构建与发布 (Build & Release)
+## 构建与发布 (Build and Release)
 
-### 1. 签名密钥生成与 Base64 编码
+### Package and signature behavior
 
-生成正式 Release 签名密钥库（PKCS12 / JKS）：
+The production Gradle variant has application ID `org.lineageos.glimpse`. The development build
+keeps the existing `org.lineageos.glimpse.dev` ID and Android debug signing, so
+`./gradlew assembleDebug` remains convenient and can coexist with a production installation.
+
+Every production release must use the same long-lived certificate. Releases signed by that fixed
+certificate can upgrade one another without losing app data. Matching the LineageOS built-in
+package name does **not** guarantee an upgrade over a ROM copy: Android also requires the ROM APK
+and downloaded APK to have the same signing certificate.
+
+### 1. Generate and protect the production keystore
+
+Run this once on a trusted offline/admin machine. Choose strong, unique passwords and retain
+multiple encrypted backups; losing this key prevents future in-place upgrades.
 
 ```bash
 keytool -genkeypair -v \
-  -keystore release.jks \
-  -alias glimpse-release \
+  -keystore glimpse-release.jks \
+  -storetype PKCS12 \
+  -alias glimpse \
   -keyalg RSA \
   -keysize 4096 \
-  -validity 10000 \
-  -storetype PKCS12
+  -validity 10000
 ```
 
-将生成的密钥库文件转换为单行 Base64 字符串供 CI 使用：
+Never commit the keystore. `*.jks`, `*.keystore`, and `*.b64` are ignored by Git.
+
+### 2. Configure GitHub Actions secrets
+
+In **Repository settings → Secrets and variables → Actions**, add exactly these four repository
+secrets:
+
+| Secret | Value |
+|---|---|
+| `KEYSTORE_BASE64` | The complete keystore encoded as one base64 line |
+| `KEYSTORE_PASS` | Keystore password |
+| `KEY_ALIAS` | Key alias (for example, `glimpse`) |
+| `KEY_PASS` | Private-key password |
+
+Create the base64 value on GNU/Linux with:
 
 ```bash
-# Linux
-cat release.jks | base64 -w 0
-
-# macOS
-cat release.jks | base64
+base64 -w 0 glimpse-release.jks
 ```
 
-### 2. GitHub Secrets 配置
+On macOS or other systems without `-w`, use:
 
-在 GitHub 仓库 **Settings -> Secrets and variables -> Actions** 中配置以下 4 个加密环境变量：
+```bash
+base64 < glimpse-release.jks | tr -d '\n'
+```
 
-- `KEYSTORE_BASE64`: 上述生成的单行 Base64 密钥库文本；
-- `KEYSTORE_PASS`: 密钥库访问密码；
-- `KEY_ALIAS`: 密钥别名（如 `glimpse-release`）；
-- `KEY_PASS`: 私钥访问密码。
+Follow [`docs/WORKFLOW.md`](docs/WORKFLOW.md) and manually copy its workflow into
+`.github/workflows/release.yml`. The repository owner selected `lineage-23.2`, the current default
+branch, as the release trigger because this repository does not currently have a `main` branch.
 
-### 3. 证书指纹锁定 (`release-signer.sha256`)
+### 3. Pin the expected signing certificate
 
-为防止密钥库被意外替换或 CI 供应链篡改，项目引入了证书指纹强校验机制：
-1. 配置好 Secrets 后首次触发 Release 工作流，`scripts/ci-build.sh` 会从生成的 APK 中提取 Signer #1 证书的 SHA-256 指纹，在工作流日志中打印并退出。
-2. 将该 64 位十六进制指纹字符串写入项目根目录下的 `release-signer.sha256` 文件并提交。
-3. 之后所有 CI 构建在发布前均强制比对该指纹，任何指纹不符的构建将直接阻断退出。
+`release-signer.sha256` is a public certificate fingerprint—not a private key. It prevents a
+changed/replaced Actions keystore from silently publishing an APK under an unexpected identity.
 
-### 4. 版本号单调递增策略 (`versionCode` & `versionName`)
+The pinned production certificate fingerprint is:
+```text
+2eaa964c9eae1ee70e131a6ca5f8f06d7c1c152a037cac33d01f585c758f214a
+```
 
-- **`versionCode`**：采用 `git rev-list --count HEAD`（代码库全量提交总数）作为版本代码。在默认分支（`lineage-23.2`）上，提交数严格单调递增，天然满足 Android 包管理器（PackageManager）版本比对与升级要求。本地无 Git 环境或命令异常时安全回退为 `1`。
-- **`versionName`**：默认格式为 `<yyyyMMdd>.<versionCode>`（例如 `20261028.42`），并支持通过环境变量 `VERSION_NAME` 手动覆盖。
-- **构建防循环保证**：Gradle 构建过程仅在内存中派生版本号，严格禁止向仓库树回写任何文件，避免触发二次 Git 提交导致 CI 死循环。
+On CI builds, `scripts/ci-build.sh` verifies the APK with `apksigner verify --print-certs` and enforces
+that Signer #1 matches `release-signer.sha256` exactly. Changing production keys requires an explicit
+reviewed change to this file and will break in-place upgrades from releases signed by the old key.
 
-### 5. 本地开发与 CI 严格隔离
+### 4. Versioning
 
-- **本地开发**：未配置签名环境变量时，本地执行 `./gradlew assembleDebug` 或 `./gradlew assembleRelease` 会安全回退至使用 Android 默认 debug 密钥签名，并输出警告日志，完全不阻碍本地离线调试。
-- **CI 环境**：当检测到 `CI=true` 且执行 release 变体构建时，若签名环境变量缺失或无效，构建将立即抛出 `GradleException` 强行阻断，坚决杜绝发布未签名或 debug 签名的 release 包。
+The Gradle build derives `versionCode` from:
 
-### 6. 权限规范与真机实测说明
+```bash
+git rev-list --count HEAD
+```
+
+The release workflow checks out full history (`fetch-depth: 0`). On the non-rebased release branch,
+the commit count increases monotonically without writing version files or commits back to the
+repository. If Git is unavailable in a local checkout, the fallback is `1`; CI fails instead of
+using that fallback.
+
+By default, `versionName` is `<UTC date yyyyMMdd>.<versionCode>`, for example
+`20261102.1234`. Set the `VERSION_NAME` environment variable to override it for a deliberate
+manual build. The build never edits tracked source files, preventing release-trigger loops.
+
+### 5. Local builds
+
+Development is unchanged:
+
+```bash
+./gradlew assembleDebug
+```
+
+A local release build with no signing variables emits a warning and creates an **unsigned** APK;
+it never falls back to the debug certificate:
+
+```bash
+./gradlew assembleRelease
+```
+
+To produce a locally signed release, export all four Gradle signing inputs:
+
+```bash
+export KEYSTORE_FILE="$PWD/glimpse-release.jks"
+export KEYSTORE_PASS='...'
+export KEY_ALIAS='glimpse'
+export KEY_PASS='...'
+./gradlew assembleRelease
+```
+
+`scripts/ci-build.sh` is stricter than direct local Gradle use: it requires the four GitHub-style
+secret values, validates package/debuggable/signature/version metadata, compares the prior
+release's `build-info.json`, and writes only ignored deliverables under `dist/`.
+
+### Published files
+
+A successful automated release contains:
+
+- `Glimpse-<versionName>.apk`
+- `Glimpse-<versionName>.apk.sha256`
+- `build-info.json`
+
+`build-info.json` records `applicationId`, `versionCode`, `versionName`, signer and APK SHA-256
+hashes, the exact commit, and its source-code URL for GKUI-Pack and independent verification.
+
+---
+
+### 6. 权限规范与真机实测说明 (Permissions Notice)
 
 关于 `android.permission.MANAGE_MEDIA` 权限的实际运行机制说明如下：
 - **保护级别实测**：在真实 Android 设备上执行 `pm list permissions -f`，该权限的保护级别为 **`signature|appop|preinstalled`**。
