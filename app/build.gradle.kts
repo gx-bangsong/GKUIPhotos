@@ -47,6 +47,7 @@ android {
         applicationId = "org.lineageos.glimpse"
         minSdk = 30
         targetSdk = 36
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         versionCode = buildVersionCode
         versionName = buildVersionName
     }
@@ -162,6 +163,9 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.zoomimage.view.glide)
 
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")
     testImplementation("junit:junit:4.13.2")
 }
 
