@@ -10,13 +10,14 @@ collect() {
   adb shell settings get system font_scale > ui-evidence/font-scale.txt || true
   adb shell cmd uimode night > ui-evidence/night-mode.txt || true
   local pull_status=0
-  adb pull /sdcard/Android/data/org.lineageos.glimpse.dev/files/ui-screenshots/. ui-evidence/ || pull_status=$?
+  adb pull /sdcard/Download/GlimpseUiTest/. ui-evidence/ || pull_status=$?
   if [[ -d app/build/outputs/androidTest-results/connected ]]; then
     cp -R app/build/outputs/androidTest-results/connected ui-evidence/test-results
   fi
   return "$pull_status"
 }
 trap 'collect || true' EXIT
+adb shell rm -rf /sdcard/Download/GlimpseUiTest
 adb shell wm size 720x1520
 adb shell settings put system font_scale 1.3
 adb shell settings put global window_animation_scale 0

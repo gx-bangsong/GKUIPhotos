@@ -119,6 +119,14 @@ class UiScreenshotTest {
         device.waitForIdle()
         assertTrue("Screenshot failed: $name", device.takeScreenshot(File(output, "$name.png")))
         device.dumpWindowHierarchy(File(output, "$name.xml"))
+        // Gradle may uninstall the test app before the runner can pull its private files.
+        // Copy each completed pair to emulator shell storage while the app is still installed.
+        val result = device.executeShellCommand(
+            "mkdir -p /sdcard/Download/GlimpseUiTest && " +
+                "cp '${output.absolutePath}/$name.png' /sdcard/Download/GlimpseUiTest/ && " +
+                "cp '${output.absolutePath}/$name.xml' /sdcard/Download/GlimpseUiTest/ && echo EVIDENCE_OK"
+        )
+        assertTrue("Unable to copy screenshot evidence: $name", result.trim().endsWith("EVIDENCE_OK"))
     }
 
     @Test fun markupIdle() { editor(); capture("markup-idle") }
