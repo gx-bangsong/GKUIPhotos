@@ -20,39 +20,39 @@
         <item quantity="other">%d itens</item>
     </plurals>
     <plurals name="delete_file_forever_confirm_message">
-        <item quantity="one">Tem certeza de que quer apagar esse arquivo permanentemente?</item>
+        <item quantity="one">Tem certeza de que quer apagar %d arquivo permanentemente?</item>
         <item quantity="other">Tem certeza de que quer apagar %d arquivos permanentemente?</item>
     </plurals>
     <plurals name="delete_file_forever_successful">
-        <item quantity="one">Arquivo excluído permanentemente</item>
+        <item quantity="one">%d arquivo excluído permanentemente</item>
         <item quantity="other">%d arquivos excluídos permanentemente</item>
     </plurals>
     <plurals name="delete_file_forever_unsuccessful">
-        <item quantity="one">O arquivo não pôde ser apagado permanentemente</item>
+        <item quantity="one">%d arquivo não pôde ser apagado permanentemente</item>
         <item quantity="other">%d arquivos não puderam ser apagados permanentemente</item>
     </plurals>
     <plurals name="move_file_to_trash_confirm_message">
-        <item quantity="one">Tem certeza de que deseja mover um arquivo para a Lixeira?</item>
+        <item quantity="one">Tem certeza de que deseja mover %d arquivo para a Lixeira?</item>
         <item quantity="other">Tem certeza de que deseja mover %d arquivos para a Lixeira?</item>
     </plurals>
     <plurals name="move_file_to_trash_successful">
-        <item quantity="one">Arquivo movido para a Lixeira</item>
+        <item quantity="one">%d arquivo movido para a Lixeira</item>
         <item quantity="other">%d arquivos movidos para a Lixeira</item>
     </plurals>
     <plurals name="move_file_to_trash_unsuccessful">
-        <item quantity="one">O arquivo não pôde ser movido para a Lixeira</item>
+        <item quantity="one">%d arquivo não pôde ser movido para a Lixeira</item>
         <item quantity="other">%d arquivos não puderam ser movidos para a Lixeira</item>
     </plurals>
     <plurals name="restore_file_from_trash_confirm_message">
-        <item quantity="one">Tem certeza de que deseja restaurar um arquivo da Lixeira?</item>
+        <item quantity="one">Tem certeza de que deseja restaurar %d arquivo da Lixeira?</item>
         <item quantity="other">Tem certeza de que deseja restaurar %d arquivos da Lixeira?</item>
     </plurals>
     <plurals name="restore_file_from_trash_successful">
-        <item quantity="one">Arquivo restaurado da Lixeira</item>
+        <item quantity="one">%d arquivo restaurado da Lixeira</item>
         <item quantity="other">%d arquivos restaurados da Lixeira</item>
     </plurals>
     <plurals name="restore_file_from_trash_unsuccessful">
-        <item quantity="one">Arquivo não pôde ser restaurado da Lixeira</item>
+        <item quantity="one">%d arquivo não pôde ser restaurado da Lixeira</item>
         <item quantity="other">%d arquivos não puderam ser restaurados da Lixeira</item>
     </plurals>
     <string name="manage_media_permission_title">Gerenciar permissões de mídia</string>

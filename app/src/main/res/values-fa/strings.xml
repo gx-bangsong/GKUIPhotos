@@ -20,39 +20,39 @@
         <item quantity="other">%d مورد</item>
     </plurals>
     <plurals name="delete_file_forever_confirm_message">
-        <item quantity="one">آیا مطمئنید که می‌خواهید این فایل را برای همیشه حذف کنید؟</item>
+        <item quantity="one">آیا مطمئنید که می‌خواهید %d فایل را برای همیشه حذف کنید؟</item>
         <item quantity="other">آیا مطمئنید که می‌خواهید %d فایل را برای همیشه حذف کنید؟</item>
     </plurals>
     <plurals name="delete_file_forever_successful">
-        <item quantity="one">فایل کامل حذف شد</item>
+        <item quantity="one">%d فایل کامل حذف شد</item>
         <item quantity="other">%d فایل کامل حذف شد</item>
     </plurals>
     <plurals name="delete_file_forever_unsuccessful">
-        <item quantity="one">فایل را نمی توان برای همیشه حذف کرد</item>
+        <item quantity="one">%d فایل را نمی توان برای همیشه حذف کرد</item>
         <item quantity="other">%d فایل را نمی توان برای همیشه حذف کرد</item>
     </plurals>
     <plurals name="move_file_to_trash_confirm_message">
-        <item quantity="one">آیا مطمئنید که می‌خواهید یک فایل را به حذف‌شده‌ها منتقل کنید؟</item>
+        <item quantity="one">آیا مطمئنید که می‌خواهید %d فایل را به حذف‌شده‌ها منتقل کنید؟</item>
         <item quantity="other">آیا مطمئنید که می‌خواهید %d فایل را به حذف‌شده‌ها منتقل کنید؟</item>
     </plurals>
     <plurals name="move_file_to_trash_successful">
-        <item quantity="one">فایل به سطل زباله منتقل شد</item>
+        <item quantity="one">%d فایل به سطل زباله منتقل شد</item>
         <item quantity="other">%d فایل به سطل زباله منتقل شد</item>
     </plurals>
     <plurals name="move_file_to_trash_unsuccessful">
-        <item quantity="one">فایل به سطل زباله منتقل نشد</item>
+        <item quantity="one">%d فایل به سطل زباله منتقل نشد</item>
         <item quantity="other">%d فایل به سطل زباله منتقل نشد</item>
     </plurals>
     <plurals name="restore_file_from_trash_confirm_message">
-        <item quantity="one">آیا مطمئنید که می‌خواهید یک فایل را از سطل زباله بازیابی کنید؟</item>
+        <item quantity="one">آیا مطمئنید که می‌خواهید %d فایل را از سطل زباله بازیابی کنید؟</item>
         <item quantity="other">آیا مطمئنید که می‌خواهید %d فایل را از سطل زباله بازیابی کنید؟</item>
     </plurals>
     <plurals name="restore_file_from_trash_successful">
-        <item quantity="one">فایل از سطل زباله بازیابی شد</item>
+        <item quantity="one">%d فایل از سطل زباله بازیابی شد</item>
         <item quantity="other">%d فایل از سطل زباله بازیابی شد</item>
     </plurals>
     <plurals name="restore_file_from_trash_unsuccessful">
-        <item quantity="one">فایل از سطل زباله بازیابی نشد</item>
+        <item quantity="one">%d فایل از سطل زباله بازیابی نشد</item>
         <item quantity="other">%d فایل از سطل زباله بازیابی نشد</item>
     </plurals>
     <string name="manage_media_permission_title">مدیریت مجوز رسانه</string>
