@@ -17,6 +17,9 @@ import android.net.Uri
 import android.os.Environment
 import android.provider.MediaStore
 import android.view.View
+import android.view.MotionEvent
+import android.view.ViewConfiguration
+import android.os.SystemClock
 import android.widget.ScrollView
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.slider.Slider
@@ -261,9 +264,25 @@ class UiScreenshotTest {
             val a = IntArray(2); val b = IntArray(2)
             first.getLocationOnScreen(a); second.getLocationOnScreen(b)
             positions[0] = a[0] + first.width / 2; positions[1] = a[1] + first.height / 2
-            positions[2] = b[0] + second.width / 2; positions[3] = b[1] + second.height / 2
+            positions[2] = b[0] + second.width * 3 / 4; positions[3] = b[1] + second.height / 2
         }
-        assertTrue("Drag gesture failed", device.drag(positions[0], positions[1], positions[2], positions[3], 40))
+        // Inject an explicit long press: a swipe-like drag may not wait for the
+        // ItemTouchHelper long-press timeout on every UiAutomator version.
+        val down = SystemClock.uptimeMillis()
+        fun touch(action: Int, x: Float, y: Float) {
+            val event = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, x, y, 0)
+            try { assertTrue("Touch injection failed", instrumentation.uiAutomation.injectInputEvent(event, true)) }
+            finally { event.recycle() }
+        }
+        touch(MotionEvent.ACTION_DOWN, positions[0].toFloat(), positions[1].toFloat())
+        Thread.sleep(ViewConfiguration.getLongPressTimeout().toLong() + 500)
+        for (step in 1..40) {
+            val fraction = step / 40f
+            touch(MotionEvent.ACTION_MOVE, positions[0] + (positions[2] - positions[0]) * fraction,
+                positions[1] + (positions[3] - positions[1]) * fraction)
+            Thread.sleep(10)
+        }
+        touch(MotionEvent.ACTION_UP, positions[2].toFloat(), positions[3].toFloat())
         device.waitForIdle()
         instrumentation.runOnMainSync {
             assertEquals(listOf(images[1], images[0], images[2]), view.photos.map { it.uri })
@@ -291,7 +310,11 @@ class UiScreenshotTest {
         collage(2)
         val view = activity!!.findViewById<CollageView>(R.id.collagePreview)
         fun deliver(result: Instrumentation.ActivityResult) {
-            val monitor = instrumentation.addMonitor(IntentFilter(Intent.ACTION_OPEN_DOCUMENT), result, true)
+            val filter = IntentFilter(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                addDataType("image/*")
+            }
+            val monitor = instrumentation.addMonitor(filter, result, true)
             instrumentation.runOnMainSync { activity!!.findViewById<View>(id).performClick() }
             instrumentation.waitForIdleSync()
             instrumentation.removeMonitor(monitor)
