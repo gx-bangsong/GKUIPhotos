@@ -159,7 +159,7 @@ class AlbumsAdapter(
             pinButton.setOnClickListener { onPinToggle(album) }
             pinButton.contentDescription = itemView.context.getString(if (pinned) R.string.album_unpin else R.string.album_pin)
             pinButton.imageTintList = android.content.res.ColorStateList.valueOf(
-                MaterialColors.getColor(pinButton, if (pinned) com.google.android.material.R.attr.colorPrimary
+                MaterialColors.getColor(pinButton, if (pinned) androidx.appcompat.R.attr.colorPrimary
                     else com.google.android.material.R.attr.colorOnSurfaceVariant)
             )
             descriptionTextView.text = album.name
