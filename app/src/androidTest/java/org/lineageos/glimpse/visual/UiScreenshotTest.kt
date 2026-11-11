@@ -28,6 +28,7 @@ import org.lineageos.glimpse.ImageEditorActivity
 import org.lineageos.glimpse.R
 import org.lineageos.glimpse.collage.CollageActivity
 import org.lineageos.glimpse.ui.views.CropImageView
+import org.lineageos.glimpse.ui.views.AnnotationOverlayView
 import java.io.File
 
 @RunWith(AndroidJUnit4::class)
@@ -105,6 +106,7 @@ class UiScreenshotTest {
         }
         assertNotNull("Missing tool: $name", obj)
         obj!!.click()
+        assertTrue("Tool was not selected: $name", device.wait(Until.hasObject(By.desc(name).selected(true)), 10000))
         device.waitForIdle()
     }
 
@@ -117,6 +119,8 @@ class UiScreenshotTest {
 
     private fun capture(name: String) {
         device.waitForIdle()
+        // Accessibility idleness can precede the compositor's next frame.
+        Thread.sleep(600)
         assertTrue("Screenshot failed: $name", device.takeScreenshot(File(output, "$name.png")))
         device.dumpWindowHierarchy(File(output, "$name.xml"))
         // App-specific external storage may disappear after instrumentation uninstalls the app.
@@ -159,7 +163,12 @@ class UiScreenshotTest {
         assertNotNull("Text input not opened", input)
         input!!.text = "Sample text"
         device.findObject(By.text("OK"))?.click() ?: error("Text confirmation unavailable")
-        device.waitForIdle(); capture("markup-text-selected")
+        assertTrue("Text dialog did not close", device.wait(Until.gone(By.clazz("android.widget.EditText")), 10000))
+        instrumentation.runOnMainSync {
+            val overlayView = activity?.findViewById<AnnotationOverlayView>(R.id.annotationOverlayView)
+            assertTrue("Text layer was not selected", overlayView?.activeText?.text == "Sample text")
+        }
+        capture("markup-text-selected")
     }
     @Test fun collageTwo() { collage(2); capture("collage-two") }
     @Test fun collageSelected() {
@@ -168,6 +177,8 @@ class UiScreenshotTest {
         assertNotNull("Collage preview missing", preview)
         val r = preview!!.visibleBounds
         device.click(r.right - r.width() / 4, r.centerY())
+        assertTrue("Second collage photo was not selected", device.wait(
+            Until.hasObject(By.textContains("Photo 2 of 2 selected")), 10000))
         capture("collage-selected")
     }
     @Test fun collageSix() { collage(6); capture("collage-six") }
