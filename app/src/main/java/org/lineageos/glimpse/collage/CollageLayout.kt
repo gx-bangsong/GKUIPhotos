@@ -31,3 +31,16 @@ internal fun collageDestination(cell: Cell, imageWidth: Int, imageHeight: Int, z
     val centerY = (cell.top + cell.bottom) / 2f + y.coerceIn(-1f, 1f) * (height - cellHeight) / 2f
     return Cell(centerX - width / 2f, centerY - height / 2f, centerX + width / 2f, centerY + height / 2f)
 }
+
+/** Moves a photo while keeping the same photo selected, even for duplicate URIs. */
+internal fun <T> moveCollageItem(items: MutableList<T>, selected: Int, from: Int, to: Int): Int {
+    require(from in items.indices && to in items.indices && selected in items.indices)
+    if (from == to) return selected
+    items.add(to, items.removeAt(from))
+    return when {
+        selected == from -> to
+        from < selected && selected <= to -> selected - 1
+        to <= selected && selected < from -> selected + 1
+        else -> selected
+    }
+}

@@ -16,6 +16,9 @@ import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
 import android.view.View
+import android.view.ViewGroup
+import android.view.Gravity
+import android.widget.LinearLayout
 import android.widget.Toast
 import android.widget.TextView
 import androidx.activity.addCallback
@@ -26,6 +29,11 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.isVisible
 import androidx.core.view.updatePadding
 import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.RecyclerView
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.ItemTouchHelper
+import com.google.android.material.card.MaterialCardView
+import com.google.android.material.color.MaterialColors
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.google.android.material.slider.Slider
@@ -43,14 +51,14 @@ class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
     private lateinit var progress: LinearProgressIndicator
     private lateinit var zoom: Slider
     private lateinit var save: MaterialButton
-    private lateinit var previous: MaterialButton
-    private lateinit var next: MaterialButton
-    private lateinit var layoutOne: MaterialButton
-    private lateinit var layoutTwo: MaterialButton
-    private lateinit var selectNext: MaterialButton
+    private lateinit var filmstrip: RecyclerView
+    private lateinit var filmstripAdapter: CollageFilmstripAdapter
+    private lateinit var layoutCards: LinearLayout
     private var job: Job? = null
     private var loading = true
     private var syncingZoom = false
+    private var renderedSelected = -1
+    private var renderedCount = -1
     private var uris = arrayListOf<Uri>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -65,28 +73,40 @@ class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
         progress = findViewById(R.id.collageProgress)
         zoom = findViewById(R.id.collageZoom)
         save = findViewById(R.id.collageSave)
-        previous = findViewById(R.id.collagePrevious)
-        next = findViewById(R.id.collageNext)
-        layoutOne = findViewById(R.id.collageLayoutOne)
-        layoutTwo = findViewById(R.id.collageLayoutTwo)
-        selectNext = findViewById(R.id.collageSelectNext)
+        filmstrip = findViewById(R.id.collageFilmstrip)
+        layoutCards = findViewById(R.id.collageLayoutCards)
+        filmstripAdapter = CollageFilmstripAdapter(
+            photos = { preview.photos }, selected = { preview.selected },
+            select = { index ->
+                if (job == null) {
+                    preview.selected = index
+                    preview.invalidate()
+                    updateControls()
+                }
+            },
+            move = { from, to -> movePhoto(from, to) },
+        )
+        filmstrip.layoutManager = LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
+        filmstrip.adapter = filmstripAdapter
+        filmstrip.itemAnimator = null
+        ItemTouchHelper(object : ItemTouchHelper.SimpleCallback(ItemTouchHelper.LEFT or ItemTouchHelper.RIGHT, 0) {
+            override fun onMove(recyclerView: RecyclerView, holder: RecyclerView.ViewHolder, target: RecyclerView.ViewHolder): Boolean {
+                val from = holder.bindingAdapterPosition
+                val to = target.bindingAdapterPosition
+                if (job != null || from == RecyclerView.NO_POSITION || to == RecyclerView.NO_POSITION) return false
+                movePhoto(from, to)
+                return true
+            }
+            override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) = Unit
+            override fun isLongPressDragEnabled() = job == null
+        }).attachToRecyclerView(filmstrip)
         uris = savedInstanceState?.getParcelableArrayList(KEY_URIS)
             ?: intent.getParcelableArrayListExtra(KEY_URIS) ?: arrayListOf()
         if (uris.size !in 2..6) { finish(); return }
         preview.layout = savedInstanceState?.getInt(KEY_LAYOUT, 0) ?: 0
         preview.selected = (savedInstanceState?.getInt(KEY_SELECTED, 0) ?: 0).coerceIn(0, uris.lastIndex)
         preview.onSelectionChanged = { updateControls() }
-        layoutOne.setOnClickListener { preview.layout = 0; preview.invalidate(); updateControls() }
-        layoutTwo.setOnClickListener { preview.layout = 1; preview.invalidate(); updateControls() }
-        selectNext.setOnClickListener {
-            if (preview.photos.isNotEmpty()) {
-                preview.selected = (preview.selected + 1) % preview.photos.size
-                preview.invalidate()
-                updateControls()
-            }
-        }
-        previous.setOnClickListener { move(-1) }
-        next.setOnClickListener { move(1) }
+        buildLayoutCards()
         zoom.addOnChangeListener { _, value, fromUser ->
             if (fromUser && !syncingZoom) {
                 preview.photos.getOrNull(preview.selected)?.zoom = value
@@ -129,29 +149,85 @@ class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
         syncingZoom = true
         zoom.value = photo?.zoom?.coerceIn(1f, 4f) ?: 1f
         syncingZoom = false
-        previous.isEnabled = photo != null && preview.selected > 0 && job == null
-        next.isEnabled = photo != null && preview.selected < preview.photos.lastIndex && job == null
         findViewById<TextView>(R.id.collageHint).text = if (photo == null) {
             getString(R.string.collage_preview_hint)
         } else {
             getString(R.string.collage_selected_photo, preview.selected + 1, preview.photos.size) + "\n" +
                 getString(R.string.collage_preview_hint)
         }
-        layoutOne.isSelected = preview.layout == 0
-        layoutTwo.isSelected = preview.layout == 1
-        layoutOne.strokeWidth = if (preview.layout == 0) (2 * resources.displayMetrics.density).toInt() else 0
-        layoutTwo.strokeWidth = if (preview.layout == 1) (2 * resources.displayMetrics.density).toInt() else 0
+        findViewById<TextView>(R.id.collageZoomLabel).text = if (photo == null) {
+            getString(R.string.collage_zoom)
+        } else {
+            getString(R.string.collage_zoom_selected, preview.selected + 1)
+        }
+        if (renderedSelected != preview.selected || renderedCount != preview.photos.size) {
+            renderedSelected = preview.selected
+            renderedCount = preview.photos.size
+            filmstripAdapter.notifyDataSetChanged()
+            if (photo != null) filmstrip.smoothScrollToPosition(preview.selected)
+        }
+        updateLayoutSelection()
     }
 
-    private fun move(delta: Int) {
-        val from = preview.selected
-        val to = from + delta
-        if (to !in preview.photos.indices) return
-        java.util.Collections.swap(preview.photos, from, to)
-        preview.selected = to
+    private fun buildLayoutCards() {
+        layoutCards.removeAllViews()
+        val density = resources.displayMetrics.density
+        listOf(R.string.collage_layout_one, R.string.collage_layout_two).forEachIndexed { index, label ->
+            val card = MaterialCardView(this).apply {
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginEnd = (8 * density).toInt() }
+                minimumWidth = (96 * density).toInt()
+                minimumHeight = (76 * density).toInt()
+                radius = 12 * density
+                cardElevation = 0f
+                isClickable = true
+                isFocusable = true
+                contentDescription = getString(R.string.collage_layout_description, getString(label), uris.size)
+                setCardBackgroundColor(MaterialColors.getColor(this, com.google.android.material.R.attr.colorSurfaceVariant))
+                setOnClickListener { preview.layout = index; preview.invalidate(); updateControls() }
+            }
+            val content = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+                setPadding((8 * density).toInt(), (4 * density).toInt(), (8 * density).toInt(), (4 * density).toInt())
+            }
+            content.addView(CollageLayoutPreview(this, uris.size, index),
+                LinearLayout.LayoutParams((46 * density).toInt(), (46 * density).toInt()))
+            content.addView(TextView(this).apply {
+                text = getString(label)
+                setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_LabelSmall)
+                gravity = Gravity.CENTER
+                maxLines = 2
+            }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+            card.addView(content)
+            layoutCards.addView(card)
+        }
+        updateLayoutSelection()
+    }
+
+    private fun updateLayoutSelection() {
+        for (index in 0 until layoutCards.childCount) {
+            val card = layoutCards.getChildAt(index) as MaterialCardView
+            card.isSelected = index == preview.layout
+            card.strokeWidth = if (card.isSelected) (2 * resources.displayMetrics.density).toInt() else 0
+            card.strokeColor = MaterialColors.getColor(card, androidx.appcompat.R.attr.colorPrimary)
+        }
+    }
+
+    private fun movePhoto(from: Int, to: Int) {
+        if (job != null || from !in preview.photos.indices || to !in preview.photos.indices || from == to) return
+        preview.selected = moveCollageItem(preview.photos, preview.selected, from, to)
         uris = ArrayList(preview.photos.map { it.uri })
+        filmstripAdapter.notifyItemMoved(from, to)
+        filmstripAdapter.notifyItemRangeChanged(minOf(from, to), kotlin.math.abs(to - from) + 1)
+        renderedSelected = preview.selected
         preview.invalidate()
-        updateControls()
+        findViewById<TextView>(R.id.collageHint).text =
+            getString(R.string.collage_selected_photo, preview.selected + 1, preview.photos.size) + "\n" +
+                getString(R.string.collage_preview_hint)
+        findViewById<TextView>(R.id.collageZoomLabel).text =
+            getString(R.string.collage_zoom_selected, preview.selected + 1)
     }
 
     private fun setBusy(busy: Boolean) {
@@ -159,11 +235,8 @@ class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
         save.isEnabled = !busy
         preview.isEnabled = !busy
         zoom.isEnabled = !busy
-        layoutOne.isEnabled = !busy
-        layoutTwo.isEnabled = !busy
-        selectNext.isEnabled = !busy
-        previous.isEnabled = !busy && preview.selected > 0
-        next.isEnabled = !busy && preview.selected < preview.photos.lastIndex
+        filmstrip.isEnabled = !busy
+        for (i in 0 until layoutCards.childCount) layoutCards.getChildAt(i).isEnabled = !busy
         if (!busy) updateControls()
     }
 

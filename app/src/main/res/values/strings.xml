@@ -548,4 +548,24 @@
     <string name="collage_cancelled">Collage save canceled</string>
     <string name="collage_select_next">Select next photo</string>
     <string name="collage_selected_photo">Photo %1$d of %2$d selected</string>
+    <string name="collage_photos_heading">Photos · touch and hold to reorder</string>
+    <string name="collage_layout_heading">Layout</string>
+    <string name="collage_zoom_selected">Zoom · photo %1$d</string>
+    <string name="collage_photo_description">Photo %1$d of %2$d</string>
+    <string name="collage_layout_description">%1$s, %2$d photos</string>
+    <string name="markup_brush_section">Brush</string>
+    <string name="markup_shape_section">Shape</string>
+    <string name="markup_color_section">Color</string>
+    <string name="markup_effect_section">Effect</string>
+    <string name="markup_sticker_section">Stickers</string>
+    <string name="markup_text_section">Text</string>
+    <string name="markup_text_action">Add or edit text</string>
+    <string name="markup_advanced">Advanced brush settings</string>
+    <string name="markup_style_section">Style</string>
+    <string name="markup_color_red">Red</string>
+    <string name="markup_color_white">White</string>
+    <string name="markup_color_black">Black</string>
+    <string name="markup_color_yellow">Yellow</string>
+    <string name="markup_color_blue">Blue</string>
+    <string name="markup_color_green">Green</string>
 </resources>

@@ -324,10 +324,13 @@
 
                 <!-- Markup Tools Row (Pen, Shapes, Text, Mosaic, Sticker) -->
                 <HorizontalScrollView
+                    android:id="@+id/markupToolsScroll"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:fillViewport="true"
                     android:fadeScrollbars="false"
+                    android:requiresFadingEdge="horizontal"
+                    android:fadingEdgeLength="20dp"
                     android:scrollbars="horizontal">
 
                     <LinearLayout
@@ -340,24 +343,22 @@
                         android:orientation="horizontal" />
                 </HorizontalScrollView>
 
-                <!-- Palette & Tool Options Row -->
-                <HorizontalScrollView
+                <!-- Independently grouped controls; only chip/palette rows scroll horizontally. -->
+                <ScrollView
                     android:id="@+id/markupOptionsScroll"
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
+                    android:layout_height="180dp"
+                    android:fillViewport="false"
                     android:fadeScrollbars="false"
-                    android:scrollbars="horizontal"
+                    android:scrollbars="vertical"
                     android:visibility="gone">
-
                     <LinearLayout
                         android:id="@+id/markupOptionsContent"
-                        android:layout_width="wrap_content"
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:gravity="center_vertical"
-                        android:orientation="horizontal"
-                        android:paddingHorizontal="8dp" />
-                </HorizontalScrollView>
+                        android:orientation="vertical"
+                        android:paddingHorizontal="4dp" />
+                </ScrollView>
             </LinearLayout>
 
             <!-- Strip: 工具 (Tools) -->

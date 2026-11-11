@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Landscape collage editor: preview and scrollable controls side by side.
+     SPDX-License-Identifier: Apache-2.0 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/collageRoot" android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="horizontal" android:background="?attr/colorSurface">
+    <LinearLayout android:layout_width="0dp" android:layout_height="match_parent"
+        android:layout_weight="1" android:orientation="vertical">
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="@string/collage_title" android:textAppearance="?attr/textAppearanceTitleLarge"
+            android:paddingHorizontal="16dp" android:paddingVertical="8dp" />
+        <org.lineageos.glimpse.collage.CollageView android:id="@+id/collagePreview"
+            android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"
+            android:contentDescription="@string/collage_preview_hint" />
+        <TextView android:id="@+id/collageHint" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:paddingHorizontal="16dp"
+            android:text="@string/collage_preview_hint" android:textAppearance="?attr/textAppearanceBodySmall" />
+    </LinearLayout>
+    <LinearLayout android:layout_width="0dp" android:layout_height="match_parent"
+        android:layout_weight="1" android:orientation="vertical">
+        <ScrollView android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"
+            android:fillViewport="false" android:fadeScrollbars="false">
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="vertical">
+                <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:paddingHorizontal="16dp" android:text="@string/collage_photos_heading"
+                    android:textAppearance="?attr/textAppearanceLabelLarge" />
+                <androidx.recyclerview.widget.RecyclerView android:id="@+id/collageFilmstrip"
+                    android:layout_width="match_parent" android:layout_height="72dp"
+                    android:clipToPadding="false" android:paddingHorizontal="12dp"
+                    android:scrollbars="horizontal" android:fadeScrollbars="false" />
+                <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:paddingHorizontal="16dp" android:text="@string/collage_layout_heading"
+                    android:textAppearance="?attr/textAppearanceLabelLarge" />
+                <HorizontalScrollView android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:scrollbars="horizontal" android:fadeScrollbars="false"
+                    android:fadingEdgeLength="20dp" android:requiresFadingEdge="horizontal">
+                    <LinearLayout android:id="@+id/collageLayoutCards" android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" android:orientation="horizontal" android:paddingHorizontal="12dp" />
+                </HorizontalScrollView>
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:gravity="start" android:orientation="vertical" android:paddingHorizontal="16dp">
+                    <TextView android:id="@+id/collageZoomLabel" android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" android:text="@string/collage_zoom" android:labelFor="@id/collageZoom" />
+                    <com.google.android.material.slider.Slider android:id="@+id/collageZoom"
+                        android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:valueFrom="1" android:valueTo="4" android:value="1" />
+                </LinearLayout>
+            </LinearLayout>
+        </ScrollView>
+        <com.google.android.material.progressindicator.LinearProgressIndicator android:id="@+id/collageProgress"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:indeterminate="true" android:visibility="gone" />
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:gravity="end" android:orientation="horizontal" android:paddingHorizontal="12dp">
+            <com.google.android.material.button.MaterialButton android:id="@+id/collageCancel"
+                style="@style/Widget.Material3.Button.TextButton" android:layout_width="wrap_content"
+                android:layout_height="wrap_content" android:text="@string/cancel" />
+            <com.google.android.material.button.MaterialButton android:id="@+id/collageSave"
+                android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/editor_save" />
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

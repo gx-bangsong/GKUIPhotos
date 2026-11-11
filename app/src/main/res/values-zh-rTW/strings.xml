@@ -485,4 +485,24 @@
     <string name="collage_cancelled">已取消儲存拼貼</string>
     <string name="collage_select_next">選取下一張照片</string>
     <string name="collage_selected_photo">已選取第 %1$d 張，共 %2$d 張</string>
+    <string name="collage_photos_heading">照片 · 長按並拖曳換序</string>
+    <string name="collage_layout_heading">版面</string>
+    <string name="collage_zoom_selected">縮放 · 第 %1$d 張</string>
+    <string name="collage_photo_description">第 %1$d 張，共 %2$d 張</string>
+    <string name="collage_layout_description">%1$s，%2$d 張照片</string>
+    <string name="markup_brush_section">筆刷</string>
+    <string name="markup_shape_section">圖形</string>
+    <string name="markup_color_section">顏色</string>
+    <string name="markup_effect_section">效果</string>
+    <string name="markup_sticker_section">貼圖</string>
+    <string name="markup_text_section">文字</string>
+    <string name="markup_text_action">新增或編輯文字</string>
+    <string name="markup_advanced">進階筆刷設定</string>
+    <string name="markup_style_section">樣式</string>
+    <string name="markup_color_red">紅色</string>
+    <string name="markup_color_white">白色</string>
+    <string name="markup_color_black">黑色</string>
+    <string name="markup_color_yellow">黃色</string>
+    <string name="markup_color_blue">藍色</string>
+    <string name="markup_color_green">綠色</string>
 </resources>

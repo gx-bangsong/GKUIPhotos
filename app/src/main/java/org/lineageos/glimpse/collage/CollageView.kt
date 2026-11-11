@@ -7,7 +7,6 @@ package org.lineageos.glimpse.collage
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
-import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
 import android.net.Uri
@@ -15,6 +14,7 @@ import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
+import com.google.android.material.color.MaterialColors
 import kotlin.math.max
 import kotlin.math.min
 
@@ -42,7 +42,12 @@ class CollageView @JvmOverloads constructor(context: Context, attrs: AttributeSe
     private var lastX = 0f
     private var lastY = 0f
     private val border = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE; style = Paint.Style.STROKE; strokeWidth = 3 * resources.displayMetrics.density
+        color = MaterialColors.getColor(this@CollageView, androidx.appcompat.R.attr.colorPrimary)
+        style = Paint.Style.STROKE; strokeWidth = 3 * resources.displayMetrics.density
+    }
+    private val divider = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = MaterialColors.getColor(this@CollageView, com.google.android.material.R.attr.colorSurface)
+        style = Paint.Style.STROKE; strokeWidth = resources.displayMetrics.density
     }
     private val detector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
         override fun onScale(detector: ScaleGestureDetector): Boolean {
@@ -72,6 +77,7 @@ class CollageView @JvmOverloads constructor(context: Context, attrs: AttributeSe
             val photo = photos[i]
             val dest = rect(cell, bounds)
             drawCollagePhoto(canvas, photo.preview, dest, photo.zoom, photo.offsetX, photo.offsetY)
+            canvas.drawRect(dest, divider)
             if (i == selected) {
                 val inset = border.strokeWidth / 2f
                 dest.inset(inset, inset)
