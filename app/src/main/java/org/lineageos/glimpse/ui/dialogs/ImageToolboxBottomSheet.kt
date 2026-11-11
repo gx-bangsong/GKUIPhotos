@@ -57,7 +57,8 @@ class ImageToolboxBottomSheet(
 
     private val isSingleVideo = medias.size == 1 && medias.first().mediaType == MediaType.VIDEO
     private val isMulti = medias.size > 1
-    private val hasImages = medias.any { it.mediaType == MediaType.IMAGE }
+    private val imageUris = selectedImages(medias) { it.mediaType }.map { it.uri }
+    private val hasImages = imageUris.isNotEmpty()
 
     private val titleTextView by lazy { findViewById<TextView>(R.id.toolboxTitleTextView)!! }
     private val compressSection by lazy { findViewById<View>(R.id.compressSection)!! }
@@ -117,7 +118,7 @@ class ImageToolboxBottomSheet(
         val isSingleImage = medias.size == 1 && medias.first().mediaType == MediaType.IMAGE
         compressSection.isVisible = hasImages
         convertSection.isVisible = hasImages
-        editSection.isVisible = hasImages
+        editSection.isVisible = canBatchEdit(imageUris.size)
         idPhotoSection.isVisible = isSingleImage
         videoToGifSection.isVisible = isSingleVideo
 
@@ -464,7 +465,6 @@ class ImageToolboxBottomSheet(
             maxEdge = selectedResolutionMaxEdge,
         )
         val mainHandler = Handler(Looper.getMainLooper())
-        val imageUris = medias.filter { it.mediaType == MediaType.IMAGE }.map { it.uri }
         launchHeavy(progressive = true) { onProgress ->
             ImageToolbox.batchCompress(context, imageUris, options) { current, total ->
                 mainHandler.post { onProgress(current.toFloat() / total.toFloat()) }
@@ -474,7 +474,6 @@ class ImageToolboxBottomSheet(
 
     private fun runConvert() {
         val mainHandler = Handler(Looper.getMainLooper())
-        val imageUris = medias.filter { it.mediaType == MediaType.IMAGE }.map { it.uri }
         val isPdf = convertTarget == ImageTargetFormat.PDF
         launchHeavy(progressive = true) { onProgress ->
             ImageToolbox.batchConvert(context, imageUris, convertTarget) { current, total ->
@@ -484,8 +483,8 @@ class ImageToolboxBottomSheet(
     }
 
     private fun runEdit() {
+        if (!canBatchEdit(imageUris.size)) return
         val mainHandler = Handler(Looper.getMainLooper())
-        val imageUris = medias.filter { it.mediaType == MediaType.IMAGE }.map { it.uri }
         launchHeavy(progressive = true) { onProgress ->
             ImageToolbox.batchEdit(context, imageUris, selectedRotation, selectedFilter) { current, total ->
                 mainHandler.post { onProgress(current.toFloat() / total.toFloat()) }

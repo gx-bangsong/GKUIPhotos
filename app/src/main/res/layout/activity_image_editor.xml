@@ -323,14 +323,22 @@
                 android:visibility="gone">
 
                 <!-- Markup Tools Row (Pen, Shapes, Text, Mosaic, Sticker) -->
-                <LinearLayout
-                    android:id="@+id/markupToolsRow"
+                <HorizontalScrollView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:clipChildren="false"
-                    android:clipToPadding="false"
-                    android:gravity="center"
-                    android:orientation="horizontal" />
+                    android:fillViewport="true"
+                    android:fadeScrollbars="false"
+                    android:scrollbars="horizontal">
+
+                    <LinearLayout
+                        android:id="@+id/markupToolsRow"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:clipChildren="false"
+                        android:clipToPadding="false"
+                        android:gravity="center"
+                        android:orientation="horizontal" />
+                </HorizontalScrollView>
 
                 <!-- Palette & Tool Options Row -->
                 <HorizontalScrollView
@@ -338,7 +346,8 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
-                    android:scrollbars="none"
+                    android:fadeScrollbars="false"
+                    android:scrollbars="horizontal"
                     android:visibility="gone">
 
                     <LinearLayout

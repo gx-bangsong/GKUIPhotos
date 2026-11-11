@@ -516,6 +516,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
 
     var activeTool: MarkupTool = MarkupTool.NONE
         set(value) {
+            if (field == value) return
             commitActiveShape()
             commitActiveText()
             commitActiveSticker()
@@ -840,13 +841,16 @@ class AnnotationOverlayView @JvmOverloads constructor(
         commitActiveText()
         commitActiveSticker()
 
-        val bounds = imageBoundsProvider?.invoke() ?: cropRectProvider?.invoke()
+        activeTool = MarkupTool.STICKER
+        val bounds = cropRectProvider?.invoke()?.takeUnless { it.isEmpty }
+            ?: imageBoundsProvider?.invoke()
         val cx = bounds?.centerX() ?: (width / 2f)
         val cy = bounds?.centerY() ?: (height / 2f)
         val density = resources.displayMetrics.density
-        val targetSize = 130f * density
+        val targetSize = minOf(130f * density, (bounds?.width() ?: width.toFloat()) * 0.7f,
+            (bounds?.height() ?: height.toFloat()) * 0.7f)
         val maxDim = max(bmp.width, bmp.height).toFloat()
-        val initialScale = if (maxDim > 0f) (targetSize / maxDim).coerceIn(0.2f, 3.0f) else 1f
+        val initialScale = if (maxDim > 0f) (targetSize / maxDim).coerceAtMost(3.0f) else 1f
 
         activeSticker = AnnotationItem.Sticker(
             bitmap = bmp,
@@ -854,7 +858,6 @@ class AnnotationOverlayView @JvmOverloads constructor(
             centerY = cy,
             scale = initialScale,
         )
-        activeTool = MarkupTool.STICKER
         onAnnotationChanged?.invoke()
         invalidate()
     }
@@ -863,6 +866,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
         commitActiveShape()
         commitActiveText()
         commitActiveSticker()
+        activeTool = MarkupTool.TEXT
         val item = AnnotationItem.Text(
             text = text,
             centerX = cx,
@@ -871,7 +875,6 @@ class AnnotationOverlayView @JvmOverloads constructor(
             hasBackgroundPill = hasTextBackgroundPill,
         )
         activeText = item
-        activeTool = MarkupTool.TEXT
         onAnnotationChanged?.invoke()
         invalidate()
     }
@@ -1392,6 +1395,21 @@ class AnnotationOverlayView @JvmOverloads constructor(
                             commitActiveText()
                         }
 
+                        // Previously committed items remain editable. Search from the topmost item.
+                        val index = annotations.indexOfLast { item ->
+                            item is AnnotationItem.Text && RectF().also { item.computeBounds(it) }.contains(x, y)
+                        }
+                        if (index >= 0) {
+                            activeText = annotations.removeAt(index) as AnnotationItem.Text
+                            isMovingText = true
+                            textDragStartX = x
+                            textDragStartY = y
+                            lastTapTime = System.currentTimeMillis()
+                            onAnnotationChanged?.invoke()
+                            invalidate()
+                            return true
+                        }
+
                         // Tap empty space: create new text item
                         val now = System.currentTimeMillis()
                         lastTapTime = now
@@ -1522,6 +1540,17 @@ class AnnotationOverlayView @JvmOverloads constructor(
 
                             // Tap outside: commit current sticker
                             commitActiveSticker()
+                        }
+                        val index = annotations.indexOfLast { item ->
+                            item is AnnotationItem.Sticker && RectF().also { item.computeBounds(it) }.contains(x, y)
+                        }
+                        if (index >= 0) {
+                            activeSticker = annotations.removeAt(index) as AnnotationItem.Sticker
+                            isMovingSticker = true
+                            stickerDragStartX = x
+                            stickerDragStartY = y
+                            onAnnotationChanged?.invoke()
+                            invalidate()
                         }
                         return true
                     }

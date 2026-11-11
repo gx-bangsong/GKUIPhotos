@@ -15,7 +15,6 @@ import android.graphics.Typeface
 import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
-import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageButton
@@ -37,7 +36,6 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.button.MaterialButtonToggleGroup
 import com.google.android.material.card.MaterialCardView
@@ -76,8 +74,6 @@ import org.lineageos.glimpse.viewmodels.IdPhotoViewModel
  * - Overlay catalog picker for all 32 presets
  */
 class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
-
-    private val toolbar by lazy { findViewById<MaterialToolbar>(R.id.toolbar) }
 
     private val cropImageView by lazy { findViewById<CropImageView>(R.id.cropImageView) }
     private val specBadgeText by lazy { findViewById<TextView>(R.id.specBadgeText) }
@@ -205,6 +201,7 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
             val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
             val bottomInset = maxOf(navBars.bottom, ime.bottom)
 
+            findViewById<View>(R.id.previewContainer).updatePadding(top = statusBars.top)
             bottomControls.updatePadding(bottom = navBars.bottom + 8)
             catalogPickerOverlay.updatePadding(
                 top = statusBars.top,
@@ -223,11 +220,6 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
         }
 
         viewModel.ensurePreviewBitmapLoaded(contentResolver)
-
-        toolbar.setNavigationOnClickListener {
-            handleBackNavigation()
-        }
-        toolbar.setOnMenuItemClickListener(::onToolbarMenuItemSelected)
 
         onBackPressedDispatcher.addCallback(this) {
             handleBackNavigation()
@@ -516,7 +508,6 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
             getString(preset.nameRes)
         }
         specBadgeText.text = "$nameStr · ${preset.targetWidthPx}×${preset.targetHeightPx} px · ${preset.dpi} DPI (${preset.widthMm}×${preset.heightMm}mm)"
-        toolbar.subtitle = "$nameStr · ${preset.targetWidthPx}×${preset.targetHeightPx} px"
 
         val printCount = IdPhotoPrintSheetComposer.calculatePrintCount(preset)
         if (printCount >= 2) {
@@ -648,14 +639,6 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
         super.onPause()
         val (scale, tx, ty) = cropImageView.getTransformState()
         viewModel.updateTransform(scale, tx, ty)
-    }
-
-    private fun onToolbarMenuItemSelected(item: MenuItem): Boolean {
-        if (item.itemId == R.id.action_save) {
-            onSaveClicked()
-            return true
-        }
-        return false
     }
 
     private fun handleBackNavigation() {

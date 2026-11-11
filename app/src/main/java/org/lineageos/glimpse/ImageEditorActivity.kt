@@ -1035,24 +1035,35 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         val density = resources.displayMetrics.density
 
         val tools = listOf(
-            MarkupTool.DOODLE to (R.string.editor_markup_doodle to R.drawable.ic_edit),
-            MarkupTool.SHAPES to (R.string.editor_markup_shapes to R.drawable.ic_crop_ratio),
-            MarkupTool.TEXT to (R.string.editor_markup_text to R.drawable.ic_contact_page),
-            MarkupTool.MOSAIC to (R.string.editor_markup_mosaic to R.drawable.ic_compress),
-            MarkupTool.STICKER to (R.string.editor_markup_sticker to R.drawable.ic_sticker),
+            MarkupTool.DOODLE to (R.string.editor_markup_doodle to R.drawable.ic_markup_brush),
+            MarkupTool.SHAPES to (R.string.editor_markup_shapes to R.drawable.ic_markup_shapes),
+            MarkupTool.TEXT to (R.string.editor_markup_text to R.drawable.ic_markup_text),
+            MarkupTool.MOSAIC to (R.string.editor_markup_mosaic to R.drawable.ic_markup_mosaic),
+            MarkupTool.STICKER to (R.string.editor_markup_sticker to R.drawable.ic_markup_sticker),
         )
 
         tools.forEach { (tool, pair) ->
             val (labelRes, iconRes) = pair
-            val isSelected = annotationOverlayView.activeTool == tool
+            val selected = annotationOverlayView.activeTool == tool
+            val compact = annotationOverlayView.activeTool != MarkupTool.NONE
 
             val itemLayout = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                setPadding((4 * density).toInt(), 0, (4 * density).toInt(), 0)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+                minimumWidth = (64 * density).toInt()
+                minimumHeight = (48 * density).toInt()
+                setPadding((8 * density).toInt(), 0, (8 * density).toInt(), 0)
                 isClickable = true
                 isFocusable = true
+                isSelected = selected
+                if (compact && selected) setBackgroundResource(R.drawable.bg_google_photos_pill_selected)
+                contentDescription = getString(labelRes)
+                val outValue = android.util.TypedValue()
+                theme.resolveAttribute(android.R.attr.selectableItemBackground, outValue, true)
+                foreground = getDrawable(outValue.resourceId)
                 setOnClickListener {
                     selectMarkupTool(tool)
                 }
@@ -1062,7 +1073,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                 val size = (48 * density).toInt()
                 layoutParams = LinearLayout.LayoutParams(size, size)
                 setBackgroundResource(
-                    if (isSelected) R.drawable.bg_circle_tool_selected else R.drawable.bg_circle_tool
+                    if (selected) R.drawable.bg_circle_tool_selected else R.drawable.bg_circle_tool
                 )
 
                 val iv = ImageView(this@ImageEditorActivity).apply {
@@ -1072,7 +1083,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                     }
                     setImageResource(iconRes)
                     imageTintList = ColorStateList.valueOf(
-                        if (isSelected) Color.parseColor("#001D35") else Color.WHITE
+                        if (selected) Color.parseColor("#001D35") else Color.WHITE
                     )
                 }
                 addView(iv)
@@ -1080,12 +1091,15 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
 
             val label = TextView(this).apply {
                 text = getString(labelRes)
-                textSize = 11f
-                setTextColor(if (isSelected) Color.parseColor("#A8C7FA") else Color.parseColor("#B0B0B0"))
-                setPadding(0, (4 * density).toInt(), 0, 0)
+                setSingleLine(true)
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                textSize = if (compact) 14f else 11f
+                setTypeface(null, if (selected) Typeface.BOLD else Typeface.NORMAL)
+                setTextColor(if (selected) Color.parseColor("#A8C7FA") else Color.WHITE)
+                setPadding(0, if (compact) 0 else (4 * density).toInt(), 0, 0)
             }
 
-            itemLayout.addView(circle)
+            if (!compact) itemLayout.addView(circle)
             itemLayout.addView(label)
             markupToolsRow.addView(itemLayout)
         }
@@ -1652,30 +1666,22 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         markupOptionsContent.addView(catGroup)
 
         if (isNonImage) {
-            val cellSizes = listOf(
-                8 to R.string.editor_mosaic_low,
-                16 to R.string.editor_mosaic_medium,
-                24 to R.string.editor_mosaic_high,
-            )
             val pixGroup = ChipGroup(this).apply {
                 isSingleSelection = true
                 isSingleLine = true
             }
-            cellSizes.forEach { (cs, labelRes) ->
-                val chip = Chip(this).apply {
-                    text = "${getString(R.string.editor_mosaic_pixelate)} (${getString(labelRes)})"
-                    isCheckable = true
-                    isChecked = annotationOverlayView.activeMosaicEffect == MosaicEffect.PIXELATE &&
-                            annotationOverlayView.activeMosaicCellSize == cs
-                }
-                chip.setOnClickListener {
+            val pixelChip = Chip(this).apply {
+                text = getString(R.string.editor_mosaic_pixelate)
+                isCheckable = true
+                isChecked = annotationOverlayView.activeMosaicEffect == MosaicEffect.PIXELATE
+                setOnClickListener {
                     annotationOverlayView.activeMosaicEffect = MosaicEffect.PIXELATE
-                    annotationOverlayView.activeMosaicCellSize = cs
+                    annotationOverlayView.activeMosaicCellSize = 16
                     isMosaicConfirmed = true
                     showMarkupToolOptions(MarkupTool.MOSAIC)
                 }
-                pixGroup.addView(chip)
             }
+            pixGroup.addView(pixelChip)
             val blurChip = Chip(this).apply {
                 text = getString(R.string.editor_mosaic_blur)
                 isCheckable = true
