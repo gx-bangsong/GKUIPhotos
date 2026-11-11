@@ -119,14 +119,31 @@ class UiScreenshotTest {
         device.waitForIdle()
         assertTrue("Screenshot failed: $name", device.takeScreenshot(File(output, "$name.png")))
         device.dumpWindowHierarchy(File(output, "$name.xml"))
-        // Gradle may uninstall the test app before the runner can pull its private files.
-        // Copy each completed pair to emulator shell storage while the app is still installed.
-        val result = device.executeShellCommand(
-            "mkdir -p /sdcard/Download/GlimpseUiTest && " +
-                "cp '${output.absolutePath}/$name.png' /sdcard/Download/GlimpseUiTest/ && " +
-                "cp '${output.absolutePath}/$name.xml' /sdcard/Download/GlimpseUiTest/ && echo EVIDENCE_OK"
-        )
-        assertTrue("Unable to copy screenshot evidence: $name", result.trim().endsWith("EVIDENCE_OK"))
+        // App-specific external storage may disappear after instrumentation uninstalls the app.
+        // Publish the pair via MediaStore while we still own it, so adb can retrieve it later.
+        listOf("png" to "image/png", "xml" to "application/xml").forEach { (extension, mime) ->
+            val source = File(output, "$name.$extension")
+            val values = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, "$name.$extension")
+                put(MediaStore.Downloads.MIME_TYPE, mime)
+                put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/GlimpseUiTest")
+                put(MediaStore.Downloads.IS_PENDING, 1)
+            }
+            val uri = requireNotNull(context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values))
+            try {
+                source.inputStream().use { input ->
+                    requireNotNull(context.contentResolver.openOutputStream(uri, "w")).use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                values.clear()
+                values.put(MediaStore.Downloads.IS_PENDING, 0)
+                check(context.contentResolver.update(uri, values, null, null) == 1)
+            } catch (t: Throwable) {
+                context.contentResolver.delete(uri, null, null)
+                throw t
+            }
+        }
     }
 
     @Test fun markupIdle() { editor(); capture("markup-idle") }
