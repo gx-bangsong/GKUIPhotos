@@ -74,7 +74,9 @@ for name in names:
             reports[key] = {'status': 'missing screenshot, XML or density'}
         else:
             try:
-                reports[key] = {'status': 'analyzed', 'density_dpi': density, **analyze(xml, density)}
+                # The density scenario temporarily switches to 320 dpi, then restores it before collection.
+                item_density = 320 if item == 'markup-density' else density
+                reports[key] = {'status': 'analyzed', 'density_dpi': item_density, **analyze(xml, item_density)}
             except (ET.ParseError, ValueError) as error:
                 reports[key] = {'status': 'invalid XML', 'error': clean(str(error))}
 (out / 'bounds-report.json').write_text(json.dumps(reports, ensure_ascii=False, indent=2))

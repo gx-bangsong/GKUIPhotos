@@ -19,8 +19,8 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.TextView
 import android.view.ViewGroup
-import androidx.appcompat.app.AppCompatDelegate
-import androidx.core.os.LocaleListCompat
+import android.app.LocaleManager
+import android.os.LocaleList
 import android.net.Uri
 import android.os.Environment
 import android.provider.MediaStore
@@ -206,7 +206,21 @@ class UiScreenshotTest {
 
     private fun isCandidate() = InstrumentationRegistry.getArguments().getString("uiVersion") != "baseline"
 
-    /** Check the actual icon ink and rendered text, not just the enclosing tool bounds. */
+    /** Return the actual rendered ink bounds within a view, not its layout bounds. */
+    private fun inkBounds(view: View): Rect {
+        val bitmap = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
+        view.draw(Canvas(bitmap))
+        var minX = bitmap.width; var minY = bitmap.height; var maxX = -1; var maxY = -1
+        for (y in 0 until bitmap.height) for (x in 0 until bitmap.width) {
+            if (Color.alpha(bitmap.getPixel(x, y)) > 32) {
+                minX = minOf(minX, x); minY = minOf(minY, y); maxX = maxOf(maxX, x); maxY = maxOf(maxY, y)
+            }
+        }
+        bitmap.recycle()
+        assertTrue("View has no visible ink", maxX >= minX)
+        return Rect(minX, minY, maxX + 1, maxY + 1)
+    }
+
     private fun assertMarkupAlignment() {
         if (!isCandidate()) return
         val row = activity!!.findViewById<LinearLayout>(R.id.markupToolsRow)
@@ -215,25 +229,13 @@ class UiScreenshotTest {
             assertEquals(5, row.childCount)
             for (index in 0 until 5) {
                 val item = row.getChildAt(index) as LinearLayout
-                val circle = item.getChildAt(0) as FrameLayout
-                val icon = circle.getChildAt(0) as ImageView
+                val icon = (item.getChildAt(0) as FrameLayout).getChildAt(0) as ImageView
                 val label = item.getChildAt(1) as TextView
-                val bitmap = Bitmap.createBitmap(icon.width, icon.height, Bitmap.Config.ARGB_8888)
-                icon.draw(Canvas(bitmap))
-                var minX = bitmap.width; var maxX = -1
-                for (y in 0 until bitmap.height) for (x in 0 until bitmap.width) {
-                    if (Color.alpha(bitmap.getPixel(x, y)) > 32) { minX = minOf(minX, x); maxX = maxOf(maxX, x) }
-                }
-                bitmap.recycle()
-                assertTrue("Tool $index icon has no visible ink", maxX >= minX)
                 val iconPos = IntArray(2); val labelPos = IntArray(2)
                 icon.getLocationOnScreen(iconPos); label.getLocationOnScreen(labelPos)
-                val iconCenter = iconPos[0] + (minX + maxX + 1) / 2f
-                val bounds = Rect()
-                val text = label.text.toString()
-                label.paint.getTextBounds(text, 0, text.length, bounds)
-                val textCenter = labelPos[0] + label.totalPaddingLeft + label.layout.getLineLeft(0) + bounds.exactCenterX()
-                assertTrue("Tool $index icon/text visual centers differ: $iconCenter vs $textCenter",
+                val iconCenter = iconPos[0] + inkBounds(icon).exactCenterX()
+                val textCenter = labelPos[0] + inkBounds(label).exactCenterX()
+                assertTrue("Tool $index icon/text ink centers differ: $iconCenter vs $textCenter",
                     kotlin.math.abs(iconCenter - textCenter) <= 3 * density)
             }
         }
@@ -244,20 +246,15 @@ class UiScreenshotTest {
             instrumentation.runOnMainSync {
                 val selectedItem = row.getChildAt(index) as LinearLayout
                 assertTrue("Tool $index not selected", selectedItem.isSelected)
-                val label = selectedItem.getChildAt(0) as TextView
-                assertTrue("Compact label is not centered", (label.gravity and android.view.Gravity.HORIZONTAL_GRAVITY_MASK) == android.view.Gravity.CENTER_HORIZONTAL)
                 if (width < 0) width = selectedItem.width
                 for (i in 0 until row.childCount) {
                     val item = row.getChildAt(i) as LinearLayout
                     assertEquals("Tool width shifted with selection", width, item.width)
-                    val textView = item.getChildAt(0) as TextView
-                    val textBounds = Rect()
-                    val text = textView.text.toString()
-                    textView.paint.getTextBounds(text, 0, text.length, textBounds)
+                    val label = item.getChildAt(0) as TextView
                     val itemPos = IntArray(2); val labelPos = IntArray(2)
-                    item.getLocationOnScreen(itemPos); textView.getLocationOnScreen(labelPos)
-                    val textCenter = labelPos[0] + textView.totalPaddingLeft + textView.layout.getLineLeft(0) + textBounds.exactCenterX()
-                    assertTrue("Compact tool $i text is visually off-center", kotlin.math.abs(textCenter - (itemPos[0] + item.width / 2f)) <= 3 * density)
+                    item.getLocationOnScreen(itemPos); label.getLocationOnScreen(labelPos)
+                    val textCenter = labelPos[0] + inkBounds(label).exactCenterX()
+                    assertTrue("Compact tool $i ink is off-center", kotlin.math.abs(textCenter - (itemPos[0] + item.width / 2f)) <= 3 * density)
                 }
             }
         }
@@ -266,7 +263,8 @@ class UiScreenshotTest {
     @Test fun markupIdle() { editor(); capture("markup-idle"); assertMarkupAlignment() }
     @Test fun markupIdleChinese() {
         try {
-            instrumentation.runOnMainSync { AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags("zh-CN")) }
+            context.getSystemService(LocaleManager::class.java).applicationLocales = LocaleList.forLanguageTags("zh-CN")
+            device.waitForIdle()
             editor()
             assertEquals("涂鸦", activity!!.getString(R.string.editor_markup_doodle))
             capture("markup-idle-zh")
@@ -274,7 +272,7 @@ class UiScreenshotTest {
         } finally {
             activity?.finish()
             activity = null
-            instrumentation.runOnMainSync { AppCompatDelegate.setApplicationLocales(LocaleListCompat.getEmptyLocaleList()) }
+            context.getSystemService(LocaleManager::class.java).applicationLocales = LocaleList.getEmptyLocaleList()
             device.waitForIdle()
         }
     }
@@ -285,6 +283,7 @@ class UiScreenshotTest {
             device.waitForIdle()
             Thread.sleep(1000)
             editor(); tool(R.string.editor_markup_doodle)
+            instrumentation.runOnMainSync { assertEquals("Density override not applied", 320, activity!!.resources.displayMetrics.densityDpi) }
             if (isCandidate()) instrumentation.runOnMainSync {
                 val root = activity!!.findViewById<ViewGroup>(R.id.markupOptionsContent)
                 fun descendants(group: ViewGroup): List<View> = (0 until group.childCount).flatMap { i ->
@@ -526,7 +525,7 @@ class UiScreenshotTest {
 
     @Test fun collageSmall() {
         try {
-            device.executeShellCommand("wm size 720x800")
+            device.executeShellCommand("wm size 360x720")
             device.waitForIdle()
             Thread.sleep(1000)
             collage(2)
