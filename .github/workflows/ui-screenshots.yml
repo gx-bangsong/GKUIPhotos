@@ -71,11 +71,11 @@ jobs:
           mkdir -p apk-evidence
           cp app/build/outputs/apk/debug/app-debug.apk apk-evidence/
           "$tools/aapt" dump badging apk-evidence/app-debug.apk > apk-evidence/badging.txt
-          "$tools/apksigner" verify --print-certs apk-evidence/app-debug.apk > apk-evidence/signer.txt
+          "$tools/apksigner" verify --verbose --print-certs apk-evidence/app-debug.apk > apk-evidence/signer.txt 2>&1
           git rev-parse HEAD > apk-evidence/commit.txt
           echo "::notice::APK source $(cat apk-evidence/commit.txt)"
           echo "::notice::$(grep '^package: ' apk-evidence/badging.txt)"
-          echo "::notice::$(grep '^Signer #1 certificate SHA-256 digest:' apk-evidence/signer.txt)"
+          while IFS= read -r line; do echo "::notice::APK signature: $line"; done < apk-evidence/signer.txt
           echo "::notice::APK SHA-256 $(sha256sum apk-evidence/app-debug.apk | cut -d ' ' -f 1)"
       - uses: actions/upload-artifact@v7
         with:
@@ -193,8 +193,8 @@ jobs:
             echo '::error::Debug APK evidence is missing.'
             exit 1
           fi
-          if ! python3 scripts/prepare-collage-apk.py; then
-            echo '::error::APK metadata validation failed; see the sanitized diagnostic above.'
+          if ! python3 scripts/prepare-collage-apk.py 2> "$UI_RETURN_DIR/apk-error.txt"; then
+            echo "::error::APK metadata validation failed: $(head -c 300 "$UI_RETURN_DIR/apk-error.txt")"
             exit 1
           fi
           if ! gh api --method POST "repos/$GITHUB_REPOSITORY/git/blobs" --input "$UI_RETURN_DIR/apk-blob-payload.json" --jq .sha > "$UI_RETURN_DIR/apk-blob-sha.txt" 2>/dev/null; then

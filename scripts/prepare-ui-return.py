@@ -113,6 +113,11 @@ with zipfile.ZipFile(out / 'ui-evidence.zip', 'w', compression=zipfile.ZIP_DEFLA
             file = folder / filename
             if file.is_file():
                 archive.write(file, f'{name}/{filename}')
+    # Public APK identity diagnostics only; never include the binary or signing keys here.
+    for filename in ('badging.txt', 'signer.txt', 'commit.txt'):
+        file = root / 'ui-apk' / filename
+        if file.is_file():
+            archive.write(file, 'ui-apk/' + filename)
     lint_tail = root / 'ui-lint-evidence' / 'failure-tail.txt'
     if lint_tail.is_file():
         archive.write(lint_tail, 'ui-lint-evidence/failure-tail.txt')

@@ -15,7 +15,7 @@ errors = json.loads((root / 'lint-errors.json').read_text())
 lines = ['<!-- arena-ui-evidence -->', '## 模拟器截图自动回传', '',
          f"运行：{os.environ['GITHUB_RUN_ID']}；提交：{os.environ['UI_SOURCE_SHA']}",
          f"Git blob：`{blob or '上传失败，不可用'}`（未提交到分支，可能被清理）", '',
-         '| Job | 状态 |', '|---|---|']
+         ]
 apk_meta_path = root / 'apk-metadata.json'
 apk_blob_path = root / 'apk-blob-sha.txt'
 if apk_meta_path.is_file() and apk_blob_path.is_file():
@@ -27,6 +27,7 @@ if apk_meta_path.is_file() and apk_blob_path.is_file():
               '覆盖安装如遇签名或版本冲突，请停止；不要卸载或清除数据。', '']
 else:
     lines += ['APK 未回传或未验证。', '']
+lines += ['| Job | 状态 |', '|---|---|']
 for job in jobs:
     lines.append(f"| {job['name']} | {job['status']} |")
 lines += ['', '### 失败日志末尾（过滤摘要）']
