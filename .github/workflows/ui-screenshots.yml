@@ -98,8 +98,8 @@ jobs:
         if: matrix.version == 'baseline'
         run: |
           rm -rf app/src/main
-          git archive 0694e08461078364fec955b80b89b6a78286f41a app/src/main | tar -x
-          git diff --exit-code 0694e08461078364fec955b80b89b6a78286f41a -- app/src/main
+          git archive 2b6c04f1ffbb68ed2f98e801f6eacb30c72a0035 app/src/main | tar -x
+          git diff --exit-code 2b6c04f1ffbb68ed2f98e801f6eacb30c72a0035 -- app/src/main
       - uses: actions/setup-java@v5
         with:
           distribution: zulu
@@ -114,6 +114,7 @@ jobs:
         uses: reactivecircus/android-emulator-runner@v2
         env:
           UI_MODE: ${{ matrix.mode }}
+          UI_VERSION: ${{ matrix.version }}
         with:
           api-level: 34
           target: google_apis

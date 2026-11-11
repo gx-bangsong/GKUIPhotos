@@ -104,6 +104,15 @@ class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
             view.updatePadding(left = bars.left, top = bars.top, right = bars.right, bottom = bars.bottom)
             insets
         }
+        // Limit the tools on short portrait windows; their inner area remains scrollable.
+        findViewById<View>(R.id.collagePanelHost)?.let { panel ->
+            root.addOnLayoutChangeListener { _, _, top, _, bottom, _, _, _, _ ->
+                val maxPanel = minOf((280 * resources.displayMetrics.density).toInt(), ((bottom - top) * 0.38f).toInt())
+                if (maxPanel > 0 && panel.layoutParams.height != maxPanel) {
+                    panel.layoutParams = panel.layoutParams.apply { height = maxPanel }
+                }
+            }
+        }
         preview = findViewById(R.id.collagePreview)
         progress = findViewById(R.id.collageProgress)
         zoom = findViewById(R.id.collageZoom)
@@ -282,11 +291,7 @@ class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
         } else {
             getString(R.string.collage_selected_photo, preview.selected + 1, preview.photos.size)
         }
-        findViewById<TextView>(R.id.collageZoomLabel).text = if (photo == null) {
-            getString(R.string.collage_zoom)
-        } else {
-            getString(R.string.collage_zoom_selected, preview.selected + 1)
-        }
+        findViewById<TextView>(R.id.collageZoomLabel).text = getString(R.string.collage_zoom)
         if (renderedSelected != preview.selected || renderedCount != preview.photos.size) {
             renderedSelected = preview.selected
             renderedCount = preview.photos.size
@@ -355,8 +360,6 @@ class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
         preview.invalidate()
         findViewById<TextView>(R.id.collageHint).text =
             getString(R.string.collage_selected_photo, preview.selected + 1, preview.photos.size)
-        findViewById<TextView>(R.id.collageZoomLabel).text =
-            getString(R.string.collage_zoom_selected, preview.selected + 1)
     }
 
     private fun setBusy(busy: Boolean) {

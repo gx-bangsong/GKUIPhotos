@@ -18,7 +18,7 @@
     <com.google.android.material.progressindicator.LinearProgressIndicator android:id="@+id/collageProgress"
         android:layout_width="match_parent" android:layout_height="wrap_content"
         android:indeterminate="true" android:visibility="gone" />
-    <FrameLayout android:layout_width="match_parent" android:layout_height="280dp"
+    <FrameLayout android:id="@+id/collagePanelHost" android:layout_width="match_parent" android:layout_height="280dp"
         android:layout_marginHorizontal="12dp" android:layout_marginBottom="12dp">
         <include layout="@layout/collage_controls" />
     </FrameLayout>

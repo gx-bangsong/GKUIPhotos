@@ -14,6 +14,13 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Rect
+import android.graphics.Canvas
+import android.widget.FrameLayout
+import android.widget.ImageView
+import android.widget.TextView
+import android.view.ViewGroup
+import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.os.LocaleListCompat
 import android.net.Uri
 import android.os.Environment
 import android.provider.MediaStore
@@ -99,17 +106,17 @@ class UiScreenshotTest {
         while ((activity?.findViewById<CropImageView>(R.id.cropImageView)?.getDisplayBitmap() == null) &&
             System.currentTimeMillis() < deadline) Thread.sleep(200)
         assertNotNull("Editor image did not load", activity?.findViewById<CropImageView>(R.id.cropImageView)?.getDisplayBitmap())
-        var markup = device.findObject(By.text(context.getString(R.string.editor_tab_markup)))
+        var markup = device.findObject(By.text(activity!!.getString(R.string.editor_tab_markup)))
         if (markup == null) {
             val tabs = device.findObject(By.res(context.packageName, "categoryTabsScroll"))
             assertNotNull("Category scroll missing", tabs)
             val bounds = tabs!!.visibleBounds
             device.swipe(bounds.right - 15, bounds.centerY(), bounds.left + 15, bounds.centerY(), 25)
-            markup = device.wait(Until.findObject(By.text(context.getString(R.string.editor_tab_markup))), 5000)
+            markup = device.wait(Until.findObject(By.text(activity!!.getString(R.string.editor_tab_markup))), 5000)
         }
         assertNotNull("Markup category is not visible", markup)
         markup!!.click()
-        assertNotNull("Markup tools unavailable", device.wait(Until.findObject(By.desc(context.getString(R.string.editor_markup_doodle))), 10000))
+        assertNotNull("Markup tools unavailable", device.wait(Until.findObject(By.desc(activity!!.getString(R.string.editor_markup_doodle))), 10000))
     }
 
     private fun tool(id: Int) {
@@ -197,9 +204,123 @@ class UiScreenshotTest {
         }
     }
 
-    @Test fun markupIdle() { editor(); capture("markup-idle") }
+    private fun isCandidate() = InstrumentationRegistry.getArguments().getString("uiVersion") != "baseline"
+
+    /** Check the actual icon ink and rendered text, not just the enclosing tool bounds. */
+    private fun assertMarkupAlignment() {
+        if (!isCandidate()) return
+        val row = activity!!.findViewById<LinearLayout>(R.id.markupToolsRow)
+        val density = activity!!.resources.displayMetrics.density
+        instrumentation.runOnMainSync {
+            assertEquals(5, row.childCount)
+            for (index in 0 until 5) {
+                val item = row.getChildAt(index) as LinearLayout
+                val circle = item.getChildAt(0) as FrameLayout
+                val icon = circle.getChildAt(0) as ImageView
+                val label = item.getChildAt(1) as TextView
+                val bitmap = Bitmap.createBitmap(icon.width, icon.height, Bitmap.Config.ARGB_8888)
+                icon.draw(Canvas(bitmap))
+                var minX = bitmap.width; var maxX = -1
+                for (y in 0 until bitmap.height) for (x in 0 until bitmap.width) {
+                    if (Color.alpha(bitmap.getPixel(x, y)) > 32) { minX = minOf(minX, x); maxX = maxOf(maxX, x) }
+                }
+                bitmap.recycle()
+                assertTrue("Tool $index icon has no visible ink", maxX >= minX)
+                val iconPos = IntArray(2); val labelPos = IntArray(2)
+                icon.getLocationOnScreen(iconPos); label.getLocationOnScreen(labelPos)
+                val iconCenter = iconPos[0] + (minX + maxX + 1) / 2f
+                val bounds = Rect()
+                val text = label.text.toString()
+                label.paint.getTextBounds(text, 0, text.length, bounds)
+                val textCenter = labelPos[0] + label.totalPaddingLeft + label.layout.getLineLeft(0) + bounds.exactCenterX()
+                assertTrue("Tool $index icon/text visual centers differ: $iconCenter vs $textCenter",
+                    kotlin.math.abs(iconCenter - textCenter) <= 3 * density)
+            }
+        }
+        var width = -1
+        for (index in 0 until 5) {
+            instrumentation.runOnMainSync { row.getChildAt(index).performClick() }
+            device.waitForIdle()
+            instrumentation.runOnMainSync {
+                val selectedItem = row.getChildAt(index) as LinearLayout
+                assertTrue("Tool $index not selected", selectedItem.isSelected)
+                val label = selectedItem.getChildAt(0) as TextView
+                assertTrue("Compact label is not centered", (label.gravity and android.view.Gravity.HORIZONTAL_GRAVITY_MASK) == android.view.Gravity.CENTER_HORIZONTAL)
+                if (width < 0) width = selectedItem.width
+                for (i in 0 until row.childCount) {
+                    val item = row.getChildAt(i) as LinearLayout
+                    assertEquals("Tool width shifted with selection", width, item.width)
+                    val textView = item.getChildAt(0) as TextView
+                    val textBounds = Rect()
+                    val text = textView.text.toString()
+                    textView.paint.getTextBounds(text, 0, text.length, textBounds)
+                    val itemPos = IntArray(2); val labelPos = IntArray(2)
+                    item.getLocationOnScreen(itemPos); textView.getLocationOnScreen(labelPos)
+                    val textCenter = labelPos[0] + textView.totalPaddingLeft + textView.layout.getLineLeft(0) + textBounds.exactCenterX()
+                    assertTrue("Compact tool $i text is visually off-center", kotlin.math.abs(textCenter - (itemPos[0] + item.width / 2f)) <= 3 * density)
+                }
+            }
+        }
+    }
+
+    @Test fun markupIdle() { editor(); capture("markup-idle"); assertMarkupAlignment() }
+    @Test fun markupIdleChinese() {
+        try {
+            instrumentation.runOnMainSync { AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags("zh-CN")) }
+            editor()
+            assertEquals("涂鸦", activity!!.getString(R.string.editor_markup_doodle))
+            capture("markup-idle-zh")
+            assertMarkupAlignment()
+        } finally {
+            activity?.finish()
+            activity = null
+            instrumentation.runOnMainSync { AppCompatDelegate.setApplicationLocales(LocaleListCompat.getEmptyLocaleList()) }
+            device.waitForIdle()
+        }
+    }
+    @Test fun markupShapes() { editor(); tool(R.string.editor_markup_shapes); capture("markup-shapes") }
+    @Test fun markupDensity() {
+        try {
+            device.executeShellCommand("wm density 320")
+            device.waitForIdle()
+            Thread.sleep(1000)
+            editor(); tool(R.string.editor_markup_doodle)
+            if (isCandidate()) instrumentation.runOnMainSync {
+                val root = activity!!.findViewById<ViewGroup>(R.id.markupOptionsContent)
+                fun descendants(group: ViewGroup): List<View> = (0 until group.childCount).flatMap { i ->
+                    val child = group.getChildAt(i)
+                    listOf(child) + if (child is ViewGroup) descendants(child) else emptyList()
+                }
+                val views = descendants(root)
+                val importButton = views.filterIsInstance<TextView>().first { it.text == activity!!.getString(R.string.editor_brush_import) }
+                val red = views.first { it.contentDescription == activity!!.getString(R.string.markup_color_red) }
+                val density = activity!!.resources.displayMetrics.density
+                assertEquals((14 * density).toInt(), importButton.paddingLeft)
+                assertEquals((8 * density).toInt(), (red.layoutParams as LinearLayout.LayoutParams).marginEnd)
+            }
+            capture("markup-density")
+        } finally {
+            activity?.finish()
+            activity = null
+            device.executeShellCommand("wm density reset")
+            device.waitForIdle()
+        }
+    }
+
+    private fun assertSingleOptionLabel(label: Int) {
+        if (!isCandidate()) return
+        instrumentation.runOnMainSync {
+            val text = activity!!.getString(label)
+            fun count(view: View): Int {
+                val self = if (view is TextView && view.text.toString().startsWith(text)) 1 else 0
+                return self + if (view is ViewGroup) (0 until view.childCount).sumOf { count(view.getChildAt(it)) } else 0
+            }
+            assertEquals("Repeated option label $text", 1, count(activity!!.findViewById(R.id.markupOptionsContent)))
+        }
+    }
+
     @Test fun markupBrush() {
-        editor(); tool(R.string.editor_markup_doodle); capture("markup-brush")
+        editor(); tool(R.string.editor_markup_doodle); assertSingleOptionLabel(R.string.editor_markup_stroke_width); capture("markup-brush")
         val scroll = device.findObject(By.res(context.packageName, "markupOptionsScroll"))
         assertNotNull("Markup options missing", scroll)
         val bounds = scroll!!.visibleBounds
@@ -213,13 +334,14 @@ class UiScreenshotTest {
             device.waitForIdle()
             Thread.sleep(1000)
             editor(); tool(R.string.editor_markup_doodle)
+            var canScroll = false
             instrumentation.runOnMainSync {
-                assertTrue("Small brush panel should scroll", activity!!.findViewById<View>(R.id.markupOptionsScroll).canScrollVertically(1))
+                canScroll = activity!!.findViewById<View>(R.id.markupOptionsScroll).canScrollVertically(1)
             }
             capture("markup-brush-small")
             val scroll = device.findObject(By.res(context.packageName, "markupOptionsScroll"))!!
             val bounds = scroll.visibleBounds
-            device.swipe(bounds.centerX(), bounds.bottom - 10, bounds.centerX(), bounds.top + 10, 25)
+            if (canScroll) device.swipe(bounds.centerX(), bounds.bottom - 10, bounds.centerX(), bounds.top + 10, 25)
             assertNotNull("Small brush panel did not expose colors", device.wait(Until.findObject(By.desc(context.getString(R.string.markup_color_black))), 5000))
             capture("markup-brush-small-scroll")
         } finally {
@@ -228,7 +350,7 @@ class UiScreenshotTest {
             device.waitForIdle()
         }
     }
-    @Test fun markupMosaic() { editor(); tool(R.string.editor_markup_mosaic); capture("markup-mosaic") }
+    @Test fun markupMosaic() { editor(); tool(R.string.editor_markup_mosaic); assertSingleOptionLabel(R.string.editor_markup_mosaic_brush); capture("markup-mosaic") }
     @Test fun markupSticker() { editor(); tool(R.string.editor_markup_sticker); capture("markup-sticker") }
     @Test fun markupTextSelected() {
         editor(); tool(R.string.editor_markup_text)
@@ -399,6 +521,28 @@ class UiScreenshotTest {
             assertEquals("Originals must not be overwritten", originalHashes, images.take(2).map(::digest))
         } finally {
             outputs().subtract(before).forEach { context.contentResolver.delete(it, null, null) }
+        }
+    }
+
+    @Test fun collageSmall() {
+        try {
+            device.executeShellCommand("wm size 720x800")
+            device.waitForIdle()
+            Thread.sleep(1000)
+            collage(2)
+            if (isCandidate()) instrumentation.runOnMainSync {
+                val root = activity!!.findViewById<View>(R.id.collageRoot)
+                val panelId = context.resources.getIdentifier("collagePanelHost", "id", context.packageName)
+                val panel = activity!!.findViewById<View>(panelId)
+                assertTrue("Tool panel takes too much of a short window", panel.height <= root.height * 0.38f + 1)
+                assertTrue("Preview has no usable space", activity!!.findViewById<View>(R.id.collagePreview).height > 0)
+            }
+            capture("collage-small")
+        } finally {
+            activity?.finish()
+            activity = null
+            device.executeShellCommand("wm size 720x1520")
+            device.waitForIdle()
         }
     }
 

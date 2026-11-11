@@ -1035,16 +1035,25 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             MarkupTool.STICKER to (R.string.editor_markup_sticker to R.drawable.ic_markup_sticker),
         )
 
+        // Reserve the same width for every tool, using the widest bold label so
+        // changing selection does not shift adjacent tools in any locale.
+        val compact = annotationOverlayView.activeTool != MarkupTool.NONE
+        val measuringLabel = TextView(this).apply {
+            textSize = if (compact) 14f else 11f
+            setTypeface(null, Typeface.BOLD)
+        }
+        val itemWidth = maxOf((64 * density).toInt(),
+            kotlin.math.ceil(tools.maxOf { measuringLabel.paint.measureText(getString(it.second.first)) }).toInt() +
+                (16 * density).toInt())
+
         tools.forEach { (tool, pair) ->
             val (labelRes, iconRes) = pair
             val selected = annotationOverlayView.activeTool == tool
-            val compact = annotationOverlayView.activeTool != MarkupTool.NONE
-
             val itemLayout = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER
                 layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                    itemWidth, LinearLayout.LayoutParams.WRAP_CONTENT
                 )
                 minimumWidth = (64 * density).toInt()
                 minimumHeight = (48 * density).toInt()
@@ -1083,6 +1092,8 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
 
             val label = TextView(this).apply {
                 text = getString(labelRes)
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                gravity = Gravity.CENTER
                 setSingleLine(true)
                 importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
                 textSize = if (compact) 14f else 11f
@@ -1144,7 +1155,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
     }
 
     /** Each section owns its own scroll direction; sliders never live in a horizontal scroller. */
-    private fun addMarkupSection(title: Int, horizontal: Boolean, build: () -> Unit) {
+    private fun addMarkupSection(title: Int, horizontal: Boolean, showTitle: Boolean = true, build: () -> Unit) {
         val start = markupOptionsContent.childCount
         build()
         val children = mutableListOf<View>()
@@ -1156,7 +1167,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         if (children.isEmpty()) return
         val density = resources.displayMetrics.density
         val section = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        section.addView(TextView(this).apply {
+        if (showTitle) section.addView(TextView(this).apply {
             text = getString(title)
             setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_LabelMedium)
             setTextColor(MaterialColors.getColor(this, com.google.android.material.R.attr.colorOnSurfaceVariant))
@@ -1166,6 +1177,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
+                setPadding((12 * density).toInt(), 0, (12 * density).toInt(), 0)
             }
             children.forEach { child -> row.addView(child) }
             val scroller = HorizontalScrollView(this).apply {
@@ -1214,7 +1226,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         when (tool) {
             MarkupTool.DOODLE -> {
                 addMarkupSection(R.string.markup_brush_section, true) { addDoodleBrushTypeSelector() }
-                addMarkupSection(R.string.editor_markup_stroke_width, false) { addStrokeWidthSlider() }
+                addMarkupSection(R.string.editor_markup_stroke_width, false, showTitle = false) { addStrokeWidthSlider() }
                 val custom = annotationOverlayView.activeCustomBrush
                 if (custom == null || custom.colorMode != BrushColorMode.ORIGINAL) {
                     addMarkupSection(R.string.markup_color_section, true) { addColorPalette() }
@@ -1223,7 +1235,8 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                         markupOptionsContent.addView(TextView(this).apply {
                             text = getString(R.string.editor_brush_original_hint)
                             setTextColor(MaterialColors.getColor(this, com.google.android.material.R.attr.colorOnSurfaceVariant))
-                            setPadding(12, 0, 12, 0)
+                            val inset = (12 * resources.displayMetrics.density).toInt()
+                            setPadding(inset, 0, inset, 0)
                         })
                     }
                 }
@@ -1234,13 +1247,13 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                         setOnClickListener { markupAdvancedExpanded = !markupAdvancedExpanded; showMarkupToolOptions(tool) }
                     }
                     markupOptionsContent.addView(toggle)
-                    if (markupAdvancedExpanded) addMarkupSection(R.string.markup_advanced, false) { addCustomBrushControls(custom) }
+                    if (markupAdvancedExpanded) addMarkupSection(R.string.markup_advanced, false, showTitle = false) { addCustomBrushControls(custom) }
                 }
             }
             MarkupTool.SHAPES -> {
                 addMarkupSection(R.string.markup_shape_section, true) { addShapeTypeSelector() }
                 addMarkupSection(R.string.markup_style_section, true) { addShapeStyleSelector() }
-                addMarkupSection(R.string.editor_markup_stroke_width, false) { addStrokeWidthSlider() }
+                addMarkupSection(R.string.editor_markup_stroke_width, false, showTitle = false) { addStrokeWidthSlider() }
                 addMarkupSection(R.string.markup_color_section, true) {
                     addColorPalette { c ->
                         annotationOverlayView.activeShape?.color = c
@@ -1278,7 +1291,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             }
             MarkupTool.MOSAIC -> {
                 addMarkupSection(R.string.markup_effect_section, true) { addMosaicEffectSelector() }
-                addMarkupSection(R.string.editor_markup_mosaic_brush, false) { addMosaicBrushSlider() }
+                addMarkupSection(R.string.editor_markup_mosaic_brush, false, showTitle = false) { addMosaicBrushSlider() }
             }
             MarkupTool.STICKER -> addMarkupSection(R.string.markup_sticker_section, true) { addStickerSelector() }
             MarkupTool.NONE -> Unit
@@ -1386,7 +1399,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         val spacingContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.START
-            setPadding((8 * density).toInt(), 0, (8 * density).toInt(), 0)
+            setPadding((12 * density).toInt(), 0, (12 * density).toInt(), 0)
         }
         val spacingLabel = TextView(this).apply {
             text = "${getString(R.string.editor_brush_spacing)}: ${brush.spacingPercent}%"
@@ -1423,7 +1436,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         val opacityContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.START
-            setPadding((8 * density).toInt(), 0, (8 * density).toInt(), 0)
+            setPadding((12 * density).toInt(), 0, (12 * density).toInt(), 0)
         }
         val opacityLabel = TextView(this).apply {
             text = "${getString(R.string.editor_brush_opacity)}: ${brush.opacity}%"
@@ -1734,7 +1747,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             setTextColor(MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary))
             textSize = 13f
             setTypeface(null, Typeface.BOLD)
-            setPadding(28, 14, 28, 14)
+            setPadding((14 * density).toInt(), (8 * density).toInt(), (14 * density).toInt(), (8 * density).toInt())
             setOnClickListener {
                 pickCustomStickerLauncher.launch("image/*")
             }
@@ -1743,7 +1756,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             LinearLayout.LayoutParams.WRAP_CONTENT,
             LinearLayout.LayoutParams.WRAP_CONTENT
         ).apply {
-            marginEnd = (12 * density).toInt()
+            marginEnd = (8 * density).toInt()
         }
         markupOptionsContent.addView(importBtn, lp)
 
@@ -1757,7 +1770,8 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                 background = markupBackground(false, circle = true)
                 contentDescription = asset.name
                 isFocusable = true
-                setPadding(4, 4, 4, 4)
+                val inset = (4 * density).toInt()
+                setPadding(inset, inset, inset, inset)
                 val bmp = asset.loadBitmap()
                 if (bmp != null) setImageBitmap(bmp)
                 setOnClickListener {
@@ -1938,7 +1952,6 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         val paletteContainer = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(8, 0, 8, 0)
         }
 
         val cards = mutableListOf<Pair<Int, MaterialCardView>>()
@@ -1952,7 +1965,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                 setCardBackgroundColor(c)
                 val size = (48f * density).toInt()
                 val lp = LinearLayout.LayoutParams(size, size).apply {
-                    setMargins(6, 0, 6, 0)
+                    marginEnd = (8 * density).toInt()
                 }
                 layoutParams = lp
                 isClickable = true
