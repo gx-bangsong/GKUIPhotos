@@ -29,7 +29,7 @@ else
   adb shell cmd uimode night no
 fi
 set +e
-./gradlew :app:connectedDebugAndroidTest --stacktrace 2>&1 | tee "${RUNNER_TEMP}/ui-gradle.log"
+./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.expectedTheme="$UI_MODE" --stacktrace 2>&1 | tee "${RUNNER_TEMP}/ui-gradle.log"
 status=${PIPESTATUS[0]}
 set -e
 python3 scripts/ui-safe-tail.py "${RUNNER_TEMP}/ui-gradle.log" > ui-evidence/failure-tail.txt
@@ -50,7 +50,7 @@ if (( pull_status != 0 )); then
   status=1
 fi
 if (( status == 0 )); then
-  for name in markup-idle markup-brush markup-brush-scroll markup-brush-small markup-brush-small-scroll markup-mosaic markup-text-selected markup-text-black markup-sticker collage-two collage-six collage-selected collage-landscape; do
+  for name in markup-idle markup-brush markup-brush-scroll markup-brush-small markup-brush-small-scroll markup-mosaic markup-text-selected markup-text-black markup-sticker collage-two collage-four collage-four-layouts collage-six collage-selected collage-landscape; do
     for extension in png xml; do
       if [[ ! -s "ui-evidence/$name.$extension" ]]; then
         echo "::error::Missing screenshot evidence: $name.$extension"

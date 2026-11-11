@@ -48,6 +48,36 @@ jobs:
           name: android-lint-report
           path: app/build/reports/lint-results-debug.*
           if-no-files-found: warn
+  apk:
+    # Debug-only candidate; no release signing credentials or binary committed to the branch.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: '17'
+          cache: gradle
+      - name: Build and inspect the debug APK
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ./gradlew :app:assembleDebug --stacktrace
+          tools=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)
+          test -x "$tools/aapt" && test -x "$tools/apksigner"
+          mkdir -p apk-evidence
+          cp app/build/outputs/apk/debug/app-debug.apk apk-evidence/
+          "$tools/aapt" dump badging apk-evidence/app-debug.apk > apk-evidence/badging.txt
+          "$tools/apksigner" verify --print-certs apk-evidence/app-debug.apk > apk-evidence/signer.txt
+          git rev-parse HEAD > apk-evidence/commit.txt
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ui-apk
+          path: apk-evidence/
+          if-no-files-found: error
   screenshots:
     runs-on: ubuntu-latest
     strategy:
@@ -64,8 +94,8 @@ jobs:
         if: matrix.version == 'baseline'
         run: |
           rm -rf app/src/main
-          git archive 936f0a85fe3a62b18dfb19fc65ff3234895f914f app/src/main | tar -x
-          git diff --exit-code 936f0a85fe3a62b18dfb19fc65ff3234895f914f -- app/src/main
+          git archive 0694e08461078364fec955b80b89b6a78286f41a app/src/main | tar -x
+          git diff --exit-code 0694e08461078364fec955b80b89b6a78286f41a -- app/src/main
       - uses: actions/setup-java@v5
         with:
           distribution: zulu
@@ -95,7 +125,7 @@ jobs:
   return-evidence:
     # Never give PR code from a fork write access; only the approved repository PR can report.
     if: always() && github.event_name == 'pull_request' && github.event.pull_request.number == 4 && github.event.pull_request.head.repo.full_name == github.repository
-    needs: [lint, screenshots]
+    needs: [lint, screenshots, apk]
     runs-on: ubuntu-latest
     concurrency:
       group: ui-evidence-pr-4
@@ -133,6 +163,16 @@ jobs:
           blob_failed=0
           if ! gh api --method POST "repos/$GITHUB_REPOSITORY/git/blobs" --input "$UI_RETURN_DIR/blob-payload.json" --jq .sha > "$UI_RETURN_DIR/blob-sha.txt" 2>/dev/null; then
             echo '::error::Unable to create the detached screenshot blob.'
+            blob_failed=1
+          fi
+          if [[ -f "$UI_EVIDENCE_DIR/ui-apk/app-debug.apk" ]]; then
+            python3 scripts/prepare-collage-apk.py
+            if ! gh api --method POST "repos/$GITHUB_REPOSITORY/git/blobs" --input "$UI_RETURN_DIR/apk-blob-payload.json" --jq .sha > "$UI_RETURN_DIR/apk-blob-sha.txt" 2>/dev/null; then
+              echo '::error::Unable to create the detached APK blob.'
+              blob_failed=1
+            fi
+          else
+            echo '::error::Debug APK evidence is missing.'
             blob_failed=1
           fi
           python3 scripts/write-ui-comment.py

@@ -25,6 +25,9 @@ import android.widget.ScrollView
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.slider.Slider
 import androidx.exifinterface.media.ExifInterface
+import androidx.core.graphics.ColorUtils
+import com.google.android.material.color.MaterialColors
+import android.widget.LinearLayout
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
@@ -131,6 +134,17 @@ class UiScreenshotTest {
         val save = device.wait(Until.findObject(By.res(context.packageName, "collageSave")), 15000)
         assertNotNull("Collage rejected $count photos or did not open", save)
         assertTrue("Collage loading did not complete", device.wait(Until.hasObject(By.res(context.packageName, "collageSave").enabled(true)), 30000))
+        // The old baseline uses a deliberately dark-only viewer theme. Assert the
+        // actual resolved surface, not merely the emulator's night-mode setting.
+        if (context.resources.getIdentifier("collageModePhoto", "id", context.packageName) != 0) {
+            val expected = InstrumentationRegistry.getArguments().getString("expectedTheme")
+            if (expected != null) instrumentation.runOnMainSync {
+                val root = activity!!.findViewById<View>(R.id.collageRoot)
+                val color = MaterialColors.getColor(root, com.google.android.material.R.attr.colorSurface)
+                val light = ColorUtils.calculateLuminance(color) > 0.5
+                assertEquals("Resolved collage surface does not match $expected mode", expected == "light", light)
+            }
+        }
     }
 
     private fun capture(name: String) {
@@ -251,6 +265,22 @@ class UiScreenshotTest {
         assertTrue("Second collage photo was not selected", device.wait(
             Until.hasObject(By.textContains("Photo 2 of 2 selected")), 10000))
         capture("collage-selected")
+    }
+    @Test fun collageFour() { collage(4); capture("collage-four") }
+    @Test fun collageFourLayouts() {
+        collage(4)
+        val toggle = context.resources.getIdentifier("collageModeLayout", "id", context.packageName)
+        if (toggle != 0) instrumentation.runOnMainSync { activity!!.findViewById<View>(toggle).performClick() }
+        device.waitForIdle()
+        capture("collage-four-layouts")
+        val view = activity!!.findViewById<CollageView>(R.id.collagePreview)
+        instrumentation.runOnMainSync {
+            val cards = activity!!.findViewById<LinearLayout>(R.id.collageLayoutCards)
+            val before = view.photos.map { it.uri }
+            cards.getChildAt(1).performClick()
+            assertEquals(1, view.layout)
+            assertEquals(before, view.photos.map { it.uri })
+        }
     }
     @Test fun collageSix() { collage(6); capture("collage-six") }
     @Test fun collageDragAndZoom() {

@@ -38,6 +38,7 @@ import androidx.recyclerview.widget.ItemTouchHelper
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.button.MaterialButton
+import com.google.android.material.button.MaterialButtonToggleGroup
 import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.google.android.material.slider.Slider
 import kotlinx.coroutines.CancellationException
@@ -58,6 +59,7 @@ class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
     private lateinit var filmstrip: RecyclerView
     private lateinit var filmstripAdapter: CollageFilmstripAdapter
     private lateinit var layoutCards: LinearLayout
+    private lateinit var modes: MaterialButtonToggleGroup
     private var job: Job? = null
     private var loading = true
     private var syncingZoom = false
@@ -93,8 +95,10 @@ class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
         val root = findViewById<View>(R.id.collageRoot)
         // The edge-to-edge status bar overlays the actual surface, not the system theme.
         val surface = MaterialColors.getColor(root, com.google.android.material.R.attr.colorSurface)
-        WindowInsetsControllerCompat(window, root).isAppearanceLightStatusBars =
-            ColorUtils.calculateLuminance(surface) > 0.5
+        WindowInsetsControllerCompat(window, root).apply {
+            isAppearanceLightStatusBars = ColorUtils.calculateLuminance(surface) > 0.5
+            isAppearanceLightNavigationBars = ColorUtils.calculateLuminance(surface) > 0.5
+        }
         ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
             view.updatePadding(left = bars.left, top = bars.top, right = bars.right, bottom = bars.bottom)
@@ -109,6 +113,13 @@ class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
         pendingReplacement = savedInstanceState?.getParcelable(KEY_PENDING_REPLACEMENT)
         filmstrip = findViewById(R.id.collageFilmstrip)
         layoutCards = findViewById(R.id.collageLayoutCards)
+        modes = findViewById(R.id.collageModes)
+        modes.addOnButtonCheckedListener { _, checkedId, checked ->
+            if (checked) showMode(checkedId == R.id.collageModeLayout)
+        }
+        val showLayouts = savedInstanceState?.getBoolean(KEY_LAYOUT_MODE, false) ?: false
+        modes.check(if (showLayouts) R.id.collageModeLayout else R.id.collageModePhoto)
+        showMode(showLayouts)
         filmstripAdapter = CollageFilmstripAdapter(
             photos = { preview.photos }, selected = { preview.selected },
             select = { index ->
@@ -256,6 +267,11 @@ class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
         }
     }
 
+    private fun showMode(layoutMode: Boolean) {
+        findViewById<View>(R.id.collagePhotoPanel).isVisible = !layoutMode
+        findViewById<View>(R.id.collageLayoutPanel).isVisible = layoutMode
+    }
+
     private fun updateControls() {
         val photo = preview.photos.getOrNull(preview.selected)
         syncingZoom = true
@@ -264,8 +280,7 @@ class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
         findViewById<TextView>(R.id.collageHint).text = if (photo == null) {
             getString(R.string.collage_preview_hint)
         } else {
-            getString(R.string.collage_selected_photo, preview.selected + 1, preview.photos.size) + "\n" +
-                getString(R.string.collage_preview_hint)
+            getString(R.string.collage_selected_photo, preview.selected + 1, preview.photos.size)
         }
         findViewById<TextView>(R.id.collageZoomLabel).text = if (photo == null) {
             getString(R.string.collage_zoom)
@@ -288,9 +303,9 @@ class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
             val card = MaterialCardView(this).apply {
                 layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginEnd = (8 * density).toInt() }
-                minimumWidth = (96 * density).toInt()
-                minimumHeight = (76 * density).toInt()
-                radius = 12 * density
+                minimumWidth = (116 * density).toInt()
+                minimumHeight = (112 * density).toInt()
+                radius = 16 * density
                 cardElevation = 0f
                 isClickable = true
                 isFocusable = true
@@ -305,10 +320,10 @@ class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
                 setPadding((8 * density).toInt(), (4 * density).toInt(), (8 * density).toInt(), (4 * density).toInt())
             }
             content.addView(CollageLayoutPreview(this, uris.size, index),
-                LinearLayout.LayoutParams((46 * density).toInt(), (46 * density).toInt()))
+                LinearLayout.LayoutParams((68 * density).toInt(), (68 * density).toInt()))
             content.addView(TextView(this).apply {
                 text = getString(label)
-                setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_LabelSmall)
+                setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_LabelLarge)
                 gravity = Gravity.CENTER
                 maxLines = 2
             }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
@@ -324,6 +339,9 @@ class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
             card.isSelected = index == preview.layout
             card.strokeWidth = if (card.isSelected) (2 * resources.displayMetrics.density).toInt() else 0
             card.strokeColor = MaterialColors.getColor(card, androidx.appcompat.R.attr.colorPrimary)
+            card.setCardBackgroundColor(MaterialColors.getColor(card,
+                if (card.isSelected) com.google.android.material.R.attr.colorSecondaryContainer
+                else com.google.android.material.R.attr.colorSurfaceVariant))
         }
     }
 
@@ -336,8 +354,7 @@ class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
         renderedSelected = preview.selected
         preview.invalidate()
         findViewById<TextView>(R.id.collageHint).text =
-            getString(R.string.collage_selected_photo, preview.selected + 1, preview.photos.size) + "\n" +
-                getString(R.string.collage_preview_hint)
+            getString(R.string.collage_selected_photo, preview.selected + 1, preview.photos.size)
         findViewById<TextView>(R.id.collageZoomLabel).text =
             getString(R.string.collage_zoom_selected, preview.selected + 1)
     }
@@ -349,6 +366,8 @@ class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
         preview.isEnabled = !busy
         zoom.isEnabled = !busy
         filmstrip.isEnabled = !busy
+        findViewById<View>(R.id.collageModePhoto).isEnabled = !busy
+        findViewById<View>(R.id.collageModeLayout).isEnabled = !busy
         for (i in 0 until layoutCards.childCount) layoutCards.getChildAt(i).isEnabled = !busy
         if (!busy) updateControls()
     }
@@ -436,6 +455,7 @@ class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
         outState.putParcelableArrayList(KEY_URIS, uris)
         outState.putInt(KEY_REPLACEMENT_INDEX, replacementIndex)
         outState.putParcelable(KEY_PENDING_REPLACEMENT, pendingReplacement)
+        outState.putBoolean(KEY_LAYOUT_MODE, modes.checkedButtonId == R.id.collageModeLayout)
         outState.putInt(KEY_LAYOUT, preview.layout)
         outState.putInt(KEY_SELECTED, preview.selected)
         if (preview.photos.isNotEmpty()) outState.putFloatArray(KEY_TRANSFORMS,
@@ -447,6 +467,7 @@ class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
         private const val KEY_PENDING_REPLACEMENT = "collage_pending_replacement"
         private const val KEY_REPLACEMENT_INDEX = "collage_replacement_index"
         private const val KEY_URIS = "collage_uris"
+        private const val KEY_LAYOUT_MODE = "collage_layout_mode"
         private const val KEY_LAYOUT = "collage_layout"
         private const val KEY_SELECTED = "collage_selected"
         private const val KEY_TRANSFORMS = "collage_transforms"

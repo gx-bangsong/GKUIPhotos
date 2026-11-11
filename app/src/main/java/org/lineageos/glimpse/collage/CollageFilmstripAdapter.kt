@@ -8,6 +8,8 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
+import android.widget.TextView
+import android.graphics.Color
 import androidx.core.view.ViewCompat
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.card.MaterialCardView
@@ -40,8 +42,18 @@ internal class CollageFilmstripAdapter(
             scaleType = ImageView.ScaleType.CENTER_CROP
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
         }
+        val order = TextView(parent.context).apply {
+            layoutParams = android.widget.FrameLayout.LayoutParams((20 * density).toInt(), (20 * density).toInt(),
+                Gravity.BOTTOM or Gravity.START).apply { setMargins((4 * density).toInt(), 0, 0, (4 * density).toInt()) }
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            textSize = 11f
+            setBackgroundResource(R.drawable.collage_order_badge)
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        }
         card.addView(image)
-        return Holder(card, image).also { holder ->
+        card.addView(order)
+        return Holder(card, image, order).also { holder ->
             card.setOnClickListener {
                 val pos = holder.bindingAdapterPosition
                 if (pos != RecyclerView.NO_POSITION) select(pos)
@@ -61,6 +73,7 @@ internal class CollageFilmstripAdapter(
         val card = holder.itemView as MaterialCardView
         val isSelected = position == selected()
         holder.image.setImageBitmap(photos()[position].preview)
+        holder.order.text = (position + 1).toString()
         card.isSelected = isSelected
         card.strokeWidth = ((if (isSelected) 3 else if (dragging) 1 else 0) * card.resources.displayMetrics.density).toInt()
         card.strokeColor = MaterialColors.getColor(card, androidx.appcompat.R.attr.colorPrimary)
@@ -70,5 +83,5 @@ internal class CollageFilmstripAdapter(
         )
     }
 
-    class Holder(card: MaterialCardView, val image: ImageView) : RecyclerView.ViewHolder(card)
+    class Holder(card: MaterialCardView, val image: ImageView, val order: TextView) : RecyclerView.ViewHolder(card)
 }

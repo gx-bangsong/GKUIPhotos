@@ -507,4 +507,6 @@
     <string name="markup_color_green">綠色</string>
     <string name="collage_replace_photo">替換照片</string>
     <string name="collage_replace_failed">無法替換照片，請選擇可讀取的圖片。</string>
+    <string name="collage_mode_photos">照片</string>
+    <string name="collage_layout_prompt">選擇版面</string>
 </resources>
