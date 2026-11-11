@@ -25,4 +25,12 @@ if [[ "$UI_MODE" == dark ]]; then
 else
   adb shell cmd uimode night no
 fi
-./gradlew :app:connectedDebugAndroidTest --stacktrace
+set +e
+./gradlew :app:connectedDebugAndroidTest --stacktrace 2>&1 | tee "${RUNNER_TEMP}/ui-gradle.log"
+status=${PIPESTATUS[0]}
+set -e
+if (( status != 0 )); then
+  python3 scripts/report-ui-diagnostics.py --log "${RUNNER_TEMP}/ui-gradle.log" \
+    --tests 'app/build/outputs/androidTest-results/connected/**/*.xml'
+fi
+exit "$status"

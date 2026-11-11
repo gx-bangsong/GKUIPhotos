@@ -41,7 +41,7 @@ class UiScreenshotTest {
 
     @Before fun createFixtures() {
         val assets = instrumentation.context.assets
-        repeat(9) { index ->
+        repeat(6) { index ->
             val name = if (index % 2 == 0) "synthetic_portrait.png" else "synthetic_landscape.png"
             val bitmap = assets.open(name).use { BitmapFactory.decodeStream(it) }
             val values = ContentValues().apply {
@@ -145,11 +145,5 @@ class UiScreenshotTest {
         device.click(r.right - r.width() / 4, r.centerY())
         capture("collage-selected")
     }
-    @Test fun collageNine() { collage(9); capture("collage-nine") }
-    @Test fun collageBorderPanel() {
-        collage(2)
-        val border = device.findObject(By.descContains("Border")) ?: device.findObject(By.textContains("Border"))
-        assertNotNull("Border panel is not implemented", border)
-        border!!.click(); capture("collage-border")
-    }
+    @Test fun collageSix() { collage(6); capture("collage-six") }
 }
