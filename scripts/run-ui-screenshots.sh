@@ -32,6 +32,7 @@ set +e
 ./gradlew :app:connectedDebugAndroidTest --stacktrace 2>&1 | tee "${RUNNER_TEMP}/ui-gradle.log"
 status=${PIPESTATUS[0]}
 set -e
+python3 scripts/ui-safe-tail.py "${RUNNER_TEMP}/ui-gradle.log" > ui-evidence/failure-tail.txt
 if (( status != 0 )); then
   python3 scripts/report-ui-diagnostics.py --log "${RUNNER_TEMP}/ui-gradle.log" \
     --tests 'app/build/outputs/androidTest-results/connected/**/*.xml'
@@ -45,6 +46,7 @@ fi
 trap - EXIT
 if (( pull_status != 0 )); then
   echo '::error::Failed to pull screenshots from the emulator.'
+  echo 'Screenshot collection from emulator failed.' >> ui-evidence/failure-tail.txt
   status=1
 fi
 if (( status == 0 )); then
@@ -52,6 +54,7 @@ if (( status == 0 )); then
     for extension in png xml; do
       if [[ ! -s "ui-evidence/$name.$extension" ]]; then
         echo "::error::Missing screenshot evidence: $name.$extension"
+        echo "Missing screenshot evidence: $name.$extension" >> ui-evidence/failure-tail.txt
         status=1
       fi
     done

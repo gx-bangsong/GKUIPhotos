@@ -26,11 +26,22 @@ jobs:
           ./gradlew :app:lintDebug --stacktrace 2>&1 | tee "$RUNNER_TEMP/lint-gradle.log"
           status=${PIPESTATUS[0]}
           set -e
+          mkdir -p lint-evidence
+          python3 scripts/ui-safe-tail.py "$RUNNER_TEMP/lint-gradle.log" > lint-evidence/failure-tail.txt
+          if [[ -f app/build/reports/lint-results-debug.xml ]]; then
+            cp app/build/reports/lint-results-debug.xml lint-evidence/
+          fi
           if (( status != 0 )); then
             python3 scripts/report-ui-diagnostics.py --log "$RUNNER_TEMP/lint-gradle.log" \
               --lint app/build/reports/lint-results-debug.xml
           fi
           exit "$status"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: ui-lint-evidence
+          path: lint-evidence/
+          if-no-files-found: warn
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -81,3 +92,67 @@ jobs:
           name: ui-${{ matrix.version }}-${{ matrix.mode }}
           path: ui-evidence/
           if-no-files-found: warn
+  return-evidence:
+    # Never give PR code from a fork write access; only the approved repository PR can report.
+    if: always() && github.event_name == 'pull_request' && github.event.pull_request.number == 4 && github.event.pull_request.head.repo.full_name == github.repository
+    needs: [lint, screenshots]
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ui-evidence-pr-4
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Collect existing evidence even if a job failed
+        uses: actions/download-artifact@v7
+        continue-on-error: true
+        with:
+          pattern: ui-*
+          path: ui-collected
+      - name: Publish one detached Git blob and update one PR comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UI_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+          UI_RETURN_DIR: ${{ runner.temp }}/ui-return
+          UI_EVIDENCE_DIR: ui-collected
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p "$UI_RETURN_DIR" "$UI_EVIDENCE_DIR"
+          if ! gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?per_page=100" > "$UI_RETURN_DIR/jobs.json" 2>/dev/null; then
+            echo '::error::Unable to read CI job statuses.'
+            exit 1
+          fi
+          python3 scripts/prepare-ui-return.py --evidence "$UI_EVIDENCE_DIR" --jobs "$UI_RETURN_DIR/jobs.json" --out "$UI_RETURN_DIR"
+          blob_failed=0
+          if ! gh api --method POST "repos/$GITHUB_REPOSITORY/git/blobs" --input "$UI_RETURN_DIR/blob-payload.json" --jq .sha > "$UI_RETURN_DIR/blob-sha.txt" 2>/dev/null; then
+            echo '::error::Unable to create the detached screenshot blob.'
+            blob_failed=1
+          fi
+          python3 scripts/write-ui-comment.py
+          owner=${GITHUB_REPOSITORY%/*}
+          repo=${GITHUB_REPOSITORY#*/}
+          query='query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){comments(last:100){nodes{databaseId author{login} body}}}}}'
+          if ! gh api graphql -f query="$query" -f owner="$owner" -f name="$repo" -F number=4 --jq '[.data.repository.pullRequest.comments.nodes[] | select(.author.login == "github-actions" or .author.login == "github-actions[bot]") | select(.body | contains("<!-- arena-ui-evidence -->"))] | last | .databaseId // empty' > "$UI_RETURN_DIR/comment-id.txt" 2>/dev/null; then
+            echo '::error::Unable to find the existing evidence comment.'
+            exit 1
+          fi
+          comment_id=$(cat "$UI_RETURN_DIR/comment-id.txt")
+          if [[ -n "$comment_id" ]]; then
+            if ! gh api --method PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$comment_id" -F "body=@$UI_RETURN_DIR/comment.md" --silent 2>/dev/null; then
+              echo '::error::Unable to update the evidence comment.'
+              exit 1
+            fi
+          else
+            if ! gh api --method POST "repos/$GITHUB_REPOSITORY/issues/4/comments" -F "body=@$UI_RETURN_DIR/comment.md" --silent 2>/dev/null; then
+              echo '::error::Unable to create the evidence comment.'
+              exit 1
+            fi
+          fi
+          exit "$blob_failed"
