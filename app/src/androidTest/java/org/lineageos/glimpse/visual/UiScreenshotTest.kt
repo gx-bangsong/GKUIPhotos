@@ -13,6 +13,7 @@ import android.graphics.Color
 import android.net.Uri
 import android.os.Environment
 import android.provider.MediaStore
+import android.view.View
 import androidx.exifinterface.media.ExifInterface
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -178,6 +179,27 @@ class UiScreenshotTest {
         assertNotNull("Brush colors not reachable", device.wait(Until.findObject(By.desc(context.getString(R.string.markup_color_black))), 5000))
         capture("markup-brush-scroll")
     }
+    @Test fun markupBrushSmall() {
+        try {
+            device.executeShellCommand("wm size 720x800")
+            device.waitForIdle()
+            Thread.sleep(1000)
+            editor(); tool(R.string.editor_markup_doodle)
+            instrumentation.runOnMainSync {
+                assertTrue("Small brush panel should scroll", activity!!.findViewById<View>(R.id.markupOptionsScroll).canScrollVertically(1))
+            }
+            capture("markup-brush-small")
+            val scroll = device.findObject(By.res(context.packageName, "markupOptionsScroll"))!!
+            val bounds = scroll.visibleBounds
+            device.swipe(bounds.centerX(), bounds.bottom - 10, bounds.centerX(), bounds.top + 10, 25)
+            assertNotNull("Small brush panel did not expose colors", device.wait(Until.findObject(By.desc(context.getString(R.string.markup_color_black))), 5000))
+            capture("markup-brush-small-scroll")
+        } finally {
+            activity?.finish()
+            device.executeShellCommand("wm size 720x1520")
+            device.waitForIdle()
+        }
+    }
     @Test fun markupMosaic() { editor(); tool(R.string.editor_markup_mosaic); capture("markup-mosaic") }
     @Test fun markupSticker() { editor(); tool(R.string.editor_markup_sticker); capture("markup-sticker") }
     @Test fun markupTextSelected() {
@@ -217,4 +239,16 @@ class UiScreenshotTest {
         capture("collage-selected")
     }
     @Test fun collageSix() { collage(6); capture("collage-six") }
+    @Test fun collageLandscape() {
+        try {
+            device.setOrientationLeft()
+            device.waitForIdle()
+            collage(2); capture("collage-landscape")
+        } finally {
+            activity?.finish()
+            device.setOrientationNatural()
+            device.unfreezeRotation()
+            device.waitForIdle()
+        }
+    }
 }
