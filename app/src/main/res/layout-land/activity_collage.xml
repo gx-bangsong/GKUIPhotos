@@ -40,6 +40,10 @@
                 </HorizontalScrollView>
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
                     android:gravity="start" android:orientation="vertical" android:paddingHorizontal="16dp">
+                    <com.google.android.material.button.MaterialButton android:id="@+id/collageReplace"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:text="@string/collage_replace_photo" />
                     <TextView android:id="@+id/collageZoomLabel" android:layout_width="wrap_content"
                         android:layout_height="wrap_content" android:text="@string/collage_zoom" android:labelFor="@id/collageZoom" />
                     <com.google.android.material.slider.Slider android:id="@+id/collageZoom"

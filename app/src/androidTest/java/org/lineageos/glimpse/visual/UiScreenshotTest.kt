@@ -7,6 +7,9 @@ package org.lineageos.glimpse.visual
 import android.app.Activity
 import android.content.ContentValues
 import android.content.Intent
+import android.content.IntentFilter
+import android.content.ContentUris
+import android.app.Instrumentation
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
@@ -14,6 +17,9 @@ import android.net.Uri
 import android.os.Environment
 import android.provider.MediaStore
 import android.view.View
+import android.widget.ScrollView
+import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.slider.Slider
 import androidx.exifinterface.media.ExifInterface
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -22,6 +28,8 @@ import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
 import org.junit.After
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertEquals
+import org.junit.Assume.assumeTrue
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -29,9 +37,11 @@ import org.junit.runner.RunWith
 import org.lineageos.glimpse.ImageEditorActivity
 import org.lineageos.glimpse.R
 import org.lineageos.glimpse.collage.CollageActivity
+import org.lineageos.glimpse.collage.CollageView
 import org.lineageos.glimpse.ui.views.CropImageView
 import org.lineageos.glimpse.ui.views.AnnotationOverlayView
 import java.io.File
+import java.security.MessageDigest
 
 @RunWith(AndroidJUnit4::class)
 class UiScreenshotTest {
@@ -239,6 +249,104 @@ class UiScreenshotTest {
         capture("collage-selected")
     }
     @Test fun collageSix() { collage(6); capture("collage-six") }
+    @Test fun collageDragAndZoom() {
+        collage(3)
+        val view = activity!!.findViewById<CollageView>(R.id.collagePreview)
+        val strip = activity!!.findViewById<RecyclerView>(R.id.collageFilmstrip)
+        device.waitForIdle()
+        val positions = IntArray(4)
+        instrumentation.runOnMainSync {
+            val first = requireNotNull(strip.layoutManager!!.findViewByPosition(0))
+            val second = requireNotNull(strip.layoutManager!!.findViewByPosition(1))
+            val a = IntArray(2); val b = IntArray(2)
+            first.getLocationOnScreen(a); second.getLocationOnScreen(b)
+            positions[0] = a[0] + first.width / 2; positions[1] = a[1] + first.height / 2
+            positions[2] = b[0] + second.width / 2; positions[3] = b[1] + second.height / 2
+        }
+        assertTrue("Drag gesture failed", device.drag(positions[0], positions[1], positions[2], positions[3], 40))
+        device.waitForIdle()
+        instrumentation.runOnMainSync {
+            assertEquals(listOf(images[1], images[0], images[2]), view.photos.map { it.uri })
+            assertEquals(1, view.selected)
+            val slider = activity!!.findViewById<Slider>(R.id.collageZoom)
+            var parent = slider.parent
+            while (parent != null && parent !is ScrollView) parent = parent.parent
+            (parent as? ScrollView)?.requestChildFocus(slider, slider)
+        }
+        device.waitForIdle()
+        val slider = device.findObject(By.res(context.packageName, "collageZoom"))
+        assertNotNull("Zoom slider not visible", slider)
+        val bounds = slider!!.visibleBounds
+        device.swipe(bounds.centerX(), bounds.centerY(), bounds.right - 20, bounds.centerY(), 30)
+        instrumentation.runOnMainSync {
+            assertTrue("Slider gesture did not zoom selected photo", view.photos[1].zoom > 1f)
+            assertEquals(1f, view.photos[0].zoom, 0.001f)
+        }
+    }
+
+    @Test fun collageReplaceAndCancel() {
+        // The baseline in the screenshot workflow predates the replace control.
+        val id = context.resources.getIdentifier("collageReplace", "id", context.packageName)
+        assumeTrue("Replacement unavailable in baseline", id != 0)
+        collage(2)
+        val view = activity!!.findViewById<CollageView>(R.id.collagePreview)
+        fun deliver(result: Instrumentation.ActivityResult) {
+            val monitor = instrumentation.addMonitor(IntentFilter(Intent.ACTION_OPEN_DOCUMENT), result, true)
+            instrumentation.runOnMainSync { activity!!.findViewById<View>(id).performClick() }
+            instrumentation.waitForIdleSync()
+            instrumentation.removeMonitor(monitor)
+        }
+        deliver(Instrumentation.ActivityResult(Activity.RESULT_CANCELED, null))
+        instrumentation.runOnMainSync { assertEquals(images.take(2), view.photos.map { it.uri }) }
+        deliver(Instrumentation.ActivityResult(Activity.RESULT_OK, Intent().setData(images[2])))
+        val deadline = System.currentTimeMillis() + 30000
+        while (System.currentTimeMillis() < deadline) {
+            var done = false
+            instrumentation.runOnMainSync { done = view.photos.firstOrNull()?.uri == images[2] }
+            if (done) break
+            Thread.sleep(100)
+        }
+        instrumentation.runOnMainSync {
+            assertEquals(listOf(images[2], images[1]), view.photos.map { it.uri })
+            assertEquals(0, view.layout)
+        }
+    }
+
+    @Test fun collageSaveCreatesNewImage() {
+        val collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+        fun outputs(): Set<Uri> {
+            val result = mutableSetOf<Uri>()
+            context.contentResolver.query(collection, arrayOf(MediaStore.Images.Media._ID),
+                "${MediaStore.Images.Media.RELATIVE_PATH} = ? AND ${MediaStore.Images.Media.DISPLAY_NAME} LIKE ?",
+                arrayOf("Pictures/Glimpse/", "Glimpse_Collage_%"), null)?.use { cursor ->
+                while (cursor.moveToNext()) result.add(ContentUris.withAppendedId(collection, cursor.getLong(0)))
+            }
+            return result
+        }
+        fun digest(uri: Uri): List<Byte> = context.contentResolver.openInputStream(uri)!!.use {
+            MessageDigest.getInstance("SHA-256").digest(it.readBytes()).toList()
+        }
+        val before = outputs()
+        val originalHashes = images.take(2).map(::digest)
+        try {
+            collage(2)
+            instrumentation.runOnMainSync { activity!!.findViewById<View>(R.id.collageSave).performClick() }
+            val deadline = System.currentTimeMillis() + 30000
+            while (outputs().subtract(before).isEmpty() && System.currentTimeMillis() < deadline) Thread.sleep(200)
+            val created = outputs().subtract(before)
+            assertEquals("Expected exactly one new image", 1, created.size)
+            val saved = created.single()
+            val bitmap = context.contentResolver.openInputStream(saved)!!.use { BitmapFactory.decodeStream(it) }
+            assertNotNull("Export is not a readable image", bitmap)
+            assertEquals(1800, bitmap.width)
+            assertEquals(1800, bitmap.height)
+            bitmap.recycle()
+            assertEquals("Originals must not be overwritten", originalHashes, images.take(2).map(::digest))
+        } finally {
+            outputs().subtract(before).forEach { context.contentResolver.delete(it, null, null) }
+        }
+    }
+
     @Test fun collageLandscape() {
         try {
             device.setOrientationLeft()

@@ -20,6 +20,8 @@ internal class CollageFilmstripAdapter(
     private val select: (Int) -> Unit,
     private val move: (Int, Int) -> Unit,
 ) : RecyclerView.Adapter<CollageFilmstripAdapter.Holder>() {
+    var dragging = false
+
     override fun getItemCount() = photos().size
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {
@@ -60,7 +62,7 @@ internal class CollageFilmstripAdapter(
         val isSelected = position == selected()
         holder.image.setImageBitmap(photos()[position].preview)
         card.isSelected = isSelected
-        card.strokeWidth = if (isSelected) (3 * card.resources.displayMetrics.density).toInt() else 0
+        card.strokeWidth = ((if (isSelected) 3 else if (dragging) 1 else 0) * card.resources.displayMetrics.density).toInt()
         card.strokeColor = MaterialColors.getColor(card, androidx.appcompat.R.attr.colorPrimary)
         card.contentDescription = card.context.getString(
             if (isSelected) R.string.collage_selected_photo else R.string.collage_photo_description,

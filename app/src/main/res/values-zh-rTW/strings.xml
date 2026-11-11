@@ -485,7 +485,7 @@
     <string name="collage_cancelled">已取消儲存拼貼</string>
     <string name="collage_select_next">選取下一張照片</string>
     <string name="collage_selected_photo">已選取第 %1$d 張，共 %2$d 張</string>
-    <string name="collage_photos_heading">照片 · 長按並拖曳換序</string>
+    <string name="collage_photos_heading">照片 · 長按拖曳至目標位置換序</string>
     <string name="collage_layout_heading">版面</string>
     <string name="collage_zoom_selected">縮放 · 第 %1$d 張</string>
     <string name="collage_photo_description">第 %1$d 張，共 %2$d 張</string>
@@ -505,4 +505,6 @@
     <string name="markup_color_yellow">黃色</string>
     <string name="markup_color_blue">藍色</string>
     <string name="markup_color_green">綠色</string>
+    <string name="collage_replace_photo">替換照片</string>
+    <string name="collage_replace_failed">無法替換照片，請選擇可讀取的圖片。</string>
 </resources>

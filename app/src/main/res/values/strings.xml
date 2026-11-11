@@ -548,7 +548,7 @@
     <string name="collage_cancelled">Collage save canceled</string>
     <string name="collage_select_next">Select next photo</string>
     <string name="collage_selected_photo">Photo %1$d of %2$d selected</string>
-    <string name="collage_photos_heading">Photos · touch and hold to reorder</string>
+    <string name="collage_photos_heading">Photos · hold and drag to a slot to reorder</string>
     <string name="collage_layout_heading">Layout</string>
     <string name="collage_zoom_selected">Zoom · photo %1$d</string>
     <string name="collage_photo_description">Photo %1$d of %2$d</string>
@@ -568,4 +568,6 @@
     <string name="markup_color_yellow">Yellow</string>
     <string name="markup_color_blue">Blue</string>
     <string name="markup_color_green">Green</string>
+    <string name="collage_replace_photo">Replace photo</string>
+    <string name="collage_replace_failed">Could not replace photo. Choose a readable image.</string>
 </resources>

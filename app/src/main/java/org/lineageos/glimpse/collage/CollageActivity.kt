@@ -23,6 +23,7 @@ import android.widget.Toast
 import android.widget.TextView
 import androidx.activity.addCallback
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.graphics.ColorUtils
 import androidx.core.view.WindowInsetsControllerCompat
@@ -53,6 +54,7 @@ class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
     private lateinit var progress: LinearProgressIndicator
     private lateinit var zoom: Slider
     private lateinit var save: MaterialButton
+    private lateinit var replace: MaterialButton
     private lateinit var filmstrip: RecyclerView
     private lateinit var filmstripAdapter: CollageFilmstripAdapter
     private lateinit var layoutCards: LinearLayout
@@ -62,6 +64,28 @@ class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
     private var renderedSelected = -1
     private var renderedCount = -1
     private var uris = arrayListOf<Uri>()
+    private var replacementIndex = -1
+    private var pendingReplacement: Uri? = null
+    private val replacePhoto = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val data = result.data
+        val uri = data?.data
+        if (result.resultCode == Activity.RESULT_OK && uri != null && replacementIndex in uris.indices) {
+            try {
+                val type = contentResolver.getType(uri)
+                require(type == null || type.startsWith("image/"))
+                if (data.flags and Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION != 0) {
+                    contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                pendingReplacement = uri
+                if (!loading) applyPendingReplacement()
+            } catch (e: Exception) {
+                replacementIndex = -1
+                Toast.makeText(this, R.string.collage_replace_failed, Toast.LENGTH_LONG).show()
+            }
+        } else {
+            replacementIndex = -1
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
@@ -80,6 +104,9 @@ class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
         progress = findViewById(R.id.collageProgress)
         zoom = findViewById(R.id.collageZoom)
         save = findViewById(R.id.collageSave)
+        replace = findViewById(R.id.collageReplace)
+        replacementIndex = savedInstanceState?.getInt(KEY_REPLACEMENT_INDEX, -1) ?: -1
+        pendingReplacement = savedInstanceState?.getParcelable(KEY_PENDING_REPLACEMENT)
         filmstrip = findViewById(R.id.collageFilmstrip)
         layoutCards = findViewById(R.id.collageLayoutCards)
         filmstripAdapter = CollageFilmstripAdapter(
@@ -104,6 +131,35 @@ class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
                 movePhoto(from, to)
                 return true
             }
+            override fun onSelectedChanged(viewHolder: RecyclerView.ViewHolder?, actionState: Int) {
+                super.onSelectedChanged(viewHolder, actionState)
+                if (actionState == ItemTouchHelper.ACTION_STATE_DRAG && viewHolder != null) {
+                    val position = viewHolder.bindingAdapterPosition
+                    if (position in preview.photos.indices) {
+                        preview.selected = position
+                        renderedSelected = position
+                        preview.invalidate()
+                    }
+                    filmstripAdapter.dragging = true
+                    for (i in 0 until filmstrip.childCount) {
+                        val card = filmstrip.getChildAt(i) as? MaterialCardView ?: continue
+                        card.strokeColor = MaterialColors.getColor(card, androidx.appcompat.R.attr.colorPrimary)
+                        card.strokeWidth = (if (card === viewHolder.itemView) 3 else 1) * resources.displayMetrics.density.toInt().coerceAtLeast(1)
+                    }
+                    viewHolder.itemView.alpha = 0.65f
+                    viewHolder.itemView.scaleX = 1.08f
+                    viewHolder.itemView.scaleY = 1.08f
+                }
+            }
+            override fun clearView(recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder) {
+                super.clearView(recyclerView, viewHolder)
+                filmstripAdapter.dragging = false
+                viewHolder.itemView.alpha = 1f
+                viewHolder.itemView.scaleX = 1f
+                viewHolder.itemView.scaleY = 1f
+                renderedSelected = -1
+                updateControls()
+            }
             override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) = Unit
             override fun isLongPressDragEnabled() = job == null
         }).attachToRecyclerView(filmstrip)
@@ -123,6 +179,22 @@ class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
         findViewById<View>(R.id.collageCancel).setOnClickListener { cancel() }
         onBackPressedDispatcher.addCallback(this) { cancel() }
         save.setOnClickListener { saveCollage() }
+        replace.setOnClickListener {
+            if (job == null && preview.selected in preview.photos.indices) {
+                replacementIndex = preview.selected
+                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "image/*"
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+                }
+                try {
+                    replacePhoto.launch(intent)
+                } catch (e: android.content.ActivityNotFoundException) {
+                    replacementIndex = -1
+                    Toast.makeText(this, R.string.collage_replace_failed, Toast.LENGTH_LONG).show()
+                }
+            }
+        }
         val state = savedInstanceState?.getFloatArray(KEY_TRANSFORMS)
         setBusy(true)
         job = lifecycleScope.launch {
@@ -142,11 +214,44 @@ class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
                 loading = false
                 job = null
                 setBusy(false)
+                applyPendingReplacement()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 Toast.makeText(this@CollageActivity, R.string.collage_load_failed, Toast.LENGTH_LONG).show()
                 finish()
+            }
+        }
+    }
+
+    private fun applyPendingReplacement() {
+        val uri = pendingReplacement ?: return
+        val index = replacementIndex
+        replaceAt(index, uri)
+    }
+
+    private fun replaceAt(index: Int, uri: Uri) {
+        if (job != null || index !in preview.photos.indices) return
+        setBusy(true)
+        job = lifecycleScope.launch {
+            try {
+                val bitmap = withContext(Dispatchers.IO) { decodeCollageImage(contentResolver, uri, 768) }
+                preview.photos[index] = CollagePhoto(uri, bitmap)
+                uris[index] = uri
+                pendingReplacement = null
+                replacementIndex = -1
+                preview.selected = index
+                preview.invalidate()
+                filmstripAdapter.notifyItemChanged(index)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                pendingReplacement = null
+                replacementIndex = -1
+                Toast.makeText(this@CollageActivity, R.string.collage_replace_failed, Toast.LENGTH_LONG).show()
+            } finally {
+                job = null
+                if (!isFinishing && !isDestroyed) setBusy(false)
             }
         }
     }
@@ -240,6 +345,7 @@ class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
     private fun setBusy(busy: Boolean) {
         progress.isVisible = busy
         save.isEnabled = !busy
+        replace.isEnabled = !busy
         preview.isEnabled = !busy
         zoom.isEnabled = !busy
         filmstrip.isEnabled = !busy
@@ -250,6 +356,10 @@ class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
     private fun cancel() {
         if (job != null && !loading) {
             // Keep controls disabled until the IO worker has closed and removed its pending row.
+            if (pendingReplacement != null) {
+                pendingReplacement = null
+                replacementIndex = -1
+            }
             job?.cancel()
         } else {
             job?.cancel()
@@ -324,6 +434,8 @@ class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
 
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putParcelableArrayList(KEY_URIS, uris)
+        outState.putInt(KEY_REPLACEMENT_INDEX, replacementIndex)
+        outState.putParcelable(KEY_PENDING_REPLACEMENT, pendingReplacement)
         outState.putInt(KEY_LAYOUT, preview.layout)
         outState.putInt(KEY_SELECTED, preview.selected)
         if (preview.photos.isNotEmpty()) outState.putFloatArray(KEY_TRANSFORMS,
@@ -332,6 +444,8 @@ class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
     }
 
     companion object {
+        private const val KEY_PENDING_REPLACEMENT = "collage_pending_replacement"
+        private const val KEY_REPLACEMENT_INDEX = "collage_replacement_index"
         private const val KEY_URIS = "collage_uris"
         private const val KEY_LAYOUT = "collage_layout"
         private const val KEY_SELECTED = "collage_selected"
