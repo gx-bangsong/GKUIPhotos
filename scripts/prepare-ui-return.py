@@ -20,8 +20,8 @@ root = Path(args.evidence)
 out = Path(args.out)
 out.mkdir(parents=True, exist_ok=True)
 names = ('ui-baseline-light', 'ui-baseline-dark', 'ui-candidate-light', 'ui-candidate-dark')
-expected = ('markup-idle', 'markup-brush', 'markup-mosaic', 'markup-text-selected',
-            'markup-sticker', 'collage-two', 'collage-six', 'collage-selected')
+expected = ('markup-idle', 'markup-brush', 'markup-brush-scroll', 'markup-mosaic', 'markup-text-selected',
+            'markup-text-black', 'markup-sticker', 'collage-two', 'collage-six', 'collage-selected')
 pattern = re.compile(r'^\[(\d+),(\d+)\]\[(\d+),(\d+)\]$')
 
 

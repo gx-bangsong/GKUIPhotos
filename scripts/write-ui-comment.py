@@ -42,5 +42,6 @@ lines += ['', '### bounds 自动检查（候选，不是验收结论）',
           '', '### 压缩包内路径',
           '`ui-baseline-light/`、`ui-baseline-dark/`、`ui-candidate-light/`、`ui-candidate-dark/`：各含状态 PNG、XML 和模拟器配置。',
           '`bounds-report.json`、`job-status.json`、`lint-errors.json`：自动诊断。',
-          '', '这些是合成素材的模拟器截图，不代表手机 MCP 真机验收。']
+          '', 'baseline 使用 936f0a8（重组后对照），不是重组前；candidate 是本次修复。',
+          '这些是合成素材的模拟器截图，不代表手机 MCP 真机验收。']
 (root / 'comment.md').write_text('\n'.join(lines) + '\n')

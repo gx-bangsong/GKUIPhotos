@@ -50,7 +50,7 @@ if (( pull_status != 0 )); then
   status=1
 fi
 if (( status == 0 )); then
-  for name in markup-idle markup-brush markup-mosaic markup-text-selected markup-sticker collage-two collage-six collage-selected; do
+  for name in markup-idle markup-brush markup-brush-scroll markup-mosaic markup-text-selected markup-text-black markup-sticker collage-two collage-six collage-selected; do
     for extension in png xml; do
       if [[ ! -s "ui-evidence/$name.$extension" ]]; then
         echo "::error::Missing screenshot evidence: $name.$extension"

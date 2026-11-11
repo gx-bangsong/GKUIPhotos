@@ -24,6 +24,8 @@ import android.widget.TextView
 import androidx.activity.addCallback
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.graphics.ColorUtils
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.isVisible
@@ -64,7 +66,12 @@ class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.collageRoot)) { view, insets ->
+        val root = findViewById<View>(R.id.collageRoot)
+        // The edge-to-edge status bar overlays the actual surface, not the system theme.
+        val surface = MaterialColors.getColor(root, com.google.android.material.R.attr.colorSurface)
+        WindowInsetsControllerCompat(window, root).isAppearanceLightStatusBars =
+            ColorUtils.calculateLuminance(surface) > 0.5
+        ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
             view.updatePadding(left = bars.left, top = bars.top, right = bars.right, bottom = bars.bottom)
             insets

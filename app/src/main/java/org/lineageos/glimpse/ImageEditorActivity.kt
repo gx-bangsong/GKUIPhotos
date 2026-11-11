@@ -449,6 +449,8 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                 text = getString(category.titleRes)
                 textSize = 13f
                 gravity = Gravity.CENTER
+                minWidth = (48 * density).toInt()
+                minHeight = (48 * density).toInt()
                 setPadding((16 * density).toInt(), (8 * density).toInt(), (16 * density).toInt(), (8 * density).toInt())
                 val isSelected = category == activeCategory
                 if (isSelected) {
@@ -1153,7 +1155,8 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         }
         if (children.isEmpty()) return
         val density = resources.displayMetrics.density
-        markupOptionsContent.addView(TextView(this).apply {
+        val section = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        section.addView(TextView(this).apply {
             text = getString(title)
             setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_LabelMedium)
             setTextColor(MaterialColors.getColor(this, com.google.android.material.R.attr.colorOnSurfaceVariant))
@@ -1172,18 +1175,32 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                 setFadingEdgeLength((20 * density).toInt())
                 addView(row)
             }
-            markupOptionsContent.addView(scroller, LinearLayout.LayoutParams(
+            section.addView(scroller, LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         } else {
-            children.forEach { child -> markupOptionsContent.addView(child, LinearLayout.LayoutParams(
+            children.forEach { child -> section.addView(child, LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)) }
         }
+        markupOptionsContent.addView(section)
     }
 
     private fun updateMarkupPanelHeight() {
         val screenHeight = findViewById<View>(R.id.editorRootLayout).height.takeIf { it > 0 }
             ?: resources.displayMetrics.heightPixels
-        val desired = minOf((180 * resources.displayMetrics.density).toInt(), (screenHeight * 0.23f).toInt())
+        val limit = minOf((260 * resources.displayMetrics.density).toInt(), (screenHeight * 0.30f).toInt())
+        // Measure complete sections rather than cutting through the next heading at rest.
+        val width = markupOptionsContent.width
+        if (width <= 0) return
+        var fullHeight = 0
+        for (index in 0 until markupOptionsContent.childCount) {
+            val child = markupOptionsContent.getChildAt(index)
+            child.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+            if (fullHeight + child.measuredHeight > limit) break
+            fullHeight += child.measuredHeight
+        }
+        // A section taller than the viewport must remain scrollable on a small window.
+        val desired = if (fullHeight > 0) fullHeight else limit
         val params = markupOptionsScroll.layoutParams
         if (params.height != desired) {
             params.height = desired
@@ -1194,7 +1211,6 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
     private fun showMarkupToolOptions(tool: MarkupTool) {
         markupOptionsContent.removeAllViews()
         markupOptionsScroll.isVisible = (tool != MarkupTool.NONE)
-        updateMarkupPanelHeight()
         when (tool) {
             MarkupTool.DOODLE -> {
                 addMarkupSection(R.string.markup_brush_section, true) { addDoodleBrushTypeSelector() }
@@ -1267,6 +1283,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             MarkupTool.STICKER -> addMarkupSection(R.string.markup_sticker_section, true) { addStickerSelector() }
             MarkupTool.NONE -> Unit
         }
+        if (tool != MarkupTool.NONE) markupOptionsScroll.post { updateMarkupPanelHeight() }
     }
 
     private fun addDoodleBrushTypeSelector() {
@@ -1930,8 +1947,8 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             val card = MaterialCardView(this).apply {
                 radius = 24f * density
                 cardElevation = 0f
-                strokeWidth = if (c == annotationOverlayView.activeColor) (2.5f * density).toInt() else 0
-                strokeColor = MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary)
+                strokeWidth = if (c == annotationOverlayView.activeColor) (3f * density).toInt() else if (c == Color.BLACK) (1.5f * density).toInt().coerceAtLeast(1) else 0
+                strokeColor = if (c == annotationOverlayView.activeColor) MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary) else Color.WHITE
                 setCardBackgroundColor(c)
                 val size = (48f * density).toInt()
                 val lp = LinearLayout.LayoutParams(size, size).apply {
@@ -1947,7 +1964,8 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                     onColorChanged?.invoke(c)
                     // Update selection borders on existing cards in place without duplicating palette
                     cards.forEach { (cardColor, cardView) ->
-                        cardView.strokeWidth = if (cardColor == c) (2.5f * density).toInt() else 0
+                        cardView.strokeWidth = if (cardColor == c) (3f * density).toInt() else if (cardColor == Color.BLACK) (1.5f * density).toInt().coerceAtLeast(1) else 0
+                        cardView.strokeColor = if (cardColor == c) MaterialColors.getColor(cardView, androidx.appcompat.R.attr.colorPrimary) else Color.WHITE
                         cardView.isSelected = cardColor == c
                     }
                 }

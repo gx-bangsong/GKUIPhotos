@@ -9,6 +9,7 @@ import android.content.ContentValues
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Color
 import android.net.Uri
 import android.os.Environment
 import android.provider.MediaStore
@@ -118,11 +119,28 @@ class UiScreenshotTest {
     }
 
     private fun capture(name: String) {
-        device.waitForIdle()
-        // Accessibility idleness can precede the compositor's next frame.
-        Thread.sleep(600)
-        assertTrue("Screenshot failed: $name", device.takeScreenshot(File(output, "$name.png")))
-        device.dumpWindowHierarchy(File(output, "$name.xml"))
+        // Both the hierarchy and compositor must settle; idleness alone can precede a frame.
+        val png = File(output, "$name.png")
+        val xml = File(output, "$name.xml")
+        val nextPng = File(output, "${name}-probe.png")
+        val nextXml = File(output, "${name}-probe.xml")
+        var stable = false
+        repeat(4) {
+            if (!stable) {
+                device.waitForIdle()
+                Thread.sleep(600)
+                device.dumpWindowHierarchy(xml)
+                assertTrue("Screenshot failed: $name", device.takeScreenshot(png))
+                Thread.sleep(350)
+                device.dumpWindowHierarchy(nextXml)
+                assertTrue("Screenshot probe failed: $name", device.takeScreenshot(nextPng))
+                stable = xml.readBytes().contentEquals(nextXml.readBytes()) &&
+                    png.readBytes().contentEquals(nextPng.readBytes())
+            }
+        }
+        nextPng.delete()
+        nextXml.delete()
+        assertTrue("Screen or hierarchy did not stabilize: $name", stable)
         // App-specific external storage may disappear after instrumentation uninstalls the app.
         // Publish the pair via MediaStore while we still own it, so adb can retrieve it later.
         listOf("png" to "image/png", "xml" to "application/xml").forEach { (extension, mime) ->
@@ -151,7 +169,15 @@ class UiScreenshotTest {
     }
 
     @Test fun markupIdle() { editor(); capture("markup-idle") }
-    @Test fun markupBrush() { editor(); tool(R.string.editor_markup_doodle); capture("markup-brush") }
+    @Test fun markupBrush() {
+        editor(); tool(R.string.editor_markup_doodle); capture("markup-brush")
+        val scroll = device.findObject(By.res(context.packageName, "markupOptionsScroll"))
+        assertNotNull("Markup options missing", scroll)
+        val bounds = scroll!!.visibleBounds
+        device.swipe(bounds.centerX(), bounds.bottom - 10, bounds.centerX(), bounds.top + 10, 25)
+        assertNotNull("Brush colors not reachable", device.wait(Until.findObject(By.desc(context.getString(R.string.markup_color_black))), 5000))
+        capture("markup-brush-scroll")
+    }
     @Test fun markupMosaic() { editor(); tool(R.string.editor_markup_mosaic); capture("markup-mosaic") }
     @Test fun markupSticker() { editor(); tool(R.string.editor_markup_sticker); capture("markup-sticker") }
     @Test fun markupTextSelected() {
@@ -169,6 +195,15 @@ class UiScreenshotTest {
             assertTrue("Text layer was not selected", overlayView?.activeText?.text == "Sample text")
         }
         capture("markup-text-selected")
+        val black = device.wait(Until.findObject(By.desc(context.getString(R.string.markup_color_black))), 5000)
+        assertNotNull("Black swatch unavailable", black)
+        black!!.click()
+        assertTrue("Black swatch not selected", device.wait(Until.hasObject(By.desc(context.getString(R.string.markup_color_black)).selected(true)), 5000))
+        instrumentation.runOnMainSync {
+            val overlayView = activity?.findViewById<AnnotationOverlayView>(R.id.annotationOverlayView)
+            assertTrue("Black was not applied to the selected text", overlayView?.activeText?.color == Color.BLACK)
+        }
+        capture("markup-text-black")
     }
     @Test fun collageTwo() { collage(2); capture("collage-two") }
     @Test fun collageSelected() {
