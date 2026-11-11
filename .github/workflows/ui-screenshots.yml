@@ -73,6 +73,10 @@ jobs:
           "$tools/aapt" dump badging apk-evidence/app-debug.apk > apk-evidence/badging.txt
           "$tools/apksigner" verify --print-certs apk-evidence/app-debug.apk > apk-evidence/signer.txt
           git rev-parse HEAD > apk-evidence/commit.txt
+          echo "::notice::APK source $(cat apk-evidence/commit.txt)"
+          echo "::notice::$(grep '^package: ' apk-evidence/badging.txt)"
+          echo "::notice::$(grep '^Signer #1 certificate SHA-256 digest:' apk-evidence/signer.txt)"
+          echo "::notice::APK SHA-256 $(sha256sum apk-evidence/app-debug.apk | cut -d ' ' -f 1)"
       - uses: actions/upload-artifact@v7
         with:
           name: ui-apk
@@ -160,21 +164,11 @@ jobs:
             exit 1
           fi
           python3 scripts/prepare-ui-return.py --evidence "$UI_EVIDENCE_DIR" --jobs "$UI_RETURN_DIR/jobs.json" --out "$UI_RETURN_DIR"
-          blob_failed=0
           if ! gh api --method POST "repos/$GITHUB_REPOSITORY/git/blobs" --input "$UI_RETURN_DIR/blob-payload.json" --jq .sha > "$UI_RETURN_DIR/blob-sha.txt" 2>/dev/null; then
             echo '::error::Unable to create the detached screenshot blob.'
-            blob_failed=1
+            exit 1
           fi
-          if [[ -f "$UI_EVIDENCE_DIR/ui-apk/app-debug.apk" ]]; then
-            python3 scripts/prepare-collage-apk.py
-            if ! gh api --method POST "repos/$GITHUB_REPOSITORY/git/blobs" --input "$UI_RETURN_DIR/apk-blob-payload.json" --jq .sha > "$UI_RETURN_DIR/apk-blob-sha.txt" 2>/dev/null; then
-              echo '::error::Unable to create the detached APK blob.'
-              blob_failed=1
-            fi
-          else
-            echo '::error::Debug APK evidence is missing.'
-            blob_failed=1
-          fi
+          # Publish the screenshot report first, so an APK failure cannot hide it.
           python3 scripts/write-ui-comment.py
           owner=${GITHUB_REPOSITORY%/*}
           repo=${GITHUB_REPOSITORY#*/}
@@ -195,4 +189,24 @@ jobs:
               exit 1
             fi
           fi
-          exit "$blob_failed"
+          if [[ ! -f "$UI_EVIDENCE_DIR/ui-apk/app-debug.apk" ]]; then
+            echo '::error::Debug APK evidence is missing.'
+            exit 1
+          fi
+          if ! python3 scripts/prepare-collage-apk.py; then
+            echo '::error::APK metadata validation failed; see the sanitized diagnostic above.'
+            exit 1
+          fi
+          if ! gh api --method POST "repos/$GITHUB_REPOSITORY/git/blobs" --input "$UI_RETURN_DIR/apk-blob-payload.json" --jq .sha > "$UI_RETURN_DIR/apk-blob-sha.txt" 2>/dev/null; then
+            echo '::error::Unable to create the detached APK blob.'
+            exit 1
+          fi
+          python3 scripts/write-ui-comment.py
+          if [[ -z "$comment_id" ]]; then
+            echo '::error::Cannot update the newly created screenshot comment with APK metadata.'
+            exit 1
+          fi
+          if ! gh api --method PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$comment_id" -F "body=@$UI_RETURN_DIR/comment.md" --silent 2>/dev/null; then
+            echo '::error::Unable to update the APK evidence comment.'
+            exit 1
+          fi
