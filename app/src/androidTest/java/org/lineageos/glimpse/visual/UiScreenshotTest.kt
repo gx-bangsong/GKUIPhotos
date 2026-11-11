@@ -13,6 +13,7 @@ import android.app.Instrumentation
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.graphics.Rect
 import android.net.Uri
 import android.os.Environment
 import android.provider.MediaStore
@@ -284,19 +285,20 @@ class UiScreenshotTest {
         }
         touch(MotionEvent.ACTION_UP, positions[2].toFloat(), positions[3].toFloat())
         device.waitForIdle()
+        val bounds = Rect()
         instrumentation.runOnMainSync {
             assertEquals(listOf(images[1], images[0], images[2]), view.photos.map { it.uri })
             assertEquals(1, view.selected)
             val slider = activity!!.findViewById<Slider>(R.id.collageZoom)
             var parent = slider.parent
             while (parent != null && parent !is ScrollView) parent = parent.parent
-            (parent as? ScrollView)?.requestChildFocus(slider, slider)
+            val scroll = requireNotNull(parent as? ScrollView)
+            scroll.scrollTo(0, scroll.getChildAt(0).height)
+            assertTrue("Zoom slider not visible", slider.getGlobalVisibleRect(bounds))
+            assertTrue("Zoom slider partially clipped", bounds.height() >= slider.height)
         }
         device.waitForIdle()
-        val slider = device.findObject(By.res(context.packageName, "collageZoom"))
-        assertNotNull("Zoom slider not visible", slider)
-        val bounds = slider!!.visibleBounds
-        device.swipe(bounds.centerX(), bounds.centerY(), bounds.right - 20, bounds.centerY(), 30)
+        device.swipe(bounds.left + bounds.width() / 3, bounds.centerY(), bounds.right - 24, bounds.centerY(), 30)
         instrumentation.runOnMainSync {
             assertTrue("Slider gesture did not zoom selected photo", view.photos[1].zoom > 1f)
             assertEquals(1f, view.photos[0].zoom, 0.001f)
