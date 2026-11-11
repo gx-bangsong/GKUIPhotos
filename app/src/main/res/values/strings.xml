@@ -529,4 +529,23 @@
     <string name="id_license_delete">Delete</string>
     <string name="id_license_close">Close</string>
     <string name="selection_count">%d selected</string>
+    <string name="pinned_albums_header">Pinned albums</string>
+    <string name="album_pin">Pin album</string>
+    <string name="album_unpin">Unpin album</string>
+    <string name="collage_title">Collage</string>
+    <string name="collage_count_error">Choose 2 to 6 photos to create a collage.</string>
+    <string name="collage_video_error">Videos cannot be included in a collage. Deselect videos and try again.</string>
+    <string name="collage_preview_hint">Tap a photo to select it. Drag to reposition; pinch or use zoom to resize.</string>
+    <string name="collage_layout_one">Layout 1</string>
+    <string name="collage_layout_two">Layout 2</string>
+    <string name="collage_move_before">Move earlier</string>
+    <string name="collage_move_after">Move later</string>
+    <string name="collage_zoom">Zoom</string>
+    <string name="collage_load_failed">Could not load photos</string>
+    <string name="collage_saving">Saving collage</string>
+    <string name="collage_saved">Collage saved</string>
+    <string name="collage_save_failed">Could not save collage</string>
+    <string name="collage_cancelled">Collage save canceled</string>
+    <string name="collage_select_next">Select next photo</string>
+    <string name="collage_selected_photo">Photo %1$d of %2$d selected</string>
 </resources>

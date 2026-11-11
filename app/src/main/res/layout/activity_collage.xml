@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Offline collage editor. SPDX-License-Identifier: Apache-2.0 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/collageRoot" android:layout_width="match_parent"
+    android:layout_height="match_parent" android:orientation="vertical"
+    android:background="?attr/colorSurface">
+    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:text="@string/collage_title" android:textAppearance="?attr/textAppearanceTitleLarge"
+        android:paddingHorizontal="16dp" android:paddingVertical="8dp" />
+    <org.lineageos.glimpse.collage.CollageView android:id="@+id/collagePreview"
+        android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"
+        android:contentDescription="@string/collage_preview_hint" />
+    <TextView android:id="@+id/collageHint" android:layout_width="match_parent"
+        android:layout_height="wrap_content" android:paddingHorizontal="16dp"
+        android:text="@string/collage_preview_hint" android:textAppearance="?attr/textAppearanceBodySmall" />
+    <HorizontalScrollView android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:scrollbars="horizontal" android:fadeScrollbars="false">
+        <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:orientation="horizontal" android:paddingHorizontal="12dp">
+            <com.google.android.material.button.MaterialButton android:id="@+id/collageLayoutOne"
+                style="@style/Widget.Material3.Button.OutlinedButton" android:layout_width="wrap_content"
+                android:layout_height="wrap_content" android:text="@string/collage_layout_one" />
+            <com.google.android.material.button.MaterialButton android:id="@+id/collageLayoutTwo"
+                style="@style/Widget.Material3.Button.OutlinedButton" android:layout_width="wrap_content"
+                android:layout_height="wrap_content" android:layout_marginStart="8dp" android:text="@string/collage_layout_two" />
+            <com.google.android.material.button.MaterialButton android:id="@+id/collageSelectNext"
+                style="@style/Widget.Material3.Button.OutlinedButton" android:layout_width="wrap_content"
+                android:layout_height="wrap_content" android:layout_marginStart="8dp" android:text="@string/collage_select_next" />
+            <com.google.android.material.button.MaterialButton android:id="@+id/collagePrevious"
+                style="@style/Widget.Material3.Button.OutlinedButton" android:layout_width="wrap_content"
+                android:layout_height="wrap_content" android:layout_marginStart="8dp" android:text="@string/collage_move_before" />
+            <com.google.android.material.button.MaterialButton android:id="@+id/collageNext"
+                style="@style/Widget.Material3.Button.OutlinedButton" android:layout_width="wrap_content"
+                android:layout_height="wrap_content" android:layout_marginStart="8dp" android:text="@string/collage_move_after" />
+        </LinearLayout>
+    </HorizontalScrollView>
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:gravity="center_vertical" android:orientation="horizontal" android:paddingHorizontal="16dp">
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="@string/collage_zoom" android:labelFor="@id/collageZoom" />
+        <com.google.android.material.slider.Slider android:id="@+id/collageZoom"
+            android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+            android:valueFrom="1" android:valueTo="4" android:value="1" />
+    </LinearLayout>
+    <com.google.android.material.progressindicator.LinearProgressIndicator android:id="@+id/collageProgress"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:indeterminate="true" android:visibility="gone" />
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:gravity="end" android:orientation="horizontal" android:paddingHorizontal="12dp">
+        <com.google.android.material.button.MaterialButton android:id="@+id/collageCancel"
+            style="@style/Widget.Material3.Button.TextButton" android:layout_width="wrap_content"
+            android:layout_height="wrap_content" android:text="@string/cancel" />
+        <com.google.android.material.button.MaterialButton android:id="@+id/collageSave"
+            android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/editor_save" />
+    </LinearLayout>
+</LinearLayout>

@@ -365,7 +365,7 @@ sealed interface AnnotationItem {
         var hasBackgroundPill: Boolean = true,
     ) : AnnotationItem {
         val effectiveTextSize: Float
-            get() = (baseTextSize * scale).coerceIn(12f, 240f)
+            get() = (baseTextSize * scale).coerceIn(1f, 240f)
 
         fun computeBounds(outRect: RectF) {
             val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -432,9 +432,22 @@ sealed interface AnnotationItem {
         var rotation: Float = 0f,
     ) : AnnotationItem {
         fun computeBounds(outRect: RectF) {
+            val radians = Math.toRadians(rotation.toDouble())
             val w = bitmap.width * scale
             val h = bitmap.height * scale
-            outRect.set(centerX - w / 2f, centerY - h / 2f, centerX + w / 2f, centerY + h / 2f)
+            val rotatedW = (abs(cos(radians)) * w + abs(sin(radians)) * h).toFloat()
+            val rotatedH = (abs(sin(radians)) * w + abs(cos(radians)) * h).toFloat()
+            outRect.set(centerX - rotatedW / 2f, centerY - rotatedH / 2f,
+                centerX + rotatedW / 2f, centerY + rotatedH / 2f)
+        }
+
+        fun contains(x: Float, y: Float): Boolean {
+            val radians = Math.toRadians(-rotation.toDouble())
+            val dx = x - centerX
+            val dy = y - centerY
+            val localX = (dx * cos(radians) - dy * sin(radians)).toFloat()
+            val localY = (dx * sin(radians) + dy * cos(radians)).toFloat()
+            return abs(localX) <= bitmap.width * scale / 2f && abs(localY) <= bitmap.height * scale / 2f
         }
 
         override fun draw(canvas: Canvas) {
@@ -639,6 +652,74 @@ class AnnotationOverlayView @JvmOverloads constructor(
     var isMarkupRestrictedToCrop: Boolean = false
 
     val annotations = mutableListOf<AnnotationItem>()
+    private var lastImageMatrix: Matrix? = null
+
+    // Text and stickers are manipulated in view coordinates; carry them with the
+    // image when the preview is resized or its framing matrix changes.
+    private fun syncObjectCoordinates() {
+        val current = imageMatrixProvider?.invoke() ?: return
+        val old = lastImageMatrix
+        if (old != null && old != current) {
+            val inverse = Matrix()
+            if (old.invert(inverse)) {
+                val delta = Matrix().apply { setConcat(current, inverse) }
+                val oldScale = getMatrixScale(old)
+                val ratio = if (oldScale > 0f) getMatrixScale(current) / oldScale else 1f
+                val objects = annotations.toMutableList()
+                activeText?.let { objects.add(it) }
+                activeSticker?.let { objects.add(it) }
+                objects.forEach { item ->
+                    when (item) {
+                        is AnnotationItem.Text -> {
+                            val point = floatArrayOf(item.centerX, item.centerY)
+                            delta.mapPoints(point)
+                            item.centerX = point[0]; item.centerY = point[1]; item.scale *= ratio
+                        }
+                        is AnnotationItem.Sticker -> {
+                            val point = floatArrayOf(item.centerX, item.centerY)
+                            delta.mapPoints(point)
+                            item.centerX = point[0]; item.centerY = point[1]; item.scale *= ratio
+                        }
+                        else -> Unit
+                    }
+                }
+            }
+        }
+        lastImageMatrix = Matrix(current)
+    }
+
+    private fun objectBounds(): RectF? {
+        val area = imageBoundsProvider?.invoke()?.let { RectF(it) } ?: return null
+        if (isMarkupRestrictedToCrop) {
+            val crop = cropRectProvider?.invoke() ?: return null
+            if (!area.intersect(crop)) return null
+        }
+        val inset = 24f * resources.displayMetrics.density
+        if (!area.intersect(inset, paddingTop + inset, width - inset, height - inset)) return null
+        return area.takeUnless { it.isEmpty }
+    }
+
+    fun constrainActiveText() {
+        val item = activeText ?: return
+        val area = objectBounds() ?: return
+        val bounds = RectF().also { item.computeBounds(it) }
+        val fit = fitAnnotation(item.centerX, item.centerY, bounds.width(), bounds.height(),
+            area.left, area.top, area.right, area.bottom)
+        item.scale *= fit.scaleFactor
+        item.centerX = fit.centerX
+        item.centerY = fit.centerY
+    }
+
+    private fun constrainActiveSticker() {
+        val item = activeSticker ?: return
+        val area = objectBounds() ?: return
+        val bounds = RectF().also { item.computeBounds(it) }
+        val fit = fitAnnotation(item.centerX, item.centerY, bounds.width(), bounds.height(),
+            area.left, area.top, area.right, area.bottom)
+        item.scale *= fit.scaleFactor
+        item.centerX = fit.centerX
+        item.centerY = fit.centerY
+    }
 
     // Current doodle in progress
     private var currentDoodlePath: Path? = null
@@ -691,13 +772,15 @@ class AnnotationOverlayView @JvmOverloads constructor(
     private val scaleDetector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
         override fun onScale(detector: ScaleGestureDetector): Boolean {
             activeText?.let { t ->
-                t.scale = (t.scale * detector.scaleFactor).coerceIn(0.3f, 6.0f)
+                t.scale = (t.scale * detector.scaleFactor).coerceIn(0.01f, 6.0f)
+                constrainActiveText()
                 onAnnotationChanged?.invoke()
                 invalidate()
                 return true
             }
             activeSticker?.let { s ->
-                s.scale = (s.scale * detector.scaleFactor).coerceIn(0.2f, 6.0f)
+                s.scale = (s.scale * detector.scaleFactor).coerceIn(0.01f, 6.0f)
+                constrainActiveSticker()
                 onAnnotationChanged?.invoke()
                 invalidate()
                 return true
@@ -858,6 +941,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
             centerY = cy,
             scale = initialScale,
         )
+        constrainActiveSticker()
         onAnnotationChanged?.invoke()
         invalidate()
     }
@@ -923,6 +1007,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
 
+        syncObjectCoordinates()
         val bounds = if (isMarkupRestrictedToCrop) {
             cropRectProvider?.invoke()
         } else {
@@ -1133,45 +1218,38 @@ class AnnotationOverlayView @JvmOverloads constructor(
             }
         }
 
-        // 4. Draw active shape and handles
+        // Content is clipped to the image; controls are drawn afterwards so their
+        // visible circles and hit targets are not clipped at the crop edge.
+        activeShape?.draw(canvas)
+        activeText?.draw(canvas)
+        activeSticker?.draw(canvas)
+        if (bounds != null && !bounds.isEmpty) canvas.restore()
+
         activeShape?.let { shape ->
-            shape.draw(canvas)
             drawHandle(canvas, shape.startX, shape.startY)
             drawHandle(canvas, shape.endX, shape.endY)
         }
-
-        // 5. Draw active text with bounding outline and resize handle
         activeText?.let { t ->
-            t.draw(canvas)
-            val textBounds = RectF()
-            t.computeBounds(textBounds)
+            val textBounds = RectF().also { t.computeBounds(it) }
             canvas.drawRoundRect(textBounds, 8f, 8f, boundsDashPaint)
             drawHandle(canvas, textBounds.right, textBounds.bottom)
         }
-
-        // 6. Draw active sticker with bounding box, handle and delete button
-        activeSticker?.let { s ->
-            s.draw(canvas)
-            val stickerBounds = RectF()
-            s.computeBounds(stickerBounds)
+        activeSticker?.let { sticker ->
+            val stickerBounds = RectF().also { sticker.computeBounds(it) }
             canvas.drawRoundRect(stickerBounds, 8f, 8f, boundsDashPaint)
             drawHandle(canvas, stickerBounds.right, stickerBounds.bottom)
             drawDeleteBadge(canvas, stickerBounds.left, stickerBounds.top)
         }
-
-        if (bounds != null && !bounds.isEmpty) {
-            canvas.restore()
-        }
     }
 
     private fun drawHandle(canvas: Canvas, x: Float, y: Float) {
-        val radius = 16f
+        val radius = 12f * resources.displayMetrics.density
         canvas.drawCircle(x, y, radius, handlePaint)
         canvas.drawCircle(x, y, radius, handleBorderPaint)
     }
 
     private fun drawDeleteBadge(canvas: Canvas, x: Float, y: Float) {
-        val radius = 16f
+        val radius = 12f * resources.displayMetrics.density
         val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.parseColor("#E53935")
             style = Paint.Style.FILL
@@ -1197,6 +1275,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (activeTool == MarkupTool.NONE) return false
+        syncObjectCoordinates()
 
         if (activeTool == MarkupTool.TEXT || activeTool == MarkupTool.STICKER) {
             scaleDetector.onTouchEvent(event)
@@ -1360,7 +1439,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
 
             MarkupTool.TEXT -> {
                 val t = activeText
-                val hitRadius = 48f
+                val hitRadius = 24f * resources.displayMetrics.density
 
                 when (event.actionMasked) {
                     MotionEvent.ACTION_DOWN -> {
@@ -1433,6 +1512,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
                             val currentDist = hypot((x - currentText.centerX).toDouble(), (y - currentText.centerY).toDouble()).toFloat()
                             val newScale = (currentDist / textInitialDist * textInitialScale).coerceIn(0.3f, 6.0f)
                             currentText.scale = newScale
+                            constrainActiveText()
                             onAnnotationChanged?.invoke()
                             invalidate()
                             return true
@@ -1441,6 +1521,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
                             val dy = y - textDragStartY
                             currentText.centerX += dx
                             currentText.centerY += dy
+                            constrainActiveText()
                             textDragStartX = x
                             textDragStartY = y
                             onAnnotationChanged?.invoke()
@@ -1505,7 +1586,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
 
             MarkupTool.STICKER -> {
                 val s = activeSticker
-                val hitRadius = 48f
+                val hitRadius = 24f * resources.displayMetrics.density
                 when (event.actionMasked) {
                     MotionEvent.ACTION_DOWN -> {
                         if (s != null) {
@@ -1531,7 +1612,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
                             }
 
                             // 3. Move inside bounds
-                            if (bounds.contains(x, y)) {
+                            if (s.contains(x, y)) {
                                 isMovingSticker = true
                                 stickerDragStartX = x
                                 stickerDragStartY = y
@@ -1542,7 +1623,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
                             commitActiveSticker()
                         }
                         val index = annotations.indexOfLast { item ->
-                            item is AnnotationItem.Sticker && RectF().also { item.computeBounds(it) }.contains(x, y)
+                            item is AnnotationItem.Sticker && item.contains(x, y)
                         }
                         if (index >= 0) {
                             activeSticker = annotations.removeAt(index) as AnnotationItem.Sticker
@@ -1555,6 +1636,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
                         return true
                     }
                     MotionEvent.ACTION_MOVE -> {
+                        if (scaleDetector.isInProgress) return true
                         val curr = activeSticker ?: return false
                         if (isDraggingStickerHandle) {
                             val currDist = hypot((x - curr.centerX).toDouble(), (y - curr.centerY).toDouble()).toFloat()
@@ -1562,6 +1644,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
 
                             val currAngle = (atan2((y - curr.centerY).toDouble(), (x - curr.centerX).toDouble()) * 180.0 / Math.PI).toFloat()
                             curr.rotation = stickerBaseRotation + (currAngle - stickerInitialAngle)
+                            constrainActiveSticker()
                             onAnnotationChanged?.invoke()
                             invalidate()
                             return true
@@ -1570,6 +1653,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
                             val dy = y - stickerDragStartY
                             curr.centerX += dx
                             curr.centerY += dy
+                            constrainActiveSticker()
                             stickerDragStartX = x
                             stickerDragStartY = y
                             onAnnotationChanged?.invoke()
@@ -1593,6 +1677,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
      * Rasterize all annotations onto a target canvas mapped relative to the visible crop rectangle.
      */
     fun rasterize(canvas: Canvas, cropRect: RectF, exportBitmap: Bitmap? = null) {
+        syncObjectCoordinates()
         commitActiveShape()
         commitActiveText()
         commitActiveSticker()

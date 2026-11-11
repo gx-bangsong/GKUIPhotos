@@ -195,13 +195,22 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
         enableEdgeToEdge()
 
         val rootLayout = findViewById<View>(R.id.idPhotoRootLayout)
+        val preview = findViewById<View>(R.id.previewContainer)
+        bottomControls.addOnLayoutChangeListener { _, _, top, _, bottom, _, _, _, _ ->
+            val params = preview.layoutParams as androidx.coordinatorlayout.widget.CoordinatorLayout.LayoutParams
+            val bottomMargin = bottom - top
+            if (params.bottomMargin != bottomMargin) {
+                params.bottomMargin = bottomMargin
+                preview.layoutParams = params
+            }
+        }
         ViewCompat.setOnApplyWindowInsetsListener(rootLayout) { _, insets ->
             val statusBars = insets.getInsets(WindowInsetsCompat.Type.statusBars())
             val navBars = insets.getInsets(WindowInsetsCompat.Type.navigationBars())
             val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
             val bottomInset = maxOf(navBars.bottom, ime.bottom)
 
-            findViewById<View>(R.id.previewContainer).updatePadding(top = statusBars.top)
+            preview.updatePadding(top = statusBars.top)
             bottomControls.updatePadding(bottom = navBars.bottom + 8)
             catalogPickerOverlay.updatePadding(
                 top = statusBars.top,

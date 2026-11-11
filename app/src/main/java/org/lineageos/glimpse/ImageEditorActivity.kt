@@ -1115,13 +1115,6 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         updateMarkupToolButtons()
         showMarkupToolOptions(tool)
 
-        if (tool == MarkupTool.TEXT && annotationOverlayView.activeText == null) {
-            val rect = cropImageView.getCropRect()
-            val cx = if (!rect.isEmpty) rect.centerX() else cropImageView.width / 2f
-            val cy = if (!rect.isEmpty) rect.centerY() else cropImageView.height / 2f
-            annotationOverlayView.addTextItem("", cx, cy)
-        }
-
         if (tool != MarkupTool.NONE) {
             // Category Tabs automatically disappear in sub-editing mode (text-on-images.jpg & use-arrow-tool.jpg)
             setCategoryTabsVisible(false)
@@ -2099,6 +2092,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                 val str = input.text?.toString()?.trim() ?: ""
                 if (str.isNotBlank()) {
                     textItem.text = str
+                    annotationOverlayView.constrainActiveText()
                     annotationOverlayView.invalidate()
                     annotationOverlayView.onAnnotationChanged?.invoke()
                 } else {
@@ -2149,7 +2143,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             val canvasBmp = Bitmap.createBitmap(result.width, result.height, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(canvasBmp)
             canvas.drawBitmap(result, 0f, 0f, null)
-            val targetRect = if (cropped != null) cropImageView.getCropRect() else cropImageView.getImageBounds()
+            val targetRect = if (cropped != null) cropImageView.getCropOutputBounds() else cropImageView.getImageBounds()
             annotationOverlayView.rasterize(canvas, targetRect, result)
             if (result !== baseBitmap && result !== cropped) result.recycle()
             canvasBmp

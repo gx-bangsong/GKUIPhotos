@@ -466,4 +466,23 @@
     <string name="id_license_delete">刪除</string>
     <string name="id_license_close">關閉</string>
     <string name="selection_count">已選擇 %d 項</string>
+    <string name="pinned_albums_header">置頂相簿</string>
+    <string name="album_pin">置頂相簿</string>
+    <string name="album_unpin">取消置頂相簿</string>
+    <string name="collage_title">拼貼</string>
+    <string name="collage_count_error">請選擇 2 至 6 張照片製作拼貼。</string>
+    <string name="collage_video_error">拼貼不能包含影片，請取消選取影片後重試。</string>
+    <string name="collage_preview_hint">點按照片選取；拖曳調整位置，雙指或使用縮放滑桿調整大小。</string>
+    <string name="collage_layout_one">版面 1</string>
+    <string name="collage_layout_two">版面 2</string>
+    <string name="collage_move_before">往前移動</string>
+    <string name="collage_move_after">往後移動</string>
+    <string name="collage_zoom">縮放</string>
+    <string name="collage_load_failed">無法載入照片</string>
+    <string name="collage_saving">正在儲存拼貼</string>
+    <string name="collage_saved">拼貼已儲存</string>
+    <string name="collage_save_failed">無法儲存拼貼</string>
+    <string name="collage_cancelled">已取消儲存拼貼</string>
+    <string name="collage_select_next">選取下一張照片</string>
+    <string name="collage_selected_photo">已選取第 %1$d 張，共 %2$d 張</string>
 </resources>

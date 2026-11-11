@@ -499,21 +499,30 @@ class CropImageView @JvmOverloads constructor(
      * rectangle, returning a new (possibly filtered-elsewhere) [Bitmap].
      * Returns null if [hasUserModifiedCrop] is false and [force] is false.
      */
+    private fun cropSourceRect(): Rect? {
+        val bmp = bitmap ?: return null
+        if (cropRect.isEmpty) computeCropRect()
+        if (!getImageMatrix().invert(inverseMatrix)) return null
+        val corners = floatArrayOf(cropRect.left, cropRect.top, cropRect.right, cropRect.bottom)
+        inverseMatrix.mapPoints(corners)
+        val left = min(corners[0], corners[2]).toInt().coerceIn(0, bmp.width - 1)
+        val top = min(corners[1], corners[3]).toInt().coerceIn(0, bmp.height - 1)
+        val right = max(corners[0], corners[2]).toInt().coerceIn(left + 1, bmp.width)
+        val bottom = max(corners[1], corners[3]).toInt().coerceIn(top + 1, bmp.height)
+        return Rect(left, top, right, bottom)
+    }
+
+    /** The exact view-space bounds of the pixels returned by [crop]. */
+    fun getCropOutputBounds(): RectF {
+        val source = cropSourceRect() ?: return RectF()
+        return RectF(source).also { getImageMatrix().mapRect(it) }
+    }
+
     fun crop(force: Boolean = false): Bitmap? {
         val bmp = bitmap ?: return null
         if (!hasUserModifiedCrop && !force) return null
-        if (cropRect.isEmpty) computeCropRect()
-        drawMatrix.invert(inverseMatrix)
-        val srcCorners = floatArrayOf(
-            cropRect.left, cropRect.top,
-            cropRect.right, cropRect.bottom,
-        )
-        inverseMatrix.mapPoints(srcCorners)
-        var left = min(srcCorners[0], srcCorners[2]).toInt().coerceIn(0, bmp.width - 1)
-        var top = min(srcCorners[1], srcCorners[3]).toInt().coerceIn(0, bmp.height - 1)
-        var right = max(srcCorners[0], srcCorners[2]).toInt().coerceIn(left + 1, bmp.width)
-        var bottom = max(srcCorners[1], srcCorners[3]).toInt().coerceIn(top + 1, bmp.height)
-        return Bitmap.createBitmap(bmp, left, top, right - left, bottom - top)
+        val source = cropSourceRect() ?: return null
+        return Bitmap.createBitmap(bmp, source.left, source.top, source.width(), source.height())
     }
 
     /**
@@ -523,7 +532,7 @@ class CropImageView @JvmOverloads constructor(
     fun getNormalizedCropRect(): RectF? {
         val bmp = bitmap ?: return null
         if (cropRect.isEmpty) computeCropRect()
-        drawMatrix.invert(inverseMatrix)
+        getImageMatrix().invert(inverseMatrix)
         val srcCorners = floatArrayOf(
             cropRect.left, cropRect.top,
             cropRect.right, cropRect.bottom,

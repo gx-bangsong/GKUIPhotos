@@ -8,6 +8,7 @@ package org.lineageos.glimpse.ui.recyclerview
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.recyclerview.widget.DiffUtil
@@ -15,6 +16,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.request.RequestOptions
+import com.google.android.material.color.MaterialColors
 import org.lineageos.glimpse.R
 import org.lineageos.glimpse.ext.loadThumbnail
 import org.lineageos.glimpse.models.Album
@@ -32,21 +34,25 @@ import org.lineageos.glimpse.utils.media.SourceAlbum
 class AlbumsAdapter(
     private val onAlbumClick: (Album) -> Unit,
     private val onSourceAlbumClick: (SourceAlbum) -> Unit,
+    private val onPinToggle: (Album) -> Unit,
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
 
     private sealed interface Row {
+        data class PinnedSection(val albums: List<Album>) : Row
         data class SourceSection(val sourceAlbums: List<SourceAlbum>) : Row
         data class AlbumRow(val album: Album) : Row
     }
 
     private var rows: List<Row> = emptyList()
 
-    fun submit(albums: List<Album>, sourceAlbums: List<SourceAlbum>) {
+    fun submit(albums: List<Album>, sourceAlbums: List<SourceAlbum>, pinnedKeys: Set<String>) {
+        val (pinned, remaining) = partitionPinned(albums, pinnedKeys) { it.uri.toString() }
         val newRows = buildList {
+            if (pinned.isNotEmpty()) add(Row.PinnedSection(pinned))
             if (sourceAlbums.isNotEmpty()) {
                 add(Row.SourceSection(sourceAlbums))
             }
-            albums.forEach { add(Row.AlbumRow(it)) }
+            remaining.forEach { add(Row.AlbumRow(it)) }
         }
         // Lightweight full refresh; albums lists are small.
         rows = newRows
@@ -54,6 +60,7 @@ class AlbumsAdapter(
     }
 
     override fun getItemViewType(position: Int) = when (rows[position]) {
+        is Row.PinnedSection -> TYPE_PINNED_SECTION
         is Row.SourceSection -> TYPE_SOURCE_SECTION
         is Row.AlbumRow -> TYPE_ALBUM
     }
@@ -67,7 +74,7 @@ class AlbumsAdapter(
         layoutManager.spanSizeLookup = object : androidx.recyclerview.widget.GridLayoutManager.SpanSizeLookup() {
             override fun getSpanSize(position: Int): Int {
                 val row = rows.getOrNull(position)
-                return if (row is Row.SourceSection) layoutManager.spanCount else 1
+                return if (row is Row.SourceSection || row is Row.PinnedSection) layoutManager.spanCount else 1
             }
         }
     }
@@ -75,6 +82,9 @@ class AlbumsAdapter(
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
         val inflater = LayoutInflater.from(parent.context)
         return when (viewType) {
+            TYPE_PINNED_SECTION -> PinnedSectionViewHolder(
+                inflater.inflate(R.layout.source_albums_section, parent, false)
+            )
             TYPE_SOURCE_SECTION -> SourceSectionViewHolder(
                 inflater.inflate(R.layout.source_albums_section, parent, false)
             )
@@ -86,8 +96,9 @@ class AlbumsAdapter(
 
     override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
         when (val row = rows[position]) {
+            is Row.PinnedSection -> (holder as PinnedSectionViewHolder).bind(row.albums)
             is Row.SourceSection -> (holder as SourceSectionViewHolder).bind(row.sourceAlbums)
-            is Row.AlbumRow -> (holder as AlbumViewHolder).bind(row.album)
+            is Row.AlbumRow -> (holder as AlbumViewHolder).bind(row.album, false)
         }
     }
 
@@ -107,26 +118,54 @@ class AlbumsAdapter(
         }
     }
 
+    inner class PinnedSectionViewHolder(view: View) : RecyclerView.ViewHolder(view) {
+        private val carousel = view.findViewById<RecyclerView>(R.id.sourceAlbumsRecyclerView)
+        private val pinnedAdapter = PinnedCarouselAdapter()
+
+        init {
+            view.findViewById<TextView>(R.id.sourceAlbumsHeader).setText(R.string.pinned_albums_header)
+            carousel.layoutManager = LinearLayoutManager(view.context, LinearLayoutManager.HORIZONTAL, false)
+            carousel.adapter = pinnedAdapter
+            carousel.isNestedScrollingEnabled = false
+        }
+
+        fun bind(albums: List<Album>) = pinnedAdapter.submitList(albums)
+    }
+
+    inner class PinnedCarouselAdapter : ListAdapter<Album, AlbumViewHolder>(
+        object : DiffUtil.ItemCallback<Album>() {
+            override fun areItemsTheSame(old: Album, new: Album) = old.uri == new.uri
+            override fun areContentsTheSame(old: Album, new: Album) = old == new
+        }
+    ) {
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): AlbumViewHolder {
+            val view = LayoutInflater.from(parent.context).inflate(R.layout.album_thumbnail_view, parent, false)
+            view.layoutParams = RecyclerView.LayoutParams(
+                (160 * parent.resources.displayMetrics.density).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            return AlbumViewHolder(view)
+        }
+        override fun onBindViewHolder(holder: AlbumViewHolder, position: Int) = holder.bind(getItem(position), true)
+    }
+
     inner class AlbumViewHolder(view: View) : RecyclerView.ViewHolder(view) {
         private val thumbnailImageView = view.findViewById<ImageView>(R.id.thumbnailImageView)!!
         private val descriptionTextView = view.findViewById<TextView>(R.id.descriptionTextView)!!
         private val itemsCountTextView = view.findViewById<TextView>(R.id.itemsCountTextView)!!
+        private val pinButton = view.findViewById<ImageButton>(R.id.pinAlbumButton)!!
 
-        init {
-            view.setOnClickListener {
-                (bindingAdapterPosition.takeIf { it != RecyclerView.NO_POSITION })?.let { pos ->
-                    (rows[pos] as? Row.AlbumRow)?.album?.let(onAlbumClick)
-                }
-            }
-        }
-
-        fun bind(album: Album) {
+        fun bind(album: Album, pinned: Boolean) {
+            itemView.setOnClickListener { onAlbumClick(album) }
+            pinButton.setOnClickListener { onPinToggle(album) }
+            pinButton.contentDescription = itemView.context.getString(if (pinned) R.string.album_unpin else R.string.album_pin)
+            pinButton.imageTintList = android.content.res.ColorStateList.valueOf(
+                MaterialColors.getColor(pinButton, if (pinned) com.google.android.material.R.attr.colorPrimary
+                    else com.google.android.material.R.attr.colorOnSurfaceVariant)
+            )
             descriptionTextView.text = album.name
-            album.mediaCount?.let { count ->
-                itemsCountTextView.text = itemView.resources.getQuantityString(
-                    R.plurals.album_thumbnail_items, count, count
-                )
-            }
+            itemsCountTextView.text = album.mediaCount?.let { count ->
+                itemView.resources.getQuantityString(R.plurals.album_thumbnail_items, count, count)
+            } ?: ""
             thumbnailImageView.loadThumbnail(
                 album.thumbnail,
                 options = RequestOptions()
@@ -137,6 +176,7 @@ class AlbumsAdapter(
     }
 
     companion object {
+        private const val TYPE_PINNED_SECTION = 2
         private const val TYPE_SOURCE_SECTION = 0
         private const val TYPE_ALBUM = 1
     }
