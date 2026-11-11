@@ -26,8 +26,9 @@ def field(name):
 application_id = field('name')
 version_code = field('versionCode')
 version_name = field('versionName')
-cert = re.search(r'^Signer #1 certificate SHA-256 digest: ([0-9a-fA-F:]+)', signer, re.M)
-if application_id != 'org.lineageos.glimpse.dev' or not version_code.isdigit() or not cert:
+cert = re.search(r'^(?:Signer #1|V[123] Signer): certificate SHA-256 digest: ([0-9a-fA-F:]+)', signer, re.M)
+if (application_id != 'org.lineageos.glimpse.dev' or not version_code.isdigit() or not cert
+        or len(cert.group(1).replace(':', '')) != 64):
     raise SystemExit('APK package, version, or signer verification failed')
 metadata = {'commit': commit, 'applicationId': application_id, 'versionCode': int(version_code),
             'versionName': version_name, 'apkSha256': hashlib.sha256(apk).hexdigest(),
