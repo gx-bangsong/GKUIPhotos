@@ -14,7 +14,6 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Rect
-import android.graphics.Canvas
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.TextView
@@ -206,18 +205,24 @@ class UiScreenshotTest {
 
     private fun isCandidate() = InstrumentationRegistry.getArguments().getString("uiVersion") != "baseline"
 
-    /** Return the actual rendered ink bounds within a view, not its layout bounds. */
-    private fun inkBounds(view: View): Rect {
-        val bitmap = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
-        view.draw(Canvas(bitmap))
-        var minX = bitmap.width; var minY = bitmap.height; var maxX = -1; var maxY = -1
-        for (y in 0 until bitmap.height) for (x in 0 until bitmap.width) {
-            if (Color.alpha(bitmap.getPixel(x, y)) > 32) {
+    /** Locate foreground pixels in the actual composited screenshot, within a view. */
+    private fun screenInkBounds(view: View, screenshot: Bitmap, foreground: Int): Rect {
+        val pos = IntArray(2)
+        view.getLocationOnScreen(pos)
+        val left = pos[0].coerceAtLeast(0); val top = pos[1].coerceAtLeast(0)
+        val right = (pos[0] + view.width).coerceAtMost(screenshot.width)
+        val bottom = (pos[1] + view.height).coerceAtMost(screenshot.height)
+        var minX = right; var minY = bottom; var maxX = -1; var maxY = -1
+        for (y in top until bottom) for (x in left until right) {
+            val pixel = screenshot.getPixel(x, y)
+            val distance = kotlin.math.abs(Color.red(pixel) - Color.red(foreground)) +
+                kotlin.math.abs(Color.green(pixel) - Color.green(foreground)) +
+                kotlin.math.abs(Color.blue(pixel) - Color.blue(foreground))
+            if (distance < 100) {
                 minX = minOf(minX, x); minY = minOf(minY, y); maxX = maxOf(maxX, x); maxY = maxOf(maxY, y)
             }
         }
-        bitmap.recycle()
-        assertTrue("View has no visible ink", maxX >= minX)
+        assertTrue("No foreground pixels for ${view.javaClass.simpleName}", maxX >= minX)
         return Rect(minX, minY, maxX + 1, maxY + 1)
     }
 
@@ -225,38 +230,45 @@ class UiScreenshotTest {
         if (!isCandidate()) return
         val row = activity!!.findViewById<LinearLayout>(R.id.markupToolsRow)
         val density = activity!!.resources.displayMetrics.density
-        instrumentation.runOnMainSync {
-            assertEquals(5, row.childCount)
-            for (index in 0 until 5) {
-                val item = row.getChildAt(index) as LinearLayout
-                val icon = (item.getChildAt(0) as FrameLayout).getChildAt(0) as ImageView
-                val label = item.getChildAt(1) as TextView
-                val iconPos = IntArray(2); val labelPos = IntArray(2)
-                icon.getLocationOnScreen(iconPos); label.getLocationOnScreen(labelPos)
-                val iconCenter = iconPos[0] + inkBounds(icon).exactCenterX()
-                val textCenter = labelPos[0] + inkBounds(label).exactCenterX()
-                assertTrue("Tool $index icon/text ink centers differ: $iconCenter vs $textCenter",
-                    kotlin.math.abs(iconCenter - textCenter) <= 3 * density)
+        device.waitForIdle()
+        Thread.sleep(350)
+        val initial = requireNotNull(instrumentation.uiAutomation.takeScreenshot())
+        try {
+            instrumentation.runOnMainSync {
+                assertEquals(5, row.childCount)
+                for (index in 0 until 5) {
+                    val item = row.getChildAt(index) as LinearLayout
+                    val icon = (item.getChildAt(0) as FrameLayout).getChildAt(0) as ImageView
+                    val label = item.getChildAt(1) as TextView
+                    val iconCenter = screenInkBounds(icon, initial, icon.imageTintList!!.defaultColor).exactCenterX()
+                    val textCenter = screenInkBounds(label, initial, label.currentTextColor).exactCenterX()
+                    assertTrue("Tool $index icon/text ink centers differ: $iconCenter vs $textCenter",
+                        kotlin.math.abs(iconCenter - textCenter) <= 3 * density)
+                }
             }
-        }
+        } finally { initial.recycle() }
         var width = -1
         for (index in 0 until 5) {
             instrumentation.runOnMainSync { row.getChildAt(index).performClick() }
             device.waitForIdle()
-            instrumentation.runOnMainSync {
-                val selectedItem = row.getChildAt(index) as LinearLayout
-                assertTrue("Tool $index not selected", selectedItem.isSelected)
-                if (width < 0) width = selectedItem.width
-                for (i in 0 until row.childCount) {
-                    val item = row.getChildAt(i) as LinearLayout
-                    assertEquals("Tool width shifted with selection", width, item.width)
-                    val label = item.getChildAt(0) as TextView
-                    val itemPos = IntArray(2); val labelPos = IntArray(2)
-                    item.getLocationOnScreen(itemPos); label.getLocationOnScreen(labelPos)
-                    val textCenter = labelPos[0] + inkBounds(label).exactCenterX()
-                    assertTrue("Compact tool $i ink is off-center", kotlin.math.abs(textCenter - (itemPos[0] + item.width / 2f)) <= 3 * density)
+            Thread.sleep(350)
+            val screenshot = requireNotNull(instrumentation.uiAutomation.takeScreenshot())
+            try {
+                instrumentation.runOnMainSync {
+                    val selectedItem = row.getChildAt(index) as LinearLayout
+                    assertTrue("Tool $index not selected", selectedItem.isSelected)
+                    if (width < 0) width = selectedItem.width
+                    for (i in 0 until row.childCount) {
+                        val item = row.getChildAt(i) as LinearLayout
+                        assertEquals("Tool width shifted with selection", width, item.width)
+                        val label = item.getChildAt(0) as TextView
+                        val itemPos = IntArray(2)
+                        item.getLocationOnScreen(itemPos)
+                        val textCenter = screenInkBounds(label, screenshot, label.currentTextColor).exactCenterX()
+                        assertTrue("Compact tool $i ink is off-center", kotlin.math.abs(textCenter - (itemPos[0] + item.width / 2f)) <= 3 * density)
+                    }
                 }
-            }
+            } finally { screenshot.recycle() }
         }
     }
 
