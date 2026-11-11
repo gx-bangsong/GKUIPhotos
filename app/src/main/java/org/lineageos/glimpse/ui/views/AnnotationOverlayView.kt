@@ -558,7 +558,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
     private var currentStampSampler: StampStrokeSampler? = null
     private var currentStampSizeInImage: Float = 24f
 
-    var activeColor: Int = Color.RED
+    var activeColor: Int = Color.parseColor("#F44336")
     var activeStrokeWidth: Float = 8f
     var hasTextBackgroundPill: Boolean = true
     var activeMosaicCellSize: Int = 16
