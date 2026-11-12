@@ -244,6 +244,7 @@
     <string name="editor_sticker_back">‹ 贴纸库</string>
     <string name="editor_brush_import">+ 导入画笔</string>
     <string name="editor_brush_import_failed">导入画笔失败</string>
+    <string name="editor_brush_svg_failed">SVG 画笔须包含 viewBox 且仅使用填充路径；不支持外部资源和复杂 SVG 功能。</string>
     <string name="editor_brush_original_hint">彩色画笔保留原色，调色盘已停用</string>
     <string name="editor_brush_spacing">间距</string>
     <string name="editor_brush_opacity">不透明度</string>
@@ -483,6 +484,8 @@
     <string name="collage_preview_hint">点按照片选中；拖动调整位置，双指或使用缩放滑块调整大小。</string>
     <string name="collage_layout_side_by_side">左右</string>
     <string name="collage_layout_stacked">上下</string>
+    <string name="collage_layout_split">分隔线位置</string>
+    <string name="collage_layout_featured">一张大图，三张纵向排列</string>
     <string name="collage_layout_row_order">按行排序</string>
     <string name="collage_layout_column_order">按列排序</string>
     <string name="collage_layout_rows">按行排列</string>

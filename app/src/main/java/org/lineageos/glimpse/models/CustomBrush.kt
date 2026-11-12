@@ -35,6 +35,11 @@ data class CustomBrush(
         } else null
     }.getOrNull()
 
+    // Parsed once per selected brush; the original vector file remains the source.
+    val tipVector: SvgBrush? by lazy {
+        if (tipFile.endsWith(".svg", ignoreCase = true)) SvgBrush.fromFile(File(tipFile)) else null
+    }
+
     companion object {
         fun detectColorMode(bitmap: Bitmap): BrushColorMode {
             val width = bitmap.width

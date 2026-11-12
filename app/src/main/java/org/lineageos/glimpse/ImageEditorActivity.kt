@@ -233,7 +233,10 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         ActivityResultContracts.GetContent()
     ) { uri ->
         if (uri != null) {
-            val name = getFileNameFromUri(uri)?.substringBeforeLast(".") ?: getString(R.string.editor_brush_import)
+            val fileName = getFileNameFromUri(uri)
+            val name = fileName?.substringBeforeLast(".") ?: getString(R.string.editor_brush_import)
+            val isSvg = fileName?.endsWith(".svg", true) == true ||
+                runCatching { contentResolver.getType(uri).equals("image/svg+xml", true) }.getOrDefault(false)
             val brush = CustomEditorAssetManager.importCustomBrush(this, uri, name)
             if (brush != null) {
                 annotationOverlayView.activeBrushType = BrushType.CUSTOM_TEXTURE
@@ -242,7 +245,8 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                 annotationOverlayView.activeStrokeWidth = brush.sizeDp * resources.displayMetrics.density
                 showMarkupToolOptions(MarkupTool.DOODLE)
             } else {
-                Toast.makeText(this, R.string.editor_brush_import_failed, Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, if (isSvg) R.string.editor_brush_svg_failed
+                    else R.string.editor_brush_import_failed, Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -1289,6 +1293,10 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                         }
                     })
                     markupOptionsContent.addView(Chip(this).apply {
+                        layoutParams = LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                        ).apply { marginStart = (12 * resources.displayMetrics.density).toInt() }
+                        minHeight = (48 * resources.displayMetrics.density).toInt()
                         text = getString(R.string.editor_markup_text_bg)
                         isCheckable = true
                         isChecked = annotationOverlayView.hasTextBackgroundPill
@@ -1394,7 +1402,8 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             textSize = 12f
             setPadding((14 * density).toInt(), (8 * density).toInt(), (14 * density).toInt(), (8 * density).toInt())
             setOnClickListener {
-                pickBrushTextureLauncher.launch("image/*")
+                // SVG is not offered by all image-only pickers; validate the selected file on import.
+                pickBrushTextureLauncher.launch("*/*")
             }
         }
         val lp = LinearLayout.LayoutParams(

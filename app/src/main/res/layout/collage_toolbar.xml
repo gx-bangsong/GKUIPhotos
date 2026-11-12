@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Compact collage navigation and fixed save action.
+<!-- Compact collage navigation; the save action is fixed below the workspace.
      SPDX-FileCopyrightText: The LineageOS Project
      SPDX-License-Identifier: Apache-2.0 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
@@ -12,7 +12,4 @@
     <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
         android:text="@string/collage_title" android:textAppearance="?attr/textAppearanceTitleLarge"
         android:paddingStart="8dp" />
-    <com.google.android.material.button.MaterialButton android:id="@+id/collageSave"
-        android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:layout_marginEnd="4dp" android:text="@string/editor_save" />
 </LinearLayout>

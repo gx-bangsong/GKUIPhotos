@@ -112,14 +112,30 @@ object CustomEditorAssetManager {
     }
 
     fun importCustomBrush(context: Context, uri: Uri, name: String = "自定义画笔"): CustomBrush? {
-        val bmp = importBitmap(context, uri, 256) ?: return null
+        val type = runCatching { context.contentResolver.getType(uri) }.getOrNull()
+        val displayName = runCatching {
+            context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME),
+                null, null, null)?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
+        }.getOrNull()
+        val isSvg = type.equals("image/svg+xml", ignoreCase = true) ||
+            displayName?.endsWith(".svg", true) == true || uri.lastPathSegment?.endsWith(".svg", true) == true
         val id = "brush_" + UUID.randomUUID().toString().take(8)
-        val file = File(getAssetDir(context, "custom_brushes"), "$id.png")
-        FileOutputStream(file).use { out ->
-            bmp.compress(Bitmap.CompressFormat.PNG, 100, out)
+        val file = File(getAssetDir(context, "custom_brushes"), "$id.${if (isSvg) "svg" else "png"}")
+        val colorMode = if (isSvg) {
+            val bytes = runCatching { context.contentResolver.openInputStream(uri)?.use(SvgBrush::readBounded) }.getOrNull()
+                ?: return null
+            val vector = SvgBrush.parse(bytes) ?: return null
+            runCatching { file.writeBytes(bytes) }.getOrElse { file.delete(); return null }
+            if (vector.isColored) BrushColorMode.ORIGINAL else BrushColorMode.TINT
+        } else {
+            val bmp = importBitmap(context, uri, 256) ?: return null
+            val mode = CustomBrush.detectColorMode(bmp)
+            val written = runCatching { FileOutputStream(file).use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) } }
+                .getOrDefault(false)
+            bmp.recycle()
+            if (!written) { file.delete(); return null }
+            mode
         }
-        val colorMode = CustomBrush.detectColorMode(bmp)
-        bmp.recycle()
 
         val brush = CustomBrush(
             id = id,

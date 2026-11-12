@@ -458,6 +458,120 @@ class UiScreenshotTest {
     @Test fun collageTwoLayouts() { collageLayouts(2, "collage-two-layouts") }
     @Test fun collageSixLayouts() { collageLayouts(6, "collage-six-layouts") }
 
+    @Test fun markupTextControlsHaveSeparateTouchTargets() {
+        assumeTrue("Text control spacing is candidate-only", isCandidate())
+        editor()
+        tool(R.string.editor_markup_text)
+        instrumentation.runOnMainSync {
+            val root = activity!!.findViewById<ViewGroup>(R.id.markupOptionsContent)
+            fun find(group: ViewGroup, label: String): TextView? {
+                for (i in 0 until group.childCount) {
+                    val child = group.getChildAt(i)
+                    if (child is TextView && child.text.toString() == label) return child
+                    if (child is ViewGroup) find(child, label)?.let { return it }
+                }
+                return null
+            }
+            val action = requireNotNull(find(root, activity!!.getString(R.string.markup_text_action)))
+            val background = requireNotNull(find(root, activity!!.getString(R.string.editor_markup_text_bg)))
+            val a = IntArray(2); val b = IntArray(2)
+            action.getLocationOnScreen(a); background.getLocationOnScreen(b)
+            val density = context.resources.displayMetrics.density
+            assertTrue("Text controls overlap or lack spacing", b[0] - (a[0] + action.width) >= (11f * density).toInt())
+            assertTrue("Text action touch target too small", action.height >= (48f * density).toInt())
+            assertTrue("Background touch target too small", background.height >= (48f * density).toInt())
+        }
+    }
+
+    @Test fun collagePreviewGesturesStayOnTheirStartingPhoto() {
+        assumeTrue("Collage gesture changes are candidate-only", isCandidate())
+        collage(2)
+        val view = activity!!.findViewById<CollageView>(R.id.collagePreview)
+        instrumentation.runOnMainSync {
+            val edge = minOf(view.width, view.height).toFloat()
+            val left = (view.width - edge) / 2f
+            val top = (view.height - edge) / 2f
+            val x = left + edge * .25f
+            val y = top + edge * .5f
+            view.photos[0].zoom = 2f
+            var time = SystemClock.uptimeMillis()
+            var down = time
+            fun event(action: Int, points: List<Pair<Float, Float>>) {
+                if (action == MotionEvent.ACTION_DOWN) down = time
+                val properties = points.indices.map { i -> MotionEvent.PointerProperties().apply {
+                    id = i; toolType = MotionEvent.TOOL_TYPE_FINGER
+                } }.toTypedArray()
+                val coordinates = points.map { (px, py) -> MotionEvent.PointerCoords().apply {
+                    this.x = px; this.y = py; pressure = 1f; size = 1f
+                } }.toTypedArray()
+                val motion = MotionEvent.obtain(down, time, action, points.size, properties, coordinates,
+                    0, 0, 1f, 1f, 0, 0, android.view.InputDevice.SOURCE_TOUCHSCREEN, 0)
+                try { assertTrue(view.onTouchEvent(motion)) } finally { motion.recycle() }
+                time += 20
+            }
+            val beforeX = view.photos[0].offsetX
+            val beforeY = view.photos[0].offsetY
+            event(MotionEvent.ACTION_DOWN, listOf(x to y))
+            event(MotionEvent.ACTION_MOVE, listOf((x + edge * .06f) to (y + edge * .06f)))
+            event(MotionEvent.ACTION_UP, listOf((x + edge * .06f) to (y + edge * .06f)))
+            assertTrue("Direct drag did not pan", view.photos[0].offsetX != beforeX || view.photos[0].offsetY != beforeY)
+            val oldZoom = view.photos[0].zoom
+            val otherZoom = view.photos[1].zoom
+            val first = (x - edge * .08f) to y
+            val second = (x + edge * .08f) to y
+            event(MotionEvent.ACTION_DOWN, listOf(first))
+            event(MotionEvent.ACTION_POINTER_DOWN or (1 shl MotionEvent.ACTION_POINTER_INDEX_SHIFT), listOf(first, second))
+            event(MotionEvent.ACTION_MOVE, listOf((x - edge * .16f) to y, (x + edge * .16f) to y))
+            event(MotionEvent.ACTION_MOVE, listOf((x - edge * .20f) to y, (x + edge * .20f) to y))
+            event(MotionEvent.ACTION_POINTER_UP or (1 shl MotionEvent.ACTION_POINTER_INDEX_SHIFT), listOf(first, second))
+            event(MotionEvent.ACTION_UP, listOf(first))
+            assertTrue("Pinch did not zoom the starting cell", view.photos[0].zoom > oldZoom)
+            assertEquals(otherZoom, view.photos[1].zoom, 0f)
+            val after = view.photos[0].zoom
+            event(MotionEvent.ACTION_DOWN, listOf(x to y))
+            event(MotionEvent.ACTION_POINTER_DOWN or (1 shl MotionEvent.ACTION_POINTER_INDEX_SHIFT),
+                listOf(x to y, (left + edge * .75f) to y))
+            event(MotionEvent.ACTION_MOVE, listOf((x - edge * .1f) to y, (left + edge * .85f) to y))
+            event(MotionEvent.ACTION_POINTER_UP or (1 shl MotionEvent.ACTION_POINTER_INDEX_SHIFT),
+                listOf(x to y, (left + edge * .75f) to y))
+            event(MotionEvent.ACTION_UP, listOf(x to y))
+            assertEquals("Cross-cell pinch changed zoom", after, view.photos[0].zoom, 0f)
+            assertEquals(otherZoom, view.photos[1].zoom, 0f)
+            assertEquals(0, view.selected)
+        }
+    }
+
+    @Test fun collageSplitControlAndBottomSave() {
+        assumeTrue("Collage divider changes are candidate-only", isCandidate())
+        collage(4)
+        val view = activity!!.findViewById<CollageView>(R.id.collagePreview)
+        val splitId = context.resources.getIdentifier("collageSplit", "id", context.packageName)
+        assertTrue("Missing divider control", splitId != 0)
+        val bounds = Rect()
+        instrumentation.runOnMainSync {
+            val save = activity!!.findViewById<View>(R.id.collageSave)
+            val root = activity!!.findViewById<View>(R.id.collageRoot)
+            val saveLoc = IntArray(2); val rootLoc = IntArray(2)
+            save.getLocationOnScreen(saveLoc); root.getLocationOnScreen(rootLoc)
+            assertTrue("Save not anchored near bottom", saveLoc[1] + save.height > rootLoc[1] + root.height * .85f)
+            val layoutModeId = context.resources.getIdentifier("collageModeLayout", "id", context.packageName)
+            activity!!.findViewById<View>(layoutModeId).performClick()
+            activity!!.findViewById<LinearLayout>(R.id.collageLayoutCards).getChildAt(1).performClick()
+            val slider = activity!!.findViewById<Slider>(splitId)
+            var parent = slider.parent
+            while (parent != null && parent !is ScrollView) parent = parent.parent
+            (parent as ScrollView).scrollTo(0, (parent as ScrollView).getChildAt(0).height)
+            assertTrue(slider.getGlobalVisibleRect(bounds))
+        }
+        device.waitForIdle()
+        assertTrue(device.swipe(bounds.centerX(), bounds.centerY(), bounds.left + bounds.width() / 4, bounds.centerY(), 25))
+        instrumentation.runOnMainSync {
+            val split = CollageView::class.java.getDeclaredField("split").apply { isAccessible = true }.getFloat(view)
+            assertTrue("Divider slider did not change proportion", split < .48f)
+            assertEquals(1, view.layout)
+        }
+    }
+
     @Test fun collageTwo() { collage(2); capture("collage-two") }
     @Test fun collageSelected() {
         collage(2)

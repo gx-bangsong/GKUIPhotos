@@ -10,8 +10,8 @@ import org.junit.Test
 
 class CollageLayoutTest {
     @Test fun layoutsCoverTheCanvasWithoutOverlap() {
-        for (count in 2..6) for (layout in 0..1) {
-            val cells = collageCells(count, layout)
+        for (count in 2..6) for (layout in 0..1) for (split in listOf(0.2f, 0.5f, 0.8f)) {
+            val cells = collageCells(count, layout, split)
             assertEquals(count, cells.size)
             assertEquals(1f, cells.sumOf { ((it.right - it.left) * (it.bottom - it.top)).toDouble() }.toFloat(), 0.00001f)
             cells.forEachIndexed { i, a ->
@@ -22,6 +22,16 @@ class CollageLayoutTest {
                 }
             }
         }
+    }
+    @Test fun fourPhotoTemplatesAreDifferentGeometriesAndSplitMovesDivider() {
+        val grid = collageCells(4, 0)
+        val featured = collageCells(4, 1)
+        assertTrue(grid != featured)
+        assertEquals(1f, featured.first().bottom, 0f)
+        assertEquals(0.3f, collageCells(4, 1, 0.3f).first().right, 0.0001f)
+        val photos = mutableListOf("a", "b", "c", "d")
+        moveCollageItem(photos, 0, 0, 3)
+        assertEquals(featured, collageCells(4, 1))
     }
     @Test fun panAndZoomAlwaysCoverTheCell() {
         val cell = Cell(0f, 0f, 100f, 100f)

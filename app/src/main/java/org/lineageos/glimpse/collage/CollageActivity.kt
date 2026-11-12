@@ -54,6 +54,7 @@ class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
     private lateinit var preview: CollageView
     private lateinit var progress: LinearProgressIndicator
     private lateinit var zoom: Slider
+    private lateinit var split: Slider
     private lateinit var save: MaterialButton
     private lateinit var replace: MaterialButton
     private lateinit var filmstrip: RecyclerView
@@ -116,6 +117,7 @@ class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
         preview = findViewById(R.id.collagePreview)
         progress = findViewById(R.id.collageProgress)
         zoom = findViewById(R.id.collageZoom)
+        split = findViewById(R.id.collageSplit)
         save = findViewById(R.id.collageSave)
         replace = findViewById(R.id.collageReplace)
         replacementIndex = savedInstanceState?.getInt(KEY_REPLACEMENT_INDEX, -1) ?: -1
@@ -187,6 +189,11 @@ class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
             ?: intent.getParcelableArrayListExtra(KEY_URIS) ?: arrayListOf()
         if (uris.size !in 2..6) { finish(); return }
         preview.layout = savedInstanceState?.getInt(KEY_LAYOUT, 0) ?: 0
+        preview.split = (savedInstanceState?.getFloat(KEY_SPLIT, 0.5f) ?: 0.5f).coerceIn(0.2f, 0.8f)
+        split.value = preview.split
+        split.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) { preview.split = value; preview.invalidate() }
+        }
         preview.selected = (savedInstanceState?.getInt(KEY_SELECTED, 0) ?: 0).coerceIn(0, uris.lastIndex)
         preview.onSelectionChanged = { updateControls() }
         buildLayoutCards()
@@ -304,10 +311,9 @@ class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
     private fun buildLayoutCards() {
         layoutCards.removeAllViews()
         val density = resources.displayMetrics.density
-        // Four equal cells retain their 2x2 geometry; only the fill order changes.
         val labels = when (uris.size) {
             2 -> listOf(R.string.collage_layout_side_by_side, R.string.collage_layout_stacked)
-            4 -> listOf(R.string.collage_layout_row_order, R.string.collage_layout_column_order)
+            4 -> listOf(R.string.collage_layout_rows, R.string.collage_layout_featured)
             else -> listOf(R.string.collage_layout_rows, R.string.collage_layout_columns)
         }
         labels.forEachIndexed { index, label ->
@@ -374,6 +380,7 @@ class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
         replace.isEnabled = !busy
         preview.isEnabled = !busy
         zoom.isEnabled = !busy
+        split.isEnabled = !busy
         filmstrip.isEnabled = !busy
         findViewById<View>(R.id.collageModePhoto).isEnabled = !busy
         findViewById<View>(R.id.collageModeLayout).isEnabled = !busy
@@ -400,10 +407,11 @@ class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
         // Snapshot mutable UI state before crossing dispatchers.
         val photos = preview.photos.map { it.copy() }
         val layout = preview.layout
+        val splitValue = preview.split
         setBusy(true)
         job = lifecycleScope.launch {
             try {
-                withContext(Dispatchers.IO) { renderAndSave(photos, layout) }
+                withContext(Dispatchers.IO) { renderAndSave(photos, layout, splitValue) }
                 job = null
                 Toast.makeText(this@CollageActivity, R.string.collage_saved, Toast.LENGTH_SHORT).show()
                 setResult(Activity.RESULT_OK)
@@ -421,13 +429,13 @@ class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
         }
     }
 
-    private suspend fun renderAndSave(photos: List<CollagePhoto>, layout: Int) {
+    private suspend fun renderAndSave(photos: List<CollagePhoto>, layout: Int, split: Float) {
         val edge = 1800
         val output = Bitmap.createBitmap(edge, edge, Bitmap.Config.ARGB_8888)
         var target: Uri? = null
         try {
             val canvas = Canvas(output)
-            collageCells(photos.size, layout).forEachIndexed { index, cell ->
+            collageCells(photos.size, layout, split).forEachIndexed { index, cell ->
                 coroutineContext.ensureActive()
                 val photo = photos[index]
                 val bitmap = decodeCollageImage(contentResolver, photo.uri, edge)
@@ -466,6 +474,7 @@ class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
         outState.putParcelable(KEY_PENDING_REPLACEMENT, pendingReplacement)
         outState.putBoolean(KEY_LAYOUT_MODE, modes.checkedButtonId == R.id.collageModeLayout)
         outState.putInt(KEY_LAYOUT, preview.layout)
+        outState.putFloat(KEY_SPLIT, preview.split)
         outState.putInt(KEY_SELECTED, preview.selected)
         if (preview.photos.isNotEmpty()) outState.putFloatArray(KEY_TRANSFORMS,
             preview.photos.flatMap { listOf(it.zoom, it.offsetX, it.offsetY) }.toFloatArray())
@@ -478,6 +487,7 @@ class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
         private const val KEY_URIS = "collage_uris"
         private const val KEY_LAYOUT_MODE = "collage_layout_mode"
         private const val KEY_LAYOUT = "collage_layout"
+        private const val KEY_SPLIT = "collage_split"
         private const val KEY_SELECTED = "collage_selected"
         private const val KEY_TRANSFORMS = "collage_transforms"
         fun createIntent(context: Context, uris: List<Uri>) = Intent(context, CollageActivity::class.java)

@@ -317,6 +317,7 @@
     <string name="editor_sticker_back">‹ Stickers</string>
     <string name="editor_brush_import">+ Import brush</string>
     <string name="editor_brush_import_failed">Failed to import brush</string>
+    <string name="editor_brush_svg_failed">SVG brush must have a viewBox and filled paths only; external resources and complex SVG features are not supported.</string>
     <string name="editor_brush_original_hint">Color brush preserves tip colors; palette disabled</string>
     <string name="editor_brush_spacing">Spacing</string>
     <string name="editor_brush_opacity">Opacity</string>
@@ -538,6 +539,8 @@
     <string name="collage_preview_hint">Tap a photo to select it. Drag to reposition; pinch or use zoom to resize.</string>
     <string name="collage_layout_side_by_side">Side by side</string>
     <string name="collage_layout_stacked">Stacked</string>
+    <string name="collage_layout_split">Divider position</string>
+    <string name="collage_layout_featured">One large, three stacked</string>
     <string name="collage_layout_row_order">Row order</string>
     <string name="collage_layout_column_order">Column order</string>
     <string name="collage_layout_rows">Rows</string>

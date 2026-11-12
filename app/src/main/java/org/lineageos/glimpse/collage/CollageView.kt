@@ -37,8 +37,12 @@ internal fun drawCollagePhoto(canvas: Canvas, bitmap: Bitmap, cell: RectF, zoom:
 class CollageView @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null) : View(context, attrs) {
     internal var photos: MutableList<CollagePhoto> = mutableListOf()
     internal var layout = 0
+    internal var split = 0.5f
     internal var selected = 0
     internal var onSelectionChanged: (() -> Unit)? = null
+    private var gestureIndex = -1
+    private var hadMultiplePointers = false
+    private var rejectScale = false
     private var lastX = 0f
     private var lastY = 0f
     private val border = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -51,7 +55,7 @@ class CollageView @JvmOverloads constructor(context: Context, attrs: AttributeSe
     }
     private val detector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
         override fun onScale(detector: ScaleGestureDetector): Boolean {
-            val photo = photos.getOrNull(selected) ?: return false
+            val photo = photos.getOrNull(gestureIndex) ?: return false
             photo.zoom = (photo.zoom * detector.scaleFactor).coerceIn(1f, 4f)
             onSelectionChanged?.invoke()
             invalidate()
@@ -73,7 +77,7 @@ class CollageView @JvmOverloads constructor(context: Context, attrs: AttributeSe
         super.onDraw(canvas)
         if (photos.size !in 2..6) return
         val bounds = square()
-        collageCells(photos.size, layout).forEachIndexed { i, cell ->
+        collageCells(photos.size, layout, split).forEachIndexed { i, cell ->
             val photo = photos[i]
             val dest = rect(cell, bounds)
             drawCollagePhoto(canvas, photo.preview, dest, photo.zoom, photo.offsetX, photo.offsetY)
@@ -88,22 +92,38 @@ class CollageView @JvmOverloads constructor(context: Context, attrs: AttributeSe
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (!isEnabled || photos.size !in 2..6) return false
-        detector.onTouchEvent(event)
-        when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN -> {
-                val square = square()
-                val index = collageCells(photos.size, layout).indexOfFirst { rect(it, square).contains(event.x, event.y) }
-                if (index < 0) return false
-                selected = index
-                lastX = event.x; lastY = event.y
-                onSelectionChanged?.invoke()
-                invalidate()
-                return true
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+            val bounds = square()
+            gestureIndex = collageCells(photos.size, layout, split).indexOfFirst {
+                rect(it, bounds).contains(event.x, event.y)
             }
+            if (gestureIndex < 0) return false
+            selected = gestureIndex
+            hadMultiplePointers = false
+            rejectScale = false
+            lastX = event.x
+            lastY = event.y
+            onSelectionChanged?.invoke()
+            invalidate()
+        }
+        if (gestureIndex !in photos.indices) return false
+        if (event.actionMasked == MotionEvent.ACTION_POINTER_DOWN) {
+            hadMultiplePointers = true
+            val cell = rect(collageCells(photos.size, layout, split)[gestureIndex], square())
+            // Never turn a two-cell touch into a pinch on the wrong photo.
+            if ((0 until event.pointerCount).any { !cell.contains(event.getX(it), event.getY(it)) }) {
+                rejectScale = true
+                val cancel = MotionEvent.obtain(event).apply { action = MotionEvent.ACTION_CANCEL }
+                detector.onTouchEvent(cancel)
+                cancel.recycle()
+            }
+        }
+        if (!rejectScale) detector.onTouchEvent(event)
+        when (event.actionMasked) {
             MotionEvent.ACTION_MOVE -> {
-                val photo = photos[selected]
-                if (!detector.isInProgress && event.pointerCount == 1) {
-                    val cell = rect(collageCells(photos.size, layout)[selected], square())
+                if (!hadMultiplePointers && event.pointerCount == 1) {
+                    val photo = photos[gestureIndex]
+                    val cell = rect(collageCells(photos.size, layout, split)[gestureIndex], square())
                     val scale = max(cell.width() / photo.preview.width, cell.height() / photo.preview.height) * photo.zoom
                     val dx = (photo.preview.width * scale - cell.width()) / 2f
                     val dy = (photo.preview.height * scale - cell.height()) / 2f
@@ -111,11 +131,14 @@ class CollageView @JvmOverloads constructor(context: Context, attrs: AttributeSe
                     if (dy > 0f) photo.offsetY = (photo.offsetY + (event.y - lastY) / dy).coerceIn(-1f, 1f)
                     invalidate()
                 }
-                lastX = event.x; lastY = event.y
-                return true
+                lastX = event.x
+                lastY = event.y
             }
-            MotionEvent.ACTION_UP -> { performClick(); return true }
-            MotionEvent.ACTION_CANCEL -> return true
+            MotionEvent.ACTION_UP -> {
+                gestureIndex = -1
+                performClick()
+            }
+            MotionEvent.ACTION_CANCEL -> gestureIndex = -1
         }
         return true
     }

@@ -27,6 +27,7 @@ import org.lineageos.glimpse.models.CustomBrush
 import org.lineageos.glimpse.models.CustomShape
 import org.lineageos.glimpse.models.StampPoint
 import org.lineageos.glimpse.models.StampStrokeSampler
+import org.lineageos.glimpse.models.SvgBrush
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -473,12 +474,26 @@ sealed interface AnnotationItem {
         val opacity: Int,
         val colorMode: BrushColorMode,
         val tipBitmap: Bitmap?,
+        val tipVector: SvgBrush? = null,
     ) : AnnotationItem {
         override fun draw(canvas: Canvas) {
             // Handled via drawWithMatrix
         }
 
         fun drawWithMatrix(canvas: Canvas, imageMatrix: Matrix?, reuseMatrix: Matrix, reusePaint: Paint) {
+            tipVector?.let { vector ->
+                canvas.save()
+                if (imageMatrix != null) canvas.concat(imageMatrix)
+                for (pt in points) {
+                    canvas.save()
+                    canvas.translate(pt.x, pt.y)
+                    canvas.rotate(pt.angle)
+                    vector.draw(canvas, sizeInImage, color, opacity, colorMode)
+                    canvas.restore()
+                }
+                canvas.restore()
+                return
+            }
             val bmp = tipBitmap ?: return
             if (bmp.isRecycled || points.isEmpty()) return
 
@@ -1112,7 +1127,9 @@ class AnnotationOverlayView @JvmOverloads constructor(
         val inProgressSampler = currentStampSampler
         val activeBrush = activeCustomBrush
         val activeTip = activeCustomBrushTipBitmap
-        if (inProgressSampler != null && activeBrush != null && activeTip != null && !activeTip.isRecycled) {
+        val activeVector = activeBrush?.tipVector
+        if (inProgressSampler != null && activeBrush != null &&
+            (activeVector != null || (activeTip != null && !activeTip.isRecycled))) {
             val stroke = AnnotationItem.StampStroke(
                 brushId = activeBrush.id,
                 points = inProgressSampler.stamps,
@@ -1122,6 +1139,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
                 opacity = activeBrush.opacity,
                 colorMode = activeBrush.colorMode,
                 tipBitmap = activeTip,
+                tipVector = activeVector,
             )
             stroke.drawWithMatrix(canvas, currentMatrix, stampDrawMatrix, stampDrawPaint)
         } else {
@@ -1316,7 +1334,9 @@ class AnnotationOverlayView @JvmOverloads constructor(
                         MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                             val sampler = currentStampSampler
                             val bmp = activeCustomBrushTipBitmap
-                            if (sampler != null && sampler.stamps.isNotEmpty() && bmp != null && !bmp.isRecycled) {
+                            val vector = customBrush.tipVector
+                            if (sampler != null && sampler.stamps.isNotEmpty() &&
+                                (vector != null || (bmp != null && !bmp.isRecycled))) {
                                 annotations.add(
                                     AnnotationItem.StampStroke(
                                         brushId = customBrush.id,
@@ -1327,6 +1347,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
                                         opacity = customBrush.opacity,
                                         colorMode = customBrush.colorMode,
                                         tipBitmap = bmp,
+                                        tipVector = vector,
                                     )
                                 )
                                 currentStampSampler = null
