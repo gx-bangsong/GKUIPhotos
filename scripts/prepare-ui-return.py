@@ -114,7 +114,10 @@ with zipfile.ZipFile(out / 'ui-evidence.zip', 'w', compression=zipfile.ZIP_DEFLA
         for filename in ('wm-size.txt', 'wm-density.txt', 'font-scale.txt', 'night-mode.txt', 'failure-tail.txt',
                          'google-photos-status.txt', 'google-photos-start.png', 'google-photos-start.xml',
                          'google-photos-after-back.png', 'google-photos-after-back.xml',
-                         'google-photos-photo-view.png', 'google-photos-photo-view.xml'):
+                         'google-photos-photo-view.png', 'google-photos-photo-view.xml',
+                         'google-photos-edit.png', 'google-photos-edit.xml',
+                         'google-photos-markup.png', 'google-photos-markup.xml',
+                         'google-photos-markup-pen.png', 'google-photos-markup-pen.xml'):
             file = folder / filename
             if file.is_file():
                 archive.write(file, f'{name}/{filename}')

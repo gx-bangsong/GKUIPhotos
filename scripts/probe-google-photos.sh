@@ -12,9 +12,10 @@ status="$out/google-photos-status.txt"
   echo 'Device size:'; adb shell wm size
   echo 'Density:'; adb shell wm density
   echo 'Font scale:'; adb shell settings get system font_scale
-  echo 'System locales:'; adb shell getprop persist.sys.locale
+  echo 'System locales:'; adb shell getprop persist.sys.locale; adb shell getprop ro.product.locale
   echo 'Night mode:'; adb shell cmd uimode night
-  echo 'Navigation mode overlay:'; adb shell cmd overlay list com.android.internal.systemui.navbar 2>/dev/null || true
+  echo 'Navigation mode setting:'; adb shell settings get secure navigation_mode
+  echo 'Navigation mode overlays:'; adb shell cmd overlay list 2>/dev/null | grep -i 'navbar' || true
   echo 'Package:'; adb shell pm list packages com.google.android.apps.photos
 } > "$status"
 if ! adb shell pm list packages com.google.android.apps.photos | tr -d '\r' | grep -Fxq 'package:com.google.android.apps.photos'; then
@@ -80,7 +81,38 @@ fi
 if adb shell am start -a android.intent.action.VIEW -d "content://media/external/images/media/$id" -t image/png -p com.google.android.apps.photos --grant-read-uri-permission >/dev/null 2>&1; then
   sleep 7
   capture photo-view
-  echo 'Result: attempted local fixture VIEW after Back; no sign-in or backup action performed. Further navigation requires manual inspection.' >> "$status"
+  # Click only explicitly named editor controls in the inspected hierarchy. Never act on sign-in or backup.
+  click_named() {
+    local file=$1 label=$2 xy
+    xy=$(python3 - "$file" "$label" <<'PYCODE'
+import re,sys,xml.etree.ElementTree as ET
+for node in ET.parse(sys.argv[1]).iter():
+ a=node.attrib
+ if (a.get('content-desc') == sys.argv[2] or a.get('text') == sys.argv[2]) and a.get('clickable') == 'true':
+  m=re.fullmatch(r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]',a.get('bounds',''))
+  if m:
+   x1,y1,x2,y2=map(int,m.groups());print((x1+x2)//2,(y1+y2)//2);break
+PYCODE
+)
+    [[ -n "$xy" ]] || return 1
+    adb shell input tap $xy
+  }
+  if click_named "$out/google-photos-photo-view.xml" Edit; then
+    sleep 8
+    capture edit
+    if click_named "$out/google-photos-edit.xml" Markup; then
+      sleep 5
+      capture markup
+      if click_named "$out/google-photos-markup.xml" Pen; then
+        sleep 3; capture markup-pen
+      fi
+    else
+      echo 'Result: Markup control not identified in editor; stopped without guessing.' >> "$status"
+    fi
+  else
+    echo 'Result: Edit control not identified; stopped.' >> "$status"
+  fi
+  echo 'No sign-in or backup action performed.' >> "$status"
 else
   echo 'Result: Google Photos did not accept local fixture VIEW intent.' >> "$status"
 fi
