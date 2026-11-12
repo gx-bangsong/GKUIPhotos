@@ -111,7 +111,8 @@ with zipfile.ZipFile(out / 'ui-evidence.zip', 'w', compression=zipfile.ZIP_DEFLA
                 file = folder / f'{item}.{extension}'
                 if file.is_file():
                     archive.write(file, f'{name}/{file.name}')
-        for filename in ('wm-size.txt', 'wm-density.txt', 'font-scale.txt', 'night-mode.txt', 'failure-tail.txt'):
+        for filename in ('wm-size.txt', 'wm-density.txt', 'font-scale.txt', 'night-mode.txt', 'failure-tail.txt',
+                         'google-photos-status.txt', 'google-photos-start.png', 'google-photos-start.xml'):
             file = folder / filename
             if file.is_file():
                 archive.write(file, f'{name}/{filename}')

@@ -28,6 +28,12 @@ if [[ "$UI_MODE" == dark ]]; then
 else
   adb shell cmd uimode night no
 fi
+# Inspect the installed reference only once on the same emulator configuration.
+if [[ "$UI_MODE" == light && "$UI_VERSION" == candidate ]]; then
+  if ! bash scripts/probe-google-photos.sh; then
+    echo 'Result: reference probe failed before completion; see job logs.' >> ui-evidence/google-photos-status.txt
+  fi
+fi
 set +e
 ./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.expectedTheme="$UI_MODE" -Pandroid.testInstrumentationRunnerArguments.uiVersion="$UI_VERSION" --stacktrace 2>&1 | tee "${RUNNER_TEMP}/ui-gradle.log"
 status=${PIPESTATUS[0]}
