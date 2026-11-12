@@ -116,6 +116,7 @@ with zipfile.ZipFile(out / 'ui-evidence.zip', 'w', compression=zipfile.ZIP_DEFLA
                          'google-photos-after-back.png', 'google-photos-after-back.xml',
                          'google-photos-photo-view.png', 'google-photos-photo-view.xml',
                          'google-photos-edit.png', 'google-photos-edit.xml',
+                         'google-photos-edit-scrolled.png', 'google-photos-edit-scrolled.xml',
                          'google-photos-markup.png', 'google-photos-markup.xml',
                          'google-photos-markup-pen.png', 'google-photos-markup-pen.xml'):
             file = folder / filename

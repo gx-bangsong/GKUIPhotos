@@ -88,7 +88,7 @@ if adb shell am start -a android.intent.action.VIEW -d "content://media/external
 import re,sys,xml.etree.ElementTree as ET
 for node in ET.parse(sys.argv[1]).iter():
  a=node.attrib
- if (a.get('content-desc') == sys.argv[2] or a.get('text') == sys.argv[2]) and a.get('clickable') == 'true':
+ if (a.get('content-desc') == sys.argv[2] or a.get('text') == sys.argv[2]) :
   m=re.fullmatch(r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]',a.get('bounds',''))
   if m:
    x1,y1,x2,y2=map(int,m.groups());print((x1+x2)//2,(y1+y2)//2);break
@@ -100,14 +100,21 @@ PYCODE
   if click_named "$out/google-photos-photo-view.xml" Edit; then
     sleep 8
     capture edit
-    if click_named "$out/google-photos-edit.xml" Markup; then
-      sleep 5
-      capture markup
-      if click_named "$out/google-photos-markup.xml" Pen; then
-        sleep 3; capture markup-pen
+    # The observed editor has a horizontally scrollable category strip. Swipe
+    # only that identified strip, never the backup dialog or photo contents.
+    if grep -q 'photos_photoeditor_fragments_editor3_tab_container' "$out/google-photos-edit.xml"; then
+      adb shell input swipe 665 1375 165 1375 500
+      sleep 3; capture edit-scrolled
+      if click_named "$out/google-photos-edit-scrolled.xml" Markup; then
+        sleep 5; capture markup
+        if click_named "$out/google-photos-markup.xml" Pen; then
+          sleep 3; capture markup-pen
+        fi
+      else
+        echo 'Result: Markup not found after scrolling observed editor category strip.' >> "$status"
       fi
     else
-      echo 'Result: Markup control not identified in editor; stopped without guessing.' >> "$status"
+      echo 'Result: editor category strip not identified; stopped.' >> "$status"
     fi
   else
     echo 'Result: Edit control not identified; stopped.' >> "$status"
