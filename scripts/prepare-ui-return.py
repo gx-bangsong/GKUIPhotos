@@ -112,7 +112,7 @@ with zipfile.ZipFile(out / 'ui-evidence.zip', 'w', compression=zipfile.ZIP_DEFLA
                 if file.is_file():
                     archive.write(file, f'{name}/{file.name}')
         for filename in ('wm-size.txt', 'wm-density.txt', 'font-scale.txt', 'night-mode.txt', 'failure-tail.txt',
-                         'google-photos-status.txt', 'google-photos-start.png', 'google-photos-start.xml',
+                         'google-photos-status.txt', 'google-photos-error.txt', 'google-photos-start.png', 'google-photos-start.xml',
                          'google-photos-after-back.png', 'google-photos-after-back.xml',
                          'google-photos-photo-view.png', 'google-photos-photo-view.xml',
                          'google-photos-edit.png', 'google-photos-edit.xml',
