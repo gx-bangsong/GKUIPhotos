@@ -1215,18 +1215,20 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             ?: resources.displayMetrics.heightPixels
         val limit = minOf((260 * resources.displayMetrics.density).toInt(), (screenHeight * 0.30f).toInt())
         // Measure complete sections rather than cutting through the next heading at rest.
-        val width = markupOptionsContent.width
+        val width = markupOptionsContent.width - markupOptionsContent.paddingLeft - markupOptionsContent.paddingRight
         if (width <= 0) return
-        var fullHeight = 0
+        var fullHeight = markupOptionsContent.paddingTop + markupOptionsContent.paddingBottom
+        var included = 0
         for (index in 0 until markupOptionsContent.childCount) {
             val child = markupOptionsContent.getChildAt(index)
             child.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
                 View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
             if (fullHeight + child.measuredHeight > limit) break
             fullHeight += child.measuredHeight
+            included++
         }
         // A section taller than the viewport must remain scrollable on a small window.
-        val desired = if (fullHeight > 0) fullHeight else limit
+        val desired = if (included > 0) fullHeight else limit
         val params = markupOptionsScroll.layoutParams
         if (params.height != desired) {
             params.height = desired
@@ -1906,7 +1908,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                 setCardBackgroundColor(c)
                 val size = (48f * density).toInt()
                 val lp = LinearLayout.LayoutParams(size, size).apply {
-                    marginEnd = (4 * density).toInt()
+                    marginEnd = (2 * density).toInt()
                 }
                 layoutParams = lp
                 isClickable = true

@@ -308,7 +308,7 @@ class UiScreenshotTest {
                 val red = views.first { it.contentDescription == activity!!.getString(R.string.markup_color_red) }
                 val density = activity!!.resources.displayMetrics.density
                 assertEquals((14 * density).toInt(), importButton.paddingLeft)
-                assertEquals((4 * density).toInt(), (red.layoutParams as LinearLayout.LayoutParams).marginEnd)
+                assertEquals((2 * density).toInt(), (red.layoutParams as LinearLayout.LayoutParams).marginEnd)
             }
             capture("markup-density")
         } finally {
@@ -332,7 +332,22 @@ class UiScreenshotTest {
     }
 
     @Test fun markupBrush() {
-        editor(); tool(R.string.editor_markup_doodle); assertSingleOptionLabel(R.string.editor_markup_stroke_width); capture("markup-brush")
+        editor(); tool(R.string.editor_markup_doodle); assertSingleOptionLabel(R.string.editor_markup_stroke_width)
+        if (isCandidate()) instrumentation.runOnMainSync {
+            val root = activity!!.findViewById<ViewGroup>(R.id.markupOptionsContent)
+            fun find(group: ViewGroup): View? {
+                for (i in 0 until group.childCount) {
+                    val child = group.getChildAt(i)
+                    if (child.contentDescription == activity!!.getString(R.string.markup_color_red)) return child
+                    if (child is ViewGroup) find(child)?.let { return it }
+                }
+                return null
+            }
+            val red = requireNotNull(find(root))
+            val bounds = Rect()
+            assertTrue("Initial swatch should be fully visible", red.getGlobalVisibleRect(bounds) && bounds.height() == red.height)
+        }
+        capture("markup-brush")
         val scroll = device.findObject(By.res(context.packageName, "markupOptionsScroll"))
         assertNotNull("Markup options missing", scroll)
         val bounds = scroll!!.visibleBounds
