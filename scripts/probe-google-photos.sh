@@ -48,17 +48,39 @@ if ! adb shell monkey -p com.google.android.apps.photos -c android.intent.catego
   exit 0
 fi
 sleep 8
-# No automatic onboarding clicks: capture the initial state for inspection before deciding next steps.
-adb shell uiautomator dump /sdcard/window-google.xml >/dev/null
-adb pull /sdcard/window-google.xml "$out/google-photos-start.xml" >/dev/null
-adb exec-out screencap -p > "$out/google-photos-start.png"
-sleep 2
-adb shell uiautomator dump /sdcard/window-google-probe.xml >/dev/null
-adb pull /sdcard/window-google-probe.xml "$out/google-photos-probe.xml" >/dev/null
-adb exec-out screencap -p > "$out/google-photos-probe.png"
-if cmp -s "$out/google-photos-start.xml" "$out/google-photos-probe.xml" && cmp -s "$out/google-photos-start.png" "$out/google-photos-probe.png"; then
-  echo 'Result: launcher captured offline; PNG and hierarchy stable across two captures. No login or onboarding action performed.' >> "$status"
-else
-  echo 'Result: launcher captured offline but repeated PNG/XML differed; initial state not established stable. No login or onboarding action performed.' >> "$status"
+capture() {
+  local name=$1 stable=0
+  for attempt in 1 2 3; do
+    adb shell uiautomator dump /sdcard/window-google.xml >/dev/null
+    adb pull /sdcard/window-google.xml "$out/google-photos-$name.xml" >/dev/null
+    adb exec-out screencap -p > "$out/google-photos-$name.png"
+    sleep 2
+    adb shell uiautomator dump /sdcard/window-google-probe.xml >/dev/null
+    adb pull /sdcard/window-google-probe.xml "$out/google-photos-probe.xml" >/dev/null
+    adb exec-out screencap -p > "$out/google-photos-probe.png"
+    if cmp -s "$out/google-photos-$name.xml" "$out/google-photos-probe.xml" && cmp -s "$out/google-photos-$name.png" "$out/google-photos-probe.png"; then
+      stable=1; break
+    fi
+  done
+  echo "Capture $name: stable=$stable (PNG and XML compared twice)" >> "$status"
+  rm -f "$out/google-photos-probe.xml" "$out/google-photos-probe.png"
+}
+capture start
+# Only dismiss the backup prompt with Back; never click sign-in or backup.
+adb shell input keyevent KEYCODE_BACK
+sleep 4
+capture after-back
+# Try a direct VIEW intent for the same synthetic fixture via local MediaStore.
+query=$(adb shell content query --uri content://media/external/images/media --projection _id:_display_name 2>/dev/null | tr -d '\r' || true)
+id=$(printf '%s\n' "$query" | grep 'GlimpseReferenceFixture-portrait.png' | sed -n 's/.*_id=\([0-9][0-9]*\).*/\1/p' | head -1)
+if [[ -z "$id" ]]; then
+  echo 'Result: fixture not present in MediaStore; no editor attempted.' >> "$status"
+  exit 0
 fi
-rm -f "$out/google-photos-probe.xml" "$out/google-photos-probe.png"
+if adb shell am start -a android.intent.action.VIEW -d "content://media/external/images/media/$id" -t image/png -p com.google.android.apps.photos --grant-read-uri-permission >/dev/null 2>&1; then
+  sleep 7
+  capture photo-view
+  echo 'Result: attempted local fixture VIEW after Back; no sign-in or backup action performed. Further navigation requires manual inspection.' >> "$status"
+else
+  echo 'Result: Google Photos did not accept local fixture VIEW intent.' >> "$status"
+fi
