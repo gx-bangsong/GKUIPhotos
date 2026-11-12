@@ -34,7 +34,7 @@
                         android:text="@string/collage_photos_heading" android:textAppearance="?attr/textAppearanceBodySmall"
                         android:textColor="?attr/colorOnSurfaceVariant" />
                     <androidx.recyclerview.widget.RecyclerView android:id="@+id/collageFilmstrip"
-                        android:layout_width="match_parent" android:layout_height="76dp"
+                        android:layout_width="match_parent" android:layout_height="68dp"
                         android:clipToPadding="false" android:paddingHorizontal="20dp"
                         android:scrollbars="horizontal" android:fadeScrollbars="false" />
                     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -56,16 +56,12 @@
                 </LinearLayout>
                 <LinearLayout android:id="@+id/collageLayoutPanel" android:layout_width="match_parent"
                     android:layout_height="wrap_content" android:orientation="vertical" android:visibility="gone">
-                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-                        android:paddingHorizontal="20dp" android:paddingTop="8dp" android:paddingBottom="12dp"
-                        android:text="@string/collage_layout_prompt" android:textAppearance="?attr/textAppearanceBodySmall"
-                        android:textColor="?attr/colorOnSurfaceVariant" />
                     <HorizontalScrollView android:layout_width="match_parent" android:layout_height="wrap_content"
                         android:scrollbars="horizontal" android:fadeScrollbars="false"
                         android:fadingEdgeLength="20dp" android:requiresFadingEdge="horizontal">
                         <LinearLayout android:id="@+id/collageLayoutCards" android:layout_width="wrap_content"
                             android:layout_height="wrap_content" android:orientation="horizontal"
-                            android:paddingHorizontal="20dp" android:paddingBottom="16dp" />
+                            android:paddingHorizontal="20dp" android:paddingTop="12dp" android:paddingBottom="16dp" />
                     </HorizontalScrollView>
                 </LinearLayout>
             </LinearLayout>

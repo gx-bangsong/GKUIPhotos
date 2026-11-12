@@ -536,6 +536,12 @@
     <string name="collage_count_error">Choose 2 to 6 photos to create a collage.</string>
     <string name="collage_video_error">Videos cannot be included in a collage. Deselect videos and try again.</string>
     <string name="collage_preview_hint">Tap a photo to select it. Drag to reposition; pinch or use zoom to resize.</string>
+    <string name="collage_layout_side_by_side">Side by side</string>
+    <string name="collage_layout_stacked">Stacked</string>
+    <string name="collage_layout_row_order">Row order</string>
+    <string name="collage_layout_column_order">Column order</string>
+    <string name="collage_layout_rows">Rows</string>
+    <string name="collage_layout_columns">Columns</string>
     <string name="collage_layout_one">Layout 1</string>
     <string name="collage_layout_two">Layout 2</string>
     <string name="collage_move_before">Move earlier</string>
@@ -548,7 +554,7 @@
     <string name="collage_cancelled">Collage save canceled</string>
     <string name="collage_select_next">Select next photo</string>
     <string name="collage_selected_photo">Photo %1$d of %2$d selected</string>
-    <string name="collage_photos_heading">Photos · hold and drag to a slot to reorder</string>
+    <string name="collage_photos_heading">Hold and drag a photo to reorder</string>
     <string name="collage_layout_heading">Layout</string>
     <string name="collage_zoom_selected">Zoom · photo %1$d</string>
     <string name="collage_photo_description">Photo %1$d of %2$d</string>

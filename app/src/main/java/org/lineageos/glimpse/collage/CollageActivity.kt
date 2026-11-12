@@ -107,7 +107,7 @@ class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
         // Limit the tools on short portrait windows; their inner area remains scrollable.
         findViewById<View>(R.id.collagePanelHost)?.let { panel ->
             root.addOnLayoutChangeListener { _, _, top, _, bottom, _, _, _, _ ->
-                val maxPanel = minOf((280 * resources.displayMetrics.density).toInt(), ((bottom - top) * 0.38f).toInt())
+                val maxPanel = minOf((264 * resources.displayMetrics.density).toInt(), ((bottom - top) * 0.36f).toInt())
                 if (maxPanel > 0 && panel.layoutParams.height != maxPanel) {
                     panel.layoutParams = panel.layoutParams.apply { height = maxPanel }
                 }
@@ -304,7 +304,13 @@ class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
     private fun buildLayoutCards() {
         layoutCards.removeAllViews()
         val density = resources.displayMetrics.density
-        listOf(R.string.collage_layout_one, R.string.collage_layout_two).forEachIndexed { index, label ->
+        // Four equal cells retain their 2x2 geometry; only the fill order changes.
+        val labels = when (uris.size) {
+            2 -> listOf(R.string.collage_layout_side_by_side, R.string.collage_layout_stacked)
+            4 -> listOf(R.string.collage_layout_row_order, R.string.collage_layout_column_order)
+            else -> listOf(R.string.collage_layout_rows, R.string.collage_layout_columns)
+        }
+        labels.forEachIndexed { index, label ->
             val card = MaterialCardView(this).apply {
                 layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginEnd = (8 * density).toInt() }

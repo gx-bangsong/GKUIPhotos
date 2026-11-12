@@ -98,8 +98,8 @@ jobs:
         if: matrix.version == 'baseline'
         run: |
           rm -rf app/src/main
-          git archive 2b6c04f1ffbb68ed2f98e801f6eacb30c72a0035 app/src/main | tar -x
-          git diff --exit-code 2b6c04f1ffbb68ed2f98e801f6eacb30c72a0035 -- app/src/main
+          git archive 772071a44340323e7e43efc0b63471a8ae397244 app/src/main | tar -x
+          git diff --exit-code 772071a44340323e7e43efc0b63471a8ae397244 -- app/src/main
       - uses: actions/setup-java@v5
         with:
           distribution: zulu

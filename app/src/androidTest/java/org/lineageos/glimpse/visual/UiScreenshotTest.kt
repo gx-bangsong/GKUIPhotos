@@ -53,6 +53,7 @@ import org.lineageos.glimpse.collage.CollageActivity
 import org.lineageos.glimpse.collage.CollageView
 import org.lineageos.glimpse.ui.views.CropImageView
 import org.lineageos.glimpse.ui.views.AnnotationOverlayView
+import org.lineageos.glimpse.ui.views.MosaicEffect
 import java.io.File
 import java.security.MessageDigest
 
@@ -307,7 +308,7 @@ class UiScreenshotTest {
                 val red = views.first { it.contentDescription == activity!!.getString(R.string.markup_color_red) }
                 val density = activity!!.resources.displayMetrics.density
                 assertEquals((14 * density).toInt(), importButton.paddingLeft)
-                assertEquals((8 * density).toInt(), (red.layoutParams as LinearLayout.LayoutParams).marginEnd)
+                assertEquals((4 * density).toInt(), (red.layoutParams as LinearLayout.LayoutParams).marginEnd)
             }
             capture("markup-density")
         } finally {
@@ -388,6 +389,60 @@ class UiScreenshotTest {
         }
         capture("markup-text-black")
     }
+    @Test fun markupMosaicChoices() {
+        assumeTrue("Flat effect selector only applies to the candidate", isCandidate())
+        editor(); tool(R.string.editor_markup_mosaic)
+        val effects = listOf(
+            R.string.editor_mosaic_pixelate to MosaicEffect.PIXELATE,
+            R.string.editor_mosaic_blur to MosaicEffect.BLUR,
+            R.string.editor_mosaic_blackout to MosaicEffect.BLACKOUT,
+            R.string.editor_mosaic_stripes to MosaicEffect.STRIPES,
+            R.string.editor_mosaic_noise to MosaicEffect.NOISE,
+        )
+        for ((label, effect) in effects) instrumentation.runOnMainSync {
+            val root = activity!!.findViewById<ViewGroup>(R.id.markupOptionsContent)
+            fun find(group: ViewGroup): TextView? {
+                for (i in 0 until group.childCount) {
+                    val child = group.getChildAt(i)
+                    if (child is TextView && child.text == activity!!.getString(label)) return child
+                    if (child is ViewGroup) find(child)?.let { return it }
+                }
+                return null
+            }
+            requireNotNull(find(root)) { "Missing mosaic effect $label" }.performClick()
+            assertEquals(effect, activity!!.findViewById<AnnotationOverlayView>(R.id.annotationOverlayView).activeMosaicEffect)
+        }
+    }
+    @Test fun chineseToolPanelsAndCollage() {
+        try {
+            context.getSystemService(LocaleManager::class.java).applicationLocales = LocaleList.forLanguageTags("zh-CN")
+            device.waitForIdle()
+            editor()
+            listOf(R.string.editor_markup_doodle to "markup-brush-zh",
+                R.string.editor_markup_shapes to "markup-shapes-zh",
+                R.string.editor_markup_text to "markup-text-zh",
+                R.string.editor_markup_mosaic to "markup-mosaic-zh",
+                R.string.editor_markup_sticker to "markup-sticker-zh").forEach { (id, name) ->
+                tool(id); capture(name)
+            }
+            activity?.finish(); activity = null
+            collage(4); capture("collage-four-zh")
+            instrumentation.runOnMainSync { activity!!.findViewById<View>(R.id.collageModeLayout).performClick() }
+            device.waitForIdle(); capture("collage-four-layouts-zh")
+        } finally {
+            activity?.finish(); activity = null
+            context.getSystemService(LocaleManager::class.java).applicationLocales = LocaleList.getEmptyLocaleList()
+            device.waitForIdle()
+        }
+    }
+    private fun collageLayouts(count: Int, name: String) {
+        collage(count)
+        instrumentation.runOnMainSync { activity!!.findViewById<View>(R.id.collageModeLayout).performClick() }
+        device.waitForIdle(); capture(name)
+    }
+    @Test fun collageTwoLayouts() { collageLayouts(2, "collage-two-layouts") }
+    @Test fun collageSixLayouts() { collageLayouts(6, "collage-six-layouts") }
+
     @Test fun collageTwo() { collage(2); capture("collage-two") }
     @Test fun collageSelected() {
         collage(2)

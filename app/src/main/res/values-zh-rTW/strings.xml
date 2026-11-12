@@ -473,6 +473,12 @@
     <string name="collage_count_error">請選擇 2 至 6 張照片製作拼貼。</string>
     <string name="collage_video_error">拼貼不能包含影片，請取消選取影片後重試。</string>
     <string name="collage_preview_hint">點按照片選取；拖曳調整位置，雙指或使用縮放滑桿調整大小。</string>
+    <string name="collage_layout_side_by_side">左右</string>
+    <string name="collage_layout_stacked">上下</string>
+    <string name="collage_layout_row_order">依列排序</string>
+    <string name="collage_layout_column_order">依欄排序</string>
+    <string name="collage_layout_rows">依列排列</string>
+    <string name="collage_layout_columns">依欄排列</string>
     <string name="collage_layout_one">版面 1</string>
     <string name="collage_layout_two">版面 2</string>
     <string name="collage_move_before">往前移動</string>
@@ -485,7 +491,7 @@
     <string name="collage_cancelled">已取消儲存拼貼</string>
     <string name="collage_select_next">選取下一張照片</string>
     <string name="collage_selected_photo">已選取第 %1$d 張，共 %2$d 張</string>
-    <string name="collage_photos_heading">照片 · 長按拖曳至目標位置換序</string>
+    <string name="collage_photos_heading">長按照片拖曳換序</string>
     <string name="collage_layout_heading">版面</string>
     <string name="collage_zoom_selected">縮放 · 第 %1$d 張</string>
     <string name="collage_photo_description">第 %1$d 張，共 %2$d 張</string>
