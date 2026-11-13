@@ -52,6 +52,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.lineageos.glimpse.R
 import org.lineageos.glimpse.ViewActivity
+import org.lineageos.glimpse.collage.CollageActivity
+import org.lineageos.glimpse.collage.CollageSelectionError
+import org.lineageos.glimpse.collage.collageSelectionError
 import org.lineageos.glimpse.datasources.MediaError
 import org.lineageos.glimpse.ext.buildShareIntent
 import org.lineageos.glimpse.ext.createDeleteRequest
@@ -189,6 +192,17 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
                     R.id.share -> {
                         requireActivity().startActivity(buildShareIntent(*selection))
 
+                        true
+                    }
+
+                    R.id.collage -> {
+                        when (collageSelectionError(selection.map { it.mediaType })) {
+                            CollageSelectionError.VIDEO ->
+                                Toast.makeText(requireContext(), R.string.collage_video_error, Toast.LENGTH_LONG).show()
+                            CollageSelectionError.COUNT ->
+                                Toast.makeText(requireContext(), R.string.collage_count_error, Toast.LENGTH_LONG).show()
+                            null -> startActivity(CollageActivity.createIntent(requireContext(), selection.map { it.uri }))
+                        }
                         true
                     }
 

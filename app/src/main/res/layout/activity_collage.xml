@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Portrait collage workspace with a prominent canvas and mode-based tools.
+     SPDX-FileCopyrightText: The LineageOS Project
+     SPDX-License-Identifier: Apache-2.0 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/collageRoot" android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical" android:background="?attr/colorSurface">
+    <include layout="@layout/collage_toolbar" />
+    <FrameLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"
+        android:paddingHorizontal="20dp" android:paddingVertical="12dp">
+        <org.lineageos.glimpse.collage.CollageView android:id="@+id/collagePreview"
+            android:layout_width="match_parent" android:layout_height="match_parent"
+            android:contentDescription="@string/collage_preview_hint" />
+    </FrameLayout>
+    <TextView android:id="@+id/collageHint" android:layout_width="match_parent"
+        android:layout_height="wrap_content" android:gravity="center" android:paddingBottom="8dp"
+        android:textAppearance="?attr/textAppearanceLabelMedium" android:textColor="?attr/colorOnSurfaceVariant" />
+    <com.google.android.material.progressindicator.LinearProgressIndicator android:id="@+id/collageProgress"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:indeterminate="true" android:visibility="gone" />
+    <FrameLayout android:id="@+id/collagePanelHost" android:layout_width="match_parent" android:layout_height="264dp"
+        android:layout_marginHorizontal="12dp" android:layout_marginBottom="12dp">
+        <include layout="@layout/collage_controls" />
+    </FrameLayout>
+    <com.google.android.material.button.MaterialButton android:id="@+id/collageSave"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:minHeight="48dp" android:layout_marginHorizontal="24dp"
+        android:layout_marginBottom="8dp" android:text="@string/editor_save" />
+</LinearLayout>

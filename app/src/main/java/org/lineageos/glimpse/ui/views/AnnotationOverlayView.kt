@@ -20,13 +20,13 @@ import android.graphics.RectF
 import android.graphics.Shader
 import android.util.AttributeSet
 import android.view.MotionEvent
-import android.view.ScaleGestureDetector
 import android.view.View
 import org.lineageos.glimpse.models.BrushColorMode
 import org.lineageos.glimpse.models.CustomBrush
 import org.lineageos.glimpse.models.CustomShape
 import org.lineageos.glimpse.models.StampPoint
 import org.lineageos.glimpse.models.StampStrokeSampler
+import org.lineageos.glimpse.models.SvgBrush
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -365,7 +365,7 @@ sealed interface AnnotationItem {
         var hasBackgroundPill: Boolean = true,
     ) : AnnotationItem {
         val effectiveTextSize: Float
-            get() = (baseTextSize * scale).coerceIn(12f, 240f)
+            get() = (baseTextSize * scale).coerceAtLeast(1f)
 
         fun computeBounds(outRect: RectF) {
             val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -432,9 +432,22 @@ sealed interface AnnotationItem {
         var rotation: Float = 0f,
     ) : AnnotationItem {
         fun computeBounds(outRect: RectF) {
+            val radians = Math.toRadians(rotation.toDouble())
             val w = bitmap.width * scale
             val h = bitmap.height * scale
-            outRect.set(centerX - w / 2f, centerY - h / 2f, centerX + w / 2f, centerY + h / 2f)
+            val rotatedW = (abs(cos(radians)) * w + abs(sin(radians)) * h).toFloat()
+            val rotatedH = (abs(sin(radians)) * w + abs(cos(radians)) * h).toFloat()
+            outRect.set(centerX - rotatedW / 2f, centerY - rotatedH / 2f,
+                centerX + rotatedW / 2f, centerY + rotatedH / 2f)
+        }
+
+        fun contains(x: Float, y: Float): Boolean {
+            val radians = Math.toRadians(-rotation.toDouble())
+            val dx = x - centerX
+            val dy = y - centerY
+            val localX = (dx * cos(radians) - dy * sin(radians)).toFloat()
+            val localY = (dx * sin(radians) + dy * cos(radians)).toFloat()
+            return abs(localX) <= bitmap.width * scale / 2f && abs(localY) <= bitmap.height * scale / 2f
         }
 
         override fun draw(canvas: Canvas) {
@@ -460,12 +473,26 @@ sealed interface AnnotationItem {
         val opacity: Int,
         val colorMode: BrushColorMode,
         val tipBitmap: Bitmap?,
+        val tipVector: SvgBrush? = null,
     ) : AnnotationItem {
         override fun draw(canvas: Canvas) {
             // Handled via drawWithMatrix
         }
 
         fun drawWithMatrix(canvas: Canvas, imageMatrix: Matrix?, reuseMatrix: Matrix, reusePaint: Paint) {
+            tipVector?.let { vector ->
+                canvas.save()
+                if (imageMatrix != null) canvas.concat(imageMatrix)
+                for (pt in points) {
+                    canvas.save()
+                    canvas.translate(pt.x, pt.y)
+                    canvas.rotate(pt.angle)
+                    vector.draw(canvas, sizeInImage, color, opacity, colorMode)
+                    canvas.restore()
+                }
+                canvas.restore()
+                return
+            }
             val bmp = tipBitmap ?: return
             if (bmp.isRecycled || points.isEmpty()) return
 
@@ -516,6 +543,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
 
     var activeTool: MarkupTool = MarkupTool.NONE
         set(value) {
+            if (field == value) return
             commitActiveShape()
             commitActiveText()
             commitActiveSticker()
@@ -544,7 +572,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
     private var currentStampSampler: StampStrokeSampler? = null
     private var currentStampSizeInImage: Float = 24f
 
-    var activeColor: Int = Color.RED
+    var activeColor: Int = Color.parseColor("#F44336")
     var activeStrokeWidth: Float = 8f
     var hasTextBackgroundPill: Boolean = true
     var activeMosaicCellSize: Int = 16
@@ -617,14 +645,17 @@ class AnnotationOverlayView @JvmOverloads constructor(
         }
     }
 
+    // All stored annotation geometry is in the EXIF-normalized base bitmap space.
+    // imageMatrixProvider maps base -> view; displayToBase maps transformed bitmap -> base.
     private fun getMatrixScale(matrix: Matrix?): Float {
         if (matrix == null) return 1f
         val values = FloatArray(9)
         matrix.getValues(values)
-        val sx = values[Matrix.MSCALE_X]
-        val sy = values[Matrix.MSCALE_Y]
-        return if (sx != 0f) abs(sx) else if (sy != 0f) abs(sy) else 1f
+        return hypot(values[Matrix.MSCALE_X].toDouble(), values[Matrix.MSKEW_Y].toDouble())
+            .toFloat().coerceAtLeast(0.0001f)
     }
+
+    fun viewLengthToBase(length: Float): Float = length / getMatrixScale(imageMatrixProvider?.invoke())
 
     var onAnnotationChanged: (() -> Unit)? = null
     var onTextEditRequested: ((AnnotationItem.Text) -> Unit)? = null
@@ -635,11 +666,52 @@ class AnnotationOverlayView @JvmOverloads constructor(
     var imageBoundsProvider: (() -> RectF)? = null
     var displayBitmapProvider: (() -> Bitmap?)? = null
     var imageMatrixProvider: (() -> Matrix)? = null
+    var displayToBaseMatrixProvider: (() -> Matrix)? = null
+    var baseBoundsProvider: (() -> RectF)? = null
+    var onPreviewGesture: ((Float, Float, Float, Float, Float) -> Unit)? = null
+    var isPreviewFrameAvailable: (() -> Boolean)? = null
     var isMarkupRestrictedToCrop: Boolean = false
 
     val annotations = mutableListOf<AnnotationItem>()
 
+    private fun objectBounds(): RectF? {
+        val area = baseBoundsProvider?.invoke()?.let { RectF(it) } ?: return null
+        val visible = if (isMarkupRestrictedToCrop) cropRectProvider?.invoke() else imageBoundsProvider?.invoke()
+        if (visible != null) {
+            val inverse = Matrix()
+            if (imageMatrixProvider?.invoke()?.invert(inverse) != true) return null
+            val mapped = RectF(visible)
+            inverse.mapRect(mapped)
+            if (!area.intersect(mapped)) return null
+        }
+        return area.takeUnless { it.isEmpty }
+    }
+
+    fun constrainActiveText() {
+        val item = activeText ?: return
+        val area = objectBounds() ?: return
+        val bounds = RectF().also { item.computeBounds(it) }
+        val fit = fitAnnotation(item.centerX, item.centerY, bounds.width(), bounds.height(),
+            area.left, area.top, area.right, area.bottom)
+        item.scale *= fit.scaleFactor
+        item.centerX = fit.centerX
+        item.centerY = fit.centerY
+    }
+
+    private fun constrainActiveSticker() {
+        val item = activeSticker ?: return
+        val area = objectBounds() ?: return
+        val bounds = RectF().also { item.computeBounds(it) }
+        val fit = fitAnnotation(item.centerX, item.centerY, bounds.width(), bounds.height(),
+            area.left, area.top, area.right, area.bottom)
+        item.scale *= fit.scaleFactor
+        item.centerX = fit.centerX
+        item.centerY = fit.centerY
+    }
+
     // Current doodle in progress
+    private var currentDoodleWidth = 8f
+    private var currentMosaicWidth = 32f
     private var currentDoodlePath: Path? = null
     private var lastDoodleX = 0f
     private var lastDoodleY = 0f
@@ -687,24 +759,6 @@ class AnnotationOverlayView @JvmOverloads constructor(
     private var stickerInitialAngle = 0f
     private var stickerBaseRotation = 0f
 
-    private val scaleDetector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
-        override fun onScale(detector: ScaleGestureDetector): Boolean {
-            activeText?.let { t ->
-                t.scale = (t.scale * detector.scaleFactor).coerceIn(0.3f, 6.0f)
-                onAnnotationChanged?.invoke()
-                invalidate()
-                return true
-            }
-            activeSticker?.let { s ->
-                s.scale = (s.scale * detector.scaleFactor).coerceIn(0.2f, 6.0f)
-                onAnnotationChanged?.invoke()
-                invalidate()
-                return true
-            }
-            return false
-        }
-    })
-
     private val handlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
         color = Color.WHITE
@@ -732,7 +786,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
     private fun getOrCreateMosaicShader(cellSize: Int): BitmapShader? {
         val cached = mosaicShaderCache[cellSize]
         if (cached != null) {
-            imageMatrixProvider?.invoke()?.let { cached.setLocalMatrix(it) }
+            displayToBaseMatrixProvider?.invoke()?.let { cached.setLocalMatrix(it) }
             return cached
         }
 
@@ -745,7 +799,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
         if (sBmp !== mBmp && sBmp !== bmp) sBmp.recycle()
 
         val shader = BitmapShader(mBmp, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
-        imageMatrixProvider?.invoke()?.let { shader.setLocalMatrix(it) }
+        displayToBaseMatrixProvider?.invoke()?.let { shader.setLocalMatrix(it) }
         mosaicShaderCache[cellSize] = shader
         return shader
     }
@@ -753,7 +807,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
     private fun getOrCreateBlurShader(sourceBitmap: Bitmap? = null): BitmapShader? {
         val bmp = sourceBitmap ?: displayBitmapProvider?.invoke() ?: return null
         if (sourceBitmap == null && blurShader != null) {
-            imageMatrixProvider?.invoke()?.let { blurShader?.setLocalMatrix(it) }
+            displayToBaseMatrixProvider?.invoke()?.let { blurShader?.setLocalMatrix(it) }
             return blurShader
         }
 
@@ -764,7 +818,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
         if (small !== bmp && small !== blurred) small.recycle()
         val shader = BitmapShader(blurred, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
         if (sourceBitmap == null) {
-            imageMatrixProvider?.invoke()?.let { shader.setLocalMatrix(it) }
+            displayToBaseMatrixProvider?.invoke()?.let { shader.setLocalMatrix(it) }
             blurShader = shader
         }
         return shader
@@ -840,13 +894,20 @@ class AnnotationOverlayView @JvmOverloads constructor(
         commitActiveText()
         commitActiveSticker()
 
-        val bounds = imageBoundsProvider?.invoke() ?: cropRectProvider?.invoke()
-        val cx = bounds?.centerX() ?: (width / 2f)
-        val cy = bounds?.centerY() ?: (height / 2f)
+        activeTool = MarkupTool.STICKER
+        val bounds = cropRectProvider?.invoke()?.takeUnless { it.isEmpty }
+            ?: imageBoundsProvider?.invoke()
+        val point = floatArrayOf(bounds?.centerX() ?: (width / 2f), bounds?.centerY() ?: (height / 2f))
+        val inverse = Matrix()
+        imageMatrixProvider?.invoke()?.invert(inverse)
+        inverse.mapPoints(point)
+        val cx = point[0]
+        val cy = point[1]
         val density = resources.displayMetrics.density
-        val targetSize = 130f * density
+        val targetSize = minOf(130f * density, (bounds?.width() ?: width.toFloat()) * 0.7f,
+            (bounds?.height() ?: height.toFloat()) * 0.7f)
         val maxDim = max(bmp.width, bmp.height).toFloat()
-        val initialScale = if (maxDim > 0f) (targetSize / maxDim).coerceIn(0.2f, 3.0f) else 1f
+        val initialScale = if (maxDim > 0f) (viewLengthToBase(targetSize) / maxDim).coerceAtMost(3.0f) else 1f
 
         activeSticker = AnnotationItem.Sticker(
             bitmap = bmp,
@@ -854,7 +915,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
             centerY = cy,
             scale = initialScale,
         )
-        activeTool = MarkupTool.STICKER
+        constrainActiveSticker()
         onAnnotationChanged?.invoke()
         invalidate()
     }
@@ -863,15 +924,20 @@ class AnnotationOverlayView @JvmOverloads constructor(
         commitActiveShape()
         commitActiveText()
         commitActiveSticker()
+        activeTool = MarkupTool.TEXT
+        val point = floatArrayOf(cx, cy)
+        val inverse = Matrix()
+        imageMatrixProvider?.invoke()?.invert(inverse)
+        inverse.mapPoints(point)
         val item = AnnotationItem.Text(
             text = text,
-            centerX = cx,
-            centerY = cy,
+            centerX = point[0],
+            centerY = point[1],
+            baseTextSize = viewLengthToBase(32f),
             color = activeColor,
             hasBackgroundPill = hasTextBackgroundPill,
         )
         activeText = item
-        activeTool = MarkupTool.TEXT
         onAnnotationChanged?.invoke()
         invalidate()
     }
@@ -917,301 +983,248 @@ class AnnotationOverlayView @JvmOverloads constructor(
 
     fun hasAnnotations(): Boolean = annotations.isNotEmpty() || activeShape != null || activeText != null || activeSticker != null
 
-    override fun onDraw(canvas: Canvas) {
-        super.onDraw(canvas)
-
-        val bounds = if (isMarkupRestrictedToCrop) {
-            cropRectProvider?.invoke()
-        } else {
-            imageBoundsProvider?.invoke() ?: cropRectProvider?.invoke()
-        }
-        if (bounds != null && !bounds.isEmpty) {
-            canvas.save()
-            canvas.clipRect(bounds)
-        }
-
-        val currentMatrix = imageMatrixProvider?.invoke()
-
-        // 1. Draw committed annotations
-        for (item in annotations) {
-            if (item is AnnotationItem.StampStroke) {
-                item.drawWithMatrix(canvas, currentMatrix, stampDrawMatrix, stampDrawPaint)
-            } else if (item is AnnotationItem.Mosaic) {
-                if (item.path == null) continue
-                when (item.effect) {
-                    MosaicEffect.PIXELATE -> {
-                        val shader = getOrCreateMosaicShader(item.cellSize)
-                        if (shader != null) {
-                            if (currentMatrix != null) shader.setLocalMatrix(currentMatrix)
-                            val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                                this.shader = shader
-                                style = Paint.Style.STROKE
-                                strokeCap = Paint.Cap.ROUND
-                                strokeJoin = Paint.Join.ROUND
-                                strokeWidth = item.brushSize
-                                isFilterBitmap = false
-                            }
-                            canvas.drawPath(item.path, paint)
-                        }
-                    }
-                    MosaicEffect.BLUR -> {
-                        val shader = getOrCreateBlurShader()
-                        if (shader != null) {
-                            if (currentMatrix != null) shader.setLocalMatrix(currentMatrix)
-                            val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                                this.shader = shader
-                                style = Paint.Style.STROKE
-                                strokeCap = Paint.Cap.ROUND
-                                strokeJoin = Paint.Join.ROUND
-                                strokeWidth = item.brushSize
-                                isFilterBitmap = true
-                            }
-                            canvas.drawPath(item.path, paint)
-                        }
-                    }
-                    MosaicEffect.BLACKOUT -> {
-                        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                            color = item.color
-                            style = Paint.Style.STROKE
-                            strokeCap = Paint.Cap.ROUND
-                            strokeJoin = Paint.Join.ROUND
-                            strokeWidth = item.brushSize
-                        }
-                        canvas.drawPath(item.path, paint)
-                    }
-                    MosaicEffect.STRIPES -> {
-                        val shader = getOrCreateStripesShader()
-                        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                            this.shader = shader
-                            style = Paint.Style.STROKE
-                            strokeCap = Paint.Cap.ROUND
-                            strokeJoin = Paint.Join.ROUND
-                            strokeWidth = item.brushSize
-                        }
-                        canvas.drawPath(item.path, paint)
-                    }
-                    MosaicEffect.NOISE -> {
-                        val shader = getOrCreateNoiseShader()
-                        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                            this.shader = shader
-                            style = Paint.Style.STROKE
-                            strokeCap = Paint.Cap.ROUND
-                            strokeJoin = Paint.Join.ROUND
-                            strokeWidth = item.brushSize
-                        }
-                        canvas.drawPath(item.path, paint)
-                    }
-                    MosaicEffect.CUSTOM_PATTERN -> {
-                        val pattern = item.customPattern
-                        if (pattern != null && !pattern.isRecycled) {
-                            val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                                shader = BitmapShader(pattern, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
-                                style = Paint.Style.STROKE
-                                strokeCap = Paint.Cap.ROUND
-                                strokeJoin = Paint.Join.ROUND
-                                strokeWidth = item.brushSize
-                            }
-                            canvas.drawPath(item.path, paint)
-                        }
-                    }
+    /** Draw one item in canonical base coordinates; the caller supplies the canvas transform. */
+    private fun drawAnnotation(canvas: Canvas, item: AnnotationItem) {
+        when (item) {
+            is AnnotationItem.StampStroke -> item.drawWithMatrix(canvas, null, stampDrawMatrix, stampDrawPaint)
+            is AnnotationItem.Mosaic -> {
+                val path = item.path ?: return
+                val shader: Shader? = when (item.effect) {
+                    MosaicEffect.PIXELATE -> getOrCreateMosaicShader(item.cellSize)
+                    MosaicEffect.BLUR -> getOrCreateBlurShader()
+                    MosaicEffect.STRIPES -> getOrCreateStripesShader()
+                    MosaicEffect.NOISE -> getOrCreateNoiseShader()
+                    MosaicEffect.CUSTOM_PATTERN -> item.customPattern?.takeUnless { it.isRecycled }
+                        ?.let { BitmapShader(it, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT) }
+                    MosaicEffect.BLACKOUT -> null
                 }
-            } else {
-                item.draw(canvas)
+                if (shader == null && item.effect != MosaicEffect.BLACKOUT) return
+                val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    this.shader = shader
+                    color = item.color
+                    style = Paint.Style.STROKE
+                    strokeCap = Paint.Cap.ROUND
+                    strokeJoin = Paint.Join.ROUND
+                    strokeWidth = item.brushSize
+                    isFilterBitmap = item.effect == MosaicEffect.BLUR
+                }
+                canvas.drawPath(path, paint)
             }
-        }
-
-        // 2. Draw active doodle in progress
-        val inProgressSampler = currentStampSampler
-        val activeBrush = activeCustomBrush
-        val activeTip = activeCustomBrushTipBitmap
-        if (inProgressSampler != null && activeBrush != null && activeTip != null && !activeTip.isRecycled) {
-            val stroke = AnnotationItem.StampStroke(
-                brushId = activeBrush.id,
-                points = inProgressSampler.stamps,
-                sizeInImage = currentStampSizeInImage,
-                sizeDp = activeBrush.sizeDp,
-                color = activeColor,
-                opacity = activeBrush.opacity,
-                colorMode = activeBrush.colorMode,
-                tipBitmap = activeTip,
-            )
-            stroke.drawWithMatrix(canvas, currentMatrix, stampDrawMatrix, stampDrawPaint)
-        } else {
-            currentDoodlePath?.let { path ->
-                val doodle = AnnotationItem.Doodle(
-                    path = path,
-                    color = activeColor,
-                    strokeWidth = activeStrokeWidth,
-                    brushType = activeBrushType,
-                    customTexture = activeCustomBrushTexture,
-                )
-                doodle.draw(canvas)
-            }
-        }
-
-        // 3. Draw active mosaic in progress
-        currentMosaicPath?.let { path ->
-            when (activeMosaicEffect) {
-                MosaicEffect.PIXELATE -> {
-                    val shader = getOrCreateMosaicShader(activeMosaicCellSize)
-                    if (shader != null) {
-                        if (currentMatrix != null) shader.setLocalMatrix(currentMatrix)
-                        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                            this.shader = shader
-                            style = Paint.Style.STROKE
-                            strokeCap = Paint.Cap.ROUND
-                            strokeJoin = Paint.Join.ROUND
-                            strokeWidth = activeMosaicBrushSize
-                            isFilterBitmap = false
-                        }
-                        canvas.drawPath(path, paint)
-                    }
-                }
-                MosaicEffect.BLUR -> {
-                    val shader = getOrCreateBlurShader()
-                    if (shader != null) {
-                        if (currentMatrix != null) shader.setLocalMatrix(currentMatrix)
-                        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                            this.shader = shader
-                            style = Paint.Style.STROKE
-                            strokeCap = Paint.Cap.ROUND
-                            strokeJoin = Paint.Join.ROUND
-                            strokeWidth = activeMosaicBrushSize
-                            isFilterBitmap = true
-                        }
-                        canvas.drawPath(path, paint)
-                    }
-                }
-                MosaicEffect.BLACKOUT -> {
-                    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                        color = Color.BLACK
-                        style = Paint.Style.STROKE
-                        strokeCap = Paint.Cap.ROUND
-                        strokeJoin = Paint.Join.ROUND
-                        strokeWidth = activeMosaicBrushSize
-                    }
-                    canvas.drawPath(path, paint)
-                }
-                MosaicEffect.STRIPES -> {
-                    val shader = getOrCreateStripesShader()
-                    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                        this.shader = shader
-                        style = Paint.Style.STROKE
-                        strokeCap = Paint.Cap.ROUND
-                        strokeJoin = Paint.Join.ROUND
-                        strokeWidth = activeMosaicBrushSize
-                    }
-                    canvas.drawPath(path, paint)
-                }
-                MosaicEffect.NOISE -> {
-                    val shader = getOrCreateNoiseShader()
-                    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                        this.shader = shader
-                        style = Paint.Style.STROKE
-                        strokeCap = Paint.Cap.ROUND
-                        strokeJoin = Paint.Join.ROUND
-                        strokeWidth = activeMosaicBrushSize
-                    }
-                    canvas.drawPath(path, paint)
-                }
-                MosaicEffect.CUSTOM_PATTERN -> {
-                    val pattern = activeCustomMosaicPattern
-                    if (pattern != null && !pattern.isRecycled) {
-                        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                            shader = BitmapShader(pattern, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
-                            style = Paint.Style.STROKE
-                            strokeCap = Paint.Cap.ROUND
-                            strokeJoin = Paint.Join.ROUND
-                            strokeWidth = activeMosaicBrushSize
-                        }
-                        canvas.drawPath(path, paint)
-                    }
-                }
-            }
-        }
-
-        // 4. Draw active shape and handles
-        activeShape?.let { shape ->
-            shape.draw(canvas)
-            drawHandle(canvas, shape.startX, shape.startY)
-            drawHandle(canvas, shape.endX, shape.endY)
-        }
-
-        // 5. Draw active text with bounding outline and resize handle
-        activeText?.let { t ->
-            t.draw(canvas)
-            val textBounds = RectF()
-            t.computeBounds(textBounds)
-            canvas.drawRoundRect(textBounds, 8f, 8f, boundsDashPaint)
-            drawHandle(canvas, textBounds.right, textBounds.bottom)
-        }
-
-        // 6. Draw active sticker with bounding box, handle and delete button
-        activeSticker?.let { s ->
-            s.draw(canvas)
-            val stickerBounds = RectF()
-            s.computeBounds(stickerBounds)
-            canvas.drawRoundRect(stickerBounds, 8f, 8f, boundsDashPaint)
-            drawHandle(canvas, stickerBounds.right, stickerBounds.bottom)
-            drawDeleteBadge(canvas, stickerBounds.left, stickerBounds.top)
-        }
-
-        if (bounds != null && !bounds.isEmpty) {
-            canvas.restore()
+            else -> item.draw(canvas)
         }
     }
 
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        if (isPreviewFrameAvailable?.invoke() == false) return
+        val matrix = imageMatrixProvider?.invoke() ?: return
+        val bounds = if (isMarkupRestrictedToCrop) cropRectProvider?.invoke()
+            else imageBoundsProvider?.invoke() ?: cropRectProvider?.invoke()
+        canvas.save()
+        if (bounds != null && !bounds.isEmpty) canvas.clipRect(bounds)
+        canvas.concat(matrix)
+        baseBoundsProvider?.invoke()?.takeUnless { it.isEmpty }?.let { canvas.clipRect(it) }
+        annotations.forEach { drawAnnotation(canvas, it) }
+        val sampler = currentStampSampler
+        val brush = activeCustomBrush
+        val tip = activeCustomBrushTipBitmap
+        val vector = brush?.tipVector
+        if (sampler != null && brush != null && (vector != null || (tip != null && !tip.isRecycled))) {
+            drawAnnotation(canvas, AnnotationItem.StampStroke(brush.id, sampler.stamps,
+                currentStampSizeInImage, brush.sizeDp, activeColor, brush.opacity, brush.colorMode, tip, vector))
+        } else currentDoodlePath?.let {
+            drawAnnotation(canvas, AnnotationItem.Doodle(it, activeColor, currentDoodleWidth, activeBrushType, activeCustomBrushTexture))
+        }
+        currentMosaicPath?.let {
+            drawAnnotation(canvas, AnnotationItem.Mosaic(it, currentMosaicWidth, activeMosaicEffect,
+                activeMosaicCellSize, Color.BLACK, activeCustomMosaicPattern))
+        }
+        activeShape?.draw(canvas)
+        activeText?.draw(canvas)
+        activeSticker?.draw(canvas)
+        canvas.restore()
+
+        // Handle coordinates and hit testing share the same matrix, while handle sizes stay in dp.
+        canvas.save()
+        canvas.concat(matrix)
+        boundsDashPaint.strokeWidth = viewLengthToBase(2f)
+        activeShape?.let { drawHandle(canvas, it.startX, it.startY); drawHandle(canvas, it.endX, it.endY) }
+        activeText?.let {
+            val rect = RectF().also { bounds -> it.computeBounds(bounds) }
+            canvas.drawRoundRect(rect, viewLengthToBase(8f), viewLengthToBase(8f), boundsDashPaint)
+            drawHandle(canvas, rect.right, rect.bottom)
+        }
+        activeSticker?.let {
+            val rect = RectF().also { bounds -> it.computeBounds(bounds) }
+            canvas.drawRoundRect(rect, viewLengthToBase(8f), viewLengthToBase(8f), boundsDashPaint)
+            drawHandle(canvas, rect.right, rect.bottom)
+            drawDeleteBadge(canvas, rect.left, rect.top)
+        }
+        canvas.restore()
+    }
+
     private fun drawHandle(canvas: Canvas, x: Float, y: Float) {
-        val radius = 16f
+        val radius = viewLengthToBase(12f * resources.displayMetrics.density)
         canvas.drawCircle(x, y, radius, handlePaint)
+        handleBorderPaint.strokeWidth = viewLengthToBase(3f)
         canvas.drawCircle(x, y, radius, handleBorderPaint)
     }
 
     private fun drawDeleteBadge(canvas: Canvas, x: Float, y: Float) {
-        val radius = 16f
+        val radius = viewLengthToBase(12f * resources.displayMetrics.density)
         val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.parseColor("#E53935")
             style = Paint.Style.FILL
         }
         val xPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.WHITE
-            strokeWidth = 3f
+            strokeWidth = viewLengthToBase(3f)
             style = Paint.Style.STROKE
             strokeCap = Paint.Cap.ROUND
         }
         canvas.drawCircle(x, y, radius, bgPaint)
-        val d = 6f
+        val d = viewLengthToBase(6f)
         canvas.drawLine(x - d, y - d, x + d, y + d, xPaint)
         canvas.drawLine(x - d, y + d, x + d, y - d, xPaint)
     }
 
     private fun findTouchedHandle(shape: AnnotationItem.Shape, x: Float, y: Float): Int {
-        val hitRadius = 48f
+        val hitRadius = viewLengthToBase(48f)
         if (hypot((x - shape.startX).toDouble(), (y - shape.startY).toDouble()) <= hitRadius) return 0
         if (hypot((x - shape.endX).toDouble(), (y - shape.endY).toDouble()) <= hitRadius) return 1
         return -1
     }
 
+    private data class GestureSnapshot(
+        val items: List<AnnotationItem>, val shape: AnnotationItem.Shape?,
+        val text: AnnotationItem.Text?, val sticker: AnnotationItem.Sticker?, val lastTap: Long,
+    )
+    private var gestureSnapshot: GestureSnapshot? = null
+    private var pendingTextEdit: AnnotationItem.Text? = null
+    private var pendingStickerDelete = false
+    private var inPreviewGesture = false
+    private var suppressUntilUp = false
+    private var gestureX = 0f
+    private var gestureY = 0f
+    private var gestureDistance = 1f
+
+    private fun copyItem(item: AnnotationItem): AnnotationItem = when (item) {
+        is AnnotationItem.Shape -> item.copy()
+        is AnnotationItem.Text -> item.copy()
+        // Bitmaps are treated as read-only by annotation gestures and drawing. Paths and
+        // lists are mutable even when held by val and must not alias the transaction.
+        is AnnotationItem.Sticker -> item.copy()
+        is AnnotationItem.Doodle -> item.copy(path = Path(item.path))
+        is AnnotationItem.Mosaic -> item.copy(path = item.path?.let { Path(it) })
+        is AnnotationItem.StampStroke -> item.copy(points = item.points.map { it.copy() })
+    }
+
+    private fun cancelSingleGesture() {
+        gestureSnapshot?.let { snapshot ->
+            annotations.clear()
+            annotations.addAll(snapshot.items)
+            activeShape = snapshot.shape
+            activeText = snapshot.text
+            activeSticker = snapshot.sticker
+            lastTapTime = snapshot.lastTap
+        }
+        currentDoodlePath = null
+        currentMosaicPath = null
+        currentStampSampler = null
+        pendingTextEdit = null
+        pendingStickerDelete = false
+        draggedHandle = -1
+        isDraggingTextHandle = false
+        isMovingText = false
+        isDraggingStickerHandle = false
+        isMovingSticker = false
+        onAnnotationChanged?.invoke()
+        invalidate()
+    }
+
+    private fun setGestureAnchor(event: MotionEvent, first: Int = 0, second: Int = 1) {
+        gestureX = (event.getX(first) + event.getX(second)) / 2f
+        gestureY = (event.getY(first) + event.getY(second)) / 2f
+        gestureDistance = hypot((event.getX(first) - event.getX(second)).toDouble(),
+            (event.getY(first) - event.getY(second)).toDouble()).toFloat().coerceAtLeast(1f)
+    }
+
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (activeTool == MarkupTool.NONE) return false
-
-        if (activeTool == MarkupTool.TEXT || activeTool == MarkupTool.STICKER) {
-            scaleDetector.onTouchEvent(event)
+        if (isPreviewFrameAvailable?.invoke() == false) {
+            if (event.actionMasked == MotionEvent.ACTION_DOWN) return false
+            // A viewport gesture may move the crop off the image; keep consuming its
+            // remaining pointers. An interrupted single-pointer edit is rolled back.
+            if (!inPreviewGesture && !suppressUntilUp) {
+                cancelSingleGesture()
+                suppressUntilUp = true
+            }
         }
-
-        val x = event.x
-        val y = event.y
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                inPreviewGesture = false
+                suppressUntilUp = false
+                pendingTextEdit = null
+                pendingStickerDelete = false
+                gestureSnapshot = GestureSnapshot(annotations.map(::copyItem), activeShape?.copy(),
+                    activeText?.copy(), activeSticker?.copy(), lastTapTime)
+            }
+            MotionEvent.ACTION_POINTER_DOWN -> {
+                if (suppressUntilUp && !inPreviewGesture) return true
+                if (!inPreviewGesture) cancelSingleGesture()
+                inPreviewGesture = true
+                suppressUntilUp = true
+                if (event.pointerCount >= 2) setGestureAnchor(event)
+                return true
+            }
+            MotionEvent.ACTION_POINTER_UP -> {
+                // If two fingers remain, re-anchor without a jump when pointer indices
+                // are compacted in the following MOVE. Otherwise wait for a fresh DOWN.
+                val remaining = (0 until event.pointerCount).filter { it != event.actionIndex }
+                inPreviewGesture = inPreviewGesture && remaining.size >= 2
+                if (inPreviewGesture) setGestureAnchor(event, remaining[0], remaining[1])
+                suppressUntilUp = true
+                return true
+            }
+            MotionEvent.ACTION_MOVE -> if (inPreviewGesture && event.pointerCount >= 2) {
+                val x = (event.getX(0) + event.getX(1)) / 2f
+                val y = (event.getY(0) + event.getY(1)) / 2f
+                val distance = hypot((event.getX(0) - event.getX(1)).toDouble(),
+                    (event.getY(0) - event.getY(1)).toDouble()).toFloat().coerceAtLeast(1f)
+                onPreviewGesture?.invoke(gestureX, gestureY, x, y, distance / gestureDistance)
+                gestureX = x; gestureY = y; gestureDistance = distance
+                return true
+            }
+            MotionEvent.ACTION_CANCEL -> {
+                if (!suppressUntilUp) cancelSingleGesture()
+                gestureSnapshot = null
+                inPreviewGesture = false
+                suppressUntilUp = false
+                return true
+            }
+            MotionEvent.ACTION_UP -> {
+                gestureSnapshot = null
+                if (suppressUntilUp) {
+                    inPreviewGesture = false
+                    suppressUntilUp = false
+                    return true
+                }
+            }
+        }
+        if (suppressUntilUp) return true
+        val inverse = Matrix()
+        if (imageMatrixProvider?.invoke()?.invert(inverse) != true) return false
+        val point = floatArrayOf(event.x, event.y)
+        inverse.mapPoints(point)
+        val x = point[0]
+        val y = point[1]
 
         when (activeTool) {
             MarkupTool.DOODLE -> {
                 val customBrush = activeCustomBrush
                 if (customBrush != null) {
-                    val invMatrix = Matrix()
-                    imageMatrixProvider?.invoke()?.invert(invMatrix)
-                    val pts = floatArrayOf(x, y)
-                    invMatrix.mapPoints(pts)
-                    val imgX = pts[0]
-                    val imgY = pts[1]
+                    val imgX = x
+                    val imgY = y
 
                     when (event.actionMasked) {
                         MotionEvent.ACTION_DOWN -> {
@@ -1231,10 +1244,17 @@ class AnnotationOverlayView @JvmOverloads constructor(
                             invalidate()
                             return true
                         }
-                        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        MotionEvent.ACTION_CANCEL -> {
+                            currentStampSampler = null
+                            invalidate()
+                            return true
+                        }
+                        MotionEvent.ACTION_UP -> {
                             val sampler = currentStampSampler
                             val bmp = activeCustomBrushTipBitmap
-                            if (sampler != null && sampler.stamps.isNotEmpty() && bmp != null && !bmp.isRecycled) {
+                            val vector = customBrush.tipVector
+                            if (sampler != null && sampler.stamps.isNotEmpty() &&
+                                (vector != null || (bmp != null && !bmp.isRecycled))) {
                                 annotations.add(
                                     AnnotationItem.StampStroke(
                                         brushId = customBrush.id,
@@ -1245,6 +1265,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
                                         opacity = customBrush.opacity,
                                         colorMode = customBrush.colorMode,
                                         tipBitmap = bmp,
+                                        tipVector = vector,
                                     )
                                 )
                                 currentStampSampler = null
@@ -1258,6 +1279,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
                 } else {
                     when (event.actionMasked) {
                         MotionEvent.ACTION_DOWN -> {
+                            currentDoodleWidth = viewLengthToBase(activeStrokeWidth)
                             val path = Path().apply { moveTo(x, y) }
                             currentDoodlePath = path
                             lastDoodleX = x
@@ -1279,14 +1301,19 @@ class AnnotationOverlayView @JvmOverloads constructor(
                             }
                             return true
                         }
-                        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        MotionEvent.ACTION_CANCEL -> {
+                            currentDoodlePath = null
+                            invalidate()
+                            return true
+                        }
+                        MotionEvent.ACTION_UP -> {
                             currentDoodlePath?.let { path ->
                                 path.lineTo(x, y)
                                 annotations.add(
                                     AnnotationItem.Doodle(
                                         path = path,
                                         color = activeColor,
-                                        strokeWidth = activeStrokeWidth,
+                                        strokeWidth = currentDoodleWidth,
                                         brushType = activeBrushType,
                                         customTexture = null,
                                     )
@@ -1323,7 +1350,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
                             endX = x,
                             endY = y,
                             color = activeColor,
-                            strokeWidth = activeStrokeWidth,
+                            strokeWidth = viewLengthToBase(activeStrokeWidth),
                             style = activeShapeStyle,
                             customShapeId = activeCustomShape?.id,
                             customPathData = activeCustomShape?.pathData,
@@ -1357,7 +1384,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
 
             MarkupTool.TEXT -> {
                 val t = activeText
-                val hitRadius = 48f
+                val hitRadius = viewLengthToBase(24f * resources.displayMetrics.density)
 
                 when (event.actionMasked) {
                     MotionEvent.ACTION_DOWN -> {
@@ -1377,7 +1404,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
                             if (bounds.contains(x, y)) {
                                 val now = System.currentTimeMillis()
                                 if (now - lastTapTime < 300) {
-                                    onTextEditRequested?.invoke(t)
+                                    pendingTextEdit = t
                                     lastTapTime = 0
                                     return true
                                 }
@@ -1392,6 +1419,21 @@ class AnnotationOverlayView @JvmOverloads constructor(
                             commitActiveText()
                         }
 
+                        // Previously committed items remain editable. Search from the topmost item.
+                        val index = annotations.indexOfLast { item ->
+                            item is AnnotationItem.Text && RectF().also { item.computeBounds(it) }.contains(x, y)
+                        }
+                        if (index >= 0) {
+                            activeText = annotations.removeAt(index) as AnnotationItem.Text
+                            isMovingText = true
+                            textDragStartX = x
+                            textDragStartY = y
+                            lastTapTime = System.currentTimeMillis()
+                            onAnnotationChanged?.invoke()
+                            invalidate()
+                            return true
+                        }
+
                         // Tap empty space: create new text item
                         val now = System.currentTimeMillis()
                         lastTapTime = now
@@ -1399,22 +1441,23 @@ class AnnotationOverlayView @JvmOverloads constructor(
                             text = "",
                             centerX = x,
                             centerY = y,
+                            baseTextSize = viewLengthToBase(32f),
                             color = activeColor,
                             hasBackgroundPill = hasTextBackgroundPill,
                         )
                         activeText = newItem
                         invalidate()
-                        onTextEditRequested?.invoke(newItem)
+                        pendingTextEdit = newItem
                         return true
                     }
                     MotionEvent.ACTION_MOVE -> {
-                        if (scaleDetector.isInProgress) return true
 
                         val currentText = activeText ?: return false
                         if (isDraggingTextHandle) {
                             val currentDist = hypot((x - currentText.centerX).toDouble(), (y - currentText.centerY).toDouble()).toFloat()
                             val newScale = (currentDist / textInitialDist * textInitialScale).coerceIn(0.3f, 6.0f)
                             currentText.scale = newScale
+                            constrainActiveText()
                             onAnnotationChanged?.invoke()
                             invalidate()
                             return true
@@ -1423,6 +1466,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
                             val dy = y - textDragStartY
                             currentText.centerX += dx
                             currentText.centerY += dy
+                            constrainActiveText()
                             textDragStartX = x
                             textDragStartY = y
                             onAnnotationChanged?.invoke()
@@ -1430,9 +1474,12 @@ class AnnotationOverlayView @JvmOverloads constructor(
                             return true
                         }
                     }
-                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    MotionEvent.ACTION_UP -> {
                         isDraggingTextHandle = false
                         isMovingText = false
+                        gestureSnapshot = null
+                        pendingTextEdit?.let { onTextEditRequested?.invoke(it) }
+                        pendingTextEdit = null
                     }
                 }
                 return true
@@ -1441,6 +1488,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
             MarkupTool.MOSAIC -> {
                 when (event.actionMasked) {
                     MotionEvent.ACTION_DOWN -> {
+                        currentMosaicWidth = viewLengthToBase(activeMosaicBrushSize)
                         val path = Path().apply { moveTo(x, y) }
                         currentMosaicPath = path
                         lastMosaicX = x
@@ -1462,13 +1510,18 @@ class AnnotationOverlayView @JvmOverloads constructor(
                         }
                         return true
                     }
-                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    MotionEvent.ACTION_CANCEL -> {
+                        currentMosaicPath = null
+                        invalidate()
+                        return true
+                    }
+                    MotionEvent.ACTION_UP -> {
                         currentMosaicPath?.let { path ->
                             path.lineTo(x, y)
                             annotations.add(
                                 AnnotationItem.Mosaic(
                                     path = path,
-                                    brushSize = activeMosaicBrushSize,
+                                    brushSize = currentMosaicWidth,
                                     effect = activeMosaicEffect,
                                     cellSize = activeMosaicCellSize,
                                     color = Color.BLACK,
@@ -1487,7 +1540,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
 
             MarkupTool.STICKER -> {
                 val s = activeSticker
-                val hitRadius = 48f
+                val hitRadius = viewLengthToBase(24f * resources.displayMetrics.density)
                 when (event.actionMasked) {
                     MotionEvent.ACTION_DOWN -> {
                         if (s != null) {
@@ -1496,9 +1549,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
 
                             // 1. Delete button at top-left
                             if (hypot((x - bounds.left).toDouble(), (y - bounds.top).toDouble()) <= hitRadius) {
-                                activeSticker = null
-                                onAnnotationChanged?.invoke()
-                                invalidate()
+                                pendingStickerDelete = true
                                 return true
                             }
 
@@ -1513,7 +1564,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
                             }
 
                             // 3. Move inside bounds
-                            if (bounds.contains(x, y)) {
+                            if (s.contains(x, y)) {
                                 isMovingSticker = true
                                 stickerDragStartX = x
                                 stickerDragStartY = y
@@ -1522,6 +1573,17 @@ class AnnotationOverlayView @JvmOverloads constructor(
 
                             // Tap outside: commit current sticker
                             commitActiveSticker()
+                        }
+                        val index = annotations.indexOfLast { item ->
+                            item is AnnotationItem.Sticker && item.contains(x, y)
+                        }
+                        if (index >= 0) {
+                            activeSticker = annotations.removeAt(index) as AnnotationItem.Sticker
+                            isMovingSticker = true
+                            stickerDragStartX = x
+                            stickerDragStartY = y
+                            onAnnotationChanged?.invoke()
+                            invalidate()
                         }
                         return true
                     }
@@ -1533,6 +1595,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
 
                             val currAngle = (atan2((y - curr.centerY).toDouble(), (x - curr.centerX).toDouble()) * 180.0 / Math.PI).toFloat()
                             curr.rotation = stickerBaseRotation + (currAngle - stickerInitialAngle)
+                            constrainActiveSticker()
                             onAnnotationChanged?.invoke()
                             invalidate()
                             return true
@@ -1541,6 +1604,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
                             val dy = y - stickerDragStartY
                             curr.centerX += dx
                             curr.centerY += dy
+                            constrainActiveSticker()
                             stickerDragStartX = x
                             stickerDragStartY = y
                             onAnnotationChanged?.invoke()
@@ -1548,7 +1612,14 @@ class AnnotationOverlayView @JvmOverloads constructor(
                             return true
                         }
                     }
-                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    MotionEvent.ACTION_UP -> {
+                        if (pendingStickerDelete) {
+                            activeSticker = null
+                            pendingStickerDelete = false
+                            onAnnotationChanged?.invoke()
+                            invalidate()
+                        }
+                        gestureSnapshot = null
                         isDraggingStickerHandle = false
                         isMovingSticker = false
                     }
@@ -1560,126 +1631,16 @@ class AnnotationOverlayView @JvmOverloads constructor(
         }
     }
 
-    /**
-     * Rasterize all annotations onto a target canvas mapped relative to the visible crop rectangle.
-     */
-    fun rasterize(canvas: Canvas, cropRect: RectF, exportBitmap: Bitmap? = null) {
+    /** baseToOutput maps canonical bitmap coordinates into the output bitmap once. */
+    fun rasterize(canvas: Canvas, baseToOutput: Matrix) {
         commitActiveShape()
         commitActiveText()
         commitActiveSticker()
         if (annotations.isEmpty()) return
-        if (cropRect.isEmpty) return
-
         canvas.save()
-        val scaleX = canvas.width.toFloat() / cropRect.width()
-        val scaleY = canvas.height.toFloat() / cropRect.height()
-        canvas.scale(scaleX, scaleY)
-        canvas.translate(-cropRect.left, -cropRect.top)
-
-        // Precompute export mosaic shaders if exportBitmap is provided
-        val exportShaders = mutableMapOf<Int, BitmapShader>()
-        val mosaicItems = annotations.filterIsInstance<AnnotationItem.Mosaic>()
-        if (exportBitmap != null && mosaicItems.isNotEmpty()) {
-            val cellSizes = mosaicItems.filter { it.effect == MosaicEffect.PIXELATE }.map { it.cellSize }.distinct()
-            for (cs in cellSizes) {
-                val clampedCs = cs.coerceAtLeast(2)
-                val sW = max(1, exportBitmap.width / clampedCs)
-                val sH = max(1, exportBitmap.height / clampedCs)
-                val sBmp = Bitmap.createScaledBitmap(exportBitmap, sW, sH, false)
-                val mBmp = Bitmap.createScaledBitmap(sBmp, exportBitmap.width, exportBitmap.height, false)
-                if (sBmp !== mBmp && sBmp !== exportBitmap) sBmp.recycle()
-                exportShaders[cs] = BitmapShader(mBmp, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
-            }
-        }
-
-        val exportBlurShader = if (exportBitmap != null && mosaicItems.any { it.effect == MosaicEffect.BLUR }) {
-            getOrCreateBlurShader(exportBitmap)
-        } else null
-
-        for (item in annotations) {
-            if (item is AnnotationItem.StampStroke) {
-                val matrix = imageMatrixProvider?.invoke()
-                item.drawWithMatrix(canvas, matrix, stampDrawMatrix, stampDrawPaint)
-            } else if (item is AnnotationItem.Mosaic) {
-                if (item.path == null) continue
-                when (item.effect) {
-                    MosaicEffect.PIXELATE -> {
-                        val shader = exportShaders[item.cellSize] ?: getOrCreateMosaicShader(item.cellSize)
-                        if (shader != null) {
-                            val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                                this.shader = shader
-                                style = Paint.Style.STROKE
-                                strokeCap = Paint.Cap.ROUND
-                                strokeJoin = Paint.Join.ROUND
-                                strokeWidth = item.brushSize
-                                isFilterBitmap = false
-                            }
-                            canvas.drawPath(item.path, paint)
-                        }
-                    }
-                    MosaicEffect.BLUR -> {
-                        val shader = exportBlurShader ?: getOrCreateBlurShader()
-                        if (shader != null) {
-                            val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                                this.shader = shader
-                                style = Paint.Style.STROKE
-                                strokeCap = Paint.Cap.ROUND
-                                strokeJoin = Paint.Join.ROUND
-                                strokeWidth = item.brushSize
-                                isFilterBitmap = true
-                            }
-                            canvas.drawPath(item.path, paint)
-                        }
-                    }
-                    MosaicEffect.BLACKOUT -> {
-                        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                            color = item.color
-                            style = Paint.Style.STROKE
-                            strokeCap = Paint.Cap.ROUND
-                            strokeJoin = Paint.Join.ROUND
-                            strokeWidth = item.brushSize
-                        }
-                        canvas.drawPath(item.path, paint)
-                    }
-                    MosaicEffect.STRIPES -> {
-                        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                            shader = getOrCreateStripesShader()
-                            style = Paint.Style.STROKE
-                            strokeCap = Paint.Cap.ROUND
-                            strokeJoin = Paint.Join.ROUND
-                            strokeWidth = item.brushSize
-                        }
-                        canvas.drawPath(item.path, paint)
-                    }
-                    MosaicEffect.NOISE -> {
-                        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                            shader = getOrCreateNoiseShader()
-                            style = Paint.Style.STROKE
-                            strokeCap = Paint.Cap.ROUND
-                            strokeJoin = Paint.Join.ROUND
-                            strokeWidth = item.brushSize
-                        }
-                        canvas.drawPath(item.path, paint)
-                    }
-                    MosaicEffect.CUSTOM_PATTERN -> {
-                        val pattern = item.customPattern
-                        if (pattern != null && !pattern.isRecycled) {
-                            val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                                shader = BitmapShader(pattern, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
-                                style = Paint.Style.STROKE
-                                strokeCap = Paint.Cap.ROUND
-                                strokeJoin = Paint.Join.ROUND
-                                strokeWidth = item.brushSize
-                            }
-                            canvas.drawPath(item.path, paint)
-                        }
-                    }
-                }
-            } else {
-                item.draw(canvas)
-            }
-        }
-
+        canvas.concat(baseToOutput)
+        baseBoundsProvider?.invoke()?.takeUnless { it.isEmpty }?.let { canvas.clipRect(it) }
+        annotations.forEach { drawAnnotation(canvas, it) }
         canvas.restore()
     }
 }

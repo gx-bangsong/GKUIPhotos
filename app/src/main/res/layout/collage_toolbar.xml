@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Compact collage navigation; the save action is fixed below the workspace.
+     SPDX-FileCopyrightText: The LineageOS Project
+     SPDX-License-Identifier: Apache-2.0 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="wrap_content"
+    android:gravity="center_vertical" android:orientation="horizontal"
+    android:paddingHorizontal="8dp" android:paddingVertical="4dp">
+    <ImageButton android:id="@+id/collageCancel" android:layout_width="48dp" android:layout_height="48dp"
+        android:background="?attr/selectableItemBackgroundBorderless" android:src="@drawable/ic_back"
+        android:contentDescription="@string/cancel" />
+    <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+        android:text="@string/collage_title" android:textAppearance="?attr/textAppearanceTitleLarge"
+        android:paddingStart="8dp" />
+</LinearLayout>

@@ -323,32 +323,44 @@
                 android:visibility="gone">
 
                 <!-- Markup Tools Row (Pen, Shapes, Text, Mosaic, Sticker) -->
-                <LinearLayout
-                    android:id="@+id/markupToolsRow"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:clipChildren="false"
-                    android:clipToPadding="false"
-                    android:gravity="center"
-                    android:orientation="horizontal" />
-
-                <!-- Palette & Tool Options Row -->
                 <HorizontalScrollView
-                    android:id="@+id/markupOptionsScroll"
+                    android:id="@+id/markupToolsScroll"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:scrollbars="none"
-                    android:visibility="gone">
+                    android:fillViewport="true"
+                    android:fadeScrollbars="false"
+                    android:requiresFadingEdge="horizontal"
+                    android:fadingEdgeLength="20dp"
+                    android:scrollbars="horizontal">
 
                     <LinearLayout
-                        android:id="@+id/markupOptionsContent"
+                        android:id="@+id/markupToolsRow"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:gravity="center_vertical"
-                        android:orientation="horizontal"
-                        android:paddingHorizontal="8dp" />
+                        android:clipChildren="false"
+                        android:clipToPadding="false"
+                        android:gravity="center"
+                        android:orientation="horizontal" />
                 </HorizontalScrollView>
+
+                <!-- Independently grouped controls; only chip/palette rows scroll horizontally. -->
+                <ScrollView
+                    android:id="@+id/markupOptionsScroll"
+                    android:layout_width="match_parent"
+                    android:layout_height="180dp"
+                    android:fillViewport="false"
+                    android:fadeScrollbars="false"
+                    android:scrollbars="vertical"
+                    android:visibility="gone">
+                    <LinearLayout
+                        android:id="@+id/markupOptionsContent"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:background="?attr/colorSurfaceContainer"
+                        android:paddingHorizontal="12dp"
+                        android:paddingVertical="8dp" />
+                </ScrollView>
             </LinearLayout>
 
             <!-- Strip: 工具 (Tools) -->
@@ -478,6 +490,9 @@
                     android:id="@+id/cancelButton"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:minWidth="48dp"
+                    android:minHeight="48dp"
+                    android:gravity="center"
                     android:clickable="true"
                     android:focusable="true"
                     android:padding="8dp"
@@ -494,6 +509,9 @@
                     android:id="@+id/saveButton"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:minWidth="48dp"
+                    android:minHeight="48dp"
+                    android:gravity="center"
                     android:background="@drawable/bg_google_photos_save_button"
                     android:clickable="true"
                     android:focusable="true"
@@ -518,6 +536,9 @@
                     android:id="@+id/subEditCancelButton"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:minWidth="48dp"
+                    android:minHeight="48dp"
+                    android:gravity="center"
                     android:clickable="true"
                     android:focusable="true"
                     android:padding="8dp"
@@ -532,12 +553,12 @@
 
                 <ImageView
                     android:id="@+id/subEditUndoButton"
-                    android:layout_width="36dp"
-                    android:layout_height="36dp"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
                     android:background="?attr/selectableItemBackgroundBorderless"
                     android:clickable="true"
                     android:focusable="true"
-                    android:padding="6dp"
+                    android:padding="12dp"
                     android:src="@drawable/ic_undo"
                     app:tint="@android:color/white" />
 
@@ -550,6 +571,9 @@
                     android:id="@+id/subEditDoneButton"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:minWidth="48dp"
+                    android:minHeight="48dp"
+                    android:gravity="center"
                     android:background="@drawable/bg_google_photos_save_button"
                     android:clickable="true"
                     android:focusable="true"

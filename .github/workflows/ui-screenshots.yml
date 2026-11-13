@@ -1,0 +1,213 @@
+# Capture synthetic Android editor scenarios and run lint without release credentials.
+# SPDX-FileCopyrightText: The LineageOS Project
+# SPDX-License-Identifier: Apache-2.0
+name: UI screenshots
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: '17'
+          cache: gradle
+      - name: Run Android lint
+        run: |
+          set +e
+          ./gradlew :app:lintDebug --stacktrace 2>&1 | tee "$RUNNER_TEMP/lint-gradle.log"
+          status=${PIPESTATUS[0]}
+          set -e
+          mkdir -p lint-evidence
+          python3 scripts/ui-safe-tail.py "$RUNNER_TEMP/lint-gradle.log" > lint-evidence/failure-tail.txt
+          if [[ -f app/build/reports/lint-results-debug.xml ]]; then
+            cp app/build/reports/lint-results-debug.xml lint-evidence/
+          fi
+          if (( status != 0 )); then
+            python3 scripts/report-ui-diagnostics.py --log "$RUNNER_TEMP/lint-gradle.log" \
+              --lint app/build/reports/lint-results-debug.xml
+          fi
+          exit "$status"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: ui-lint-evidence
+          path: lint-evidence/
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: android-lint-report
+          path: app/build/reports/lint-results-debug.*
+          if-no-files-found: warn
+  apk:
+    # Debug-only candidate; no release signing credentials or binary committed to the branch.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: '17'
+          cache: gradle
+      - name: Build and inspect the debug APK
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ./gradlew :app:assembleDebug --stacktrace
+          tools=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)
+          test -x "$tools/aapt" && test -x "$tools/apksigner"
+          mkdir -p apk-evidence
+          cp app/build/outputs/apk/debug/app-debug.apk apk-evidence/
+          "$tools/aapt" dump badging apk-evidence/app-debug.apk > apk-evidence/badging.txt
+          "$tools/apksigner" verify --verbose --print-certs apk-evidence/app-debug.apk > apk-evidence/signer.txt 2>&1
+          git rev-parse HEAD > apk-evidence/commit.txt
+          echo "::notice::APK source $(cat apk-evidence/commit.txt)"
+          echo "::notice::$(grep '^package: ' apk-evidence/badging.txt)"
+          grep 'certificate SHA-256 digest:' apk-evidence/signer.txt | while IFS= read -r line; do echo "::notice::APK signature: $line"; done
+          echo "::notice::APK SHA-256 $(sha256sum apk-evidence/app-debug.apk | cut -d ' ' -f 1)"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ui-apk
+          path: apk-evidence/
+          if-no-files-found: error
+  screenshots:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        version: [baseline, candidate]
+        mode: [light, dark]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Restore baseline product sources (keep current test harness)
+        if: matrix.version == 'baseline'
+        run: |
+          rm -rf app/src/main
+          git archive 772071a44340323e7e43efc0b63471a8ae397244 app/src/main | tar -x
+          git diff --exit-code 772071a44340323e7e43efc0b63471a8ae397244 -- app/src/main
+      - uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: '17'
+          cache: gradle
+      - name: Enable KVM for hosted emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Run instrumentation on API 34
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          UI_MODE: ${{ matrix.mode }}
+          UI_VERSION: ${{ matrix.version }}
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          script: scripts/run-ui-screenshots.sh
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: ui-${{ matrix.version }}-${{ matrix.mode }}
+          path: ui-evidence/
+          if-no-files-found: warn
+  return-evidence:
+    # Never give PR code from a fork write access; only the approved repository PR can report.
+    if: always() && github.event_name == 'pull_request' && github.event.pull_request.number == 4 && github.event.pull_request.head.repo.full_name == github.repository
+    needs: [lint, screenshots, apk]
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ui-evidence-pr-4
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Collect existing evidence even if a job failed
+        uses: actions/download-artifact@v7
+        continue-on-error: true
+        with:
+          pattern: ui-*
+          path: ui-collected
+      - name: Publish one detached Git blob and update one PR comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UI_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+          UI_RETURN_DIR: ${{ runner.temp }}/ui-return
+          UI_EVIDENCE_DIR: ui-collected
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p "$UI_RETURN_DIR" "$UI_EVIDENCE_DIR"
+          if ! gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?per_page=100" > "$UI_RETURN_DIR/jobs.json" 2>/dev/null; then
+            echo '::error::Unable to read CI job statuses.'
+            exit 1
+          fi
+          python3 scripts/prepare-ui-return.py --evidence "$UI_EVIDENCE_DIR" --jobs "$UI_RETURN_DIR/jobs.json" --out "$UI_RETURN_DIR"
+          if ! gh api --method POST "repos/$GITHUB_REPOSITORY/git/blobs" --input "$UI_RETURN_DIR/blob-payload.json" --jq .sha > "$UI_RETURN_DIR/blob-sha.txt" 2>/dev/null; then
+            echo '::error::Unable to create the detached screenshot blob.'
+            exit 1
+          fi
+          # Publish the screenshot report first, so an APK failure cannot hide it.
+          python3 scripts/write-ui-comment.py
+          owner=${GITHUB_REPOSITORY%/*}
+          repo=${GITHUB_REPOSITORY#*/}
+          query='query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){comments(last:100){nodes{databaseId author{login} body}}}}}'
+          if ! gh api graphql -f query="$query" -f owner="$owner" -f name="$repo" -F number=4 --jq '[.data.repository.pullRequest.comments.nodes[] | select(.author.login == "github-actions" or .author.login == "github-actions[bot]") | select(.body | contains("<!-- arena-ui-evidence -->"))] | last | .databaseId // empty' > "$UI_RETURN_DIR/comment-id.txt" 2>/dev/null; then
+            echo '::error::Unable to find the existing evidence comment.'
+            exit 1
+          fi
+          comment_id=$(cat "$UI_RETURN_DIR/comment-id.txt")
+          if [[ -n "$comment_id" ]]; then
+            if ! gh api --method PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$comment_id" -F "body=@$UI_RETURN_DIR/comment.md" --silent 2>/dev/null; then
+              echo '::error::Unable to update the evidence comment.'
+              exit 1
+            fi
+          else
+            if ! gh api --method POST "repos/$GITHUB_REPOSITORY/issues/4/comments" -F "body=@$UI_RETURN_DIR/comment.md" --silent 2>/dev/null; then
+              echo '::error::Unable to create the evidence comment.'
+              exit 1
+            fi
+          fi
+          if [[ ! -f "$UI_EVIDENCE_DIR/ui-apk/app-debug.apk" ]]; then
+            echo '::error::Debug APK evidence is missing.'
+            exit 1
+          fi
+          if ! python3 scripts/prepare-collage-apk.py 2> "$UI_RETURN_DIR/apk-error.txt"; then
+            echo "::error::APK metadata validation failed: $(head -c 300 "$UI_RETURN_DIR/apk-error.txt")"
+            exit 1
+          fi
+          if ! gh api --method POST "repos/$GITHUB_REPOSITORY/git/blobs" --input "$UI_RETURN_DIR/apk-blob-payload.json" --jq .sha > "$UI_RETURN_DIR/apk-blob-sha.txt" 2>/dev/null; then
+            echo '::error::Unable to create the detached APK blob.'
+            exit 1
+          fi
+          python3 scripts/write-ui-comment.py
+          if [[ -z "$comment_id" ]]; then
+            echo '::error::Cannot update the newly created screenshot comment with APK metadata.'
+            exit 1
+          fi
+          if ! gh api --method PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$comment_id" -F "body=@$UI_RETURN_DIR/comment.md" --silent 2>/dev/null; then
+            echo '::error::Unable to update the APK evidence comment.'
+            exit 1
+          fi
