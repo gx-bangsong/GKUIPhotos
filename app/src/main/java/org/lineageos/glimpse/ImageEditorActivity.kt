@@ -14,6 +14,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.Matrix
+import android.graphics.RectF
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.net.Uri
@@ -176,6 +177,11 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
     private var sourceUri: Uri? = null
     private var sourceMimeType: String? = null
     private var baseBitmap: Bitmap? = null
+    // The bitmap transform includes the translation used by Bitmap.createBitmap.
+    private var baseToDisplayBitmap = Matrix()
+    private fun baseToView(): Matrix = Matrix().apply {
+        setConcat(cropImageView.getImageMatrix(), baseToDisplayBitmap)
+    }
     private var rotation: Int = 0
     private var fineRotation: Float = 0f
     private var currentFilter: ImageFilter = ImageFilter.NONE
@@ -350,6 +356,12 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
 
         cropImageView.onFramingModified = {
             isFramingModified = true
+            annotationOverlayView.isMarkupRestrictedToCrop = cropImageView.hasUserModifiedCrop
+            annotationOverlayView.invalidate()
+        }
+        cropImageView.onPreviewGeometryChanged = {
+            annotationOverlayView.isMarkupRestrictedToCrop = cropImageView.hasUserModifiedCrop
+            annotationOverlayView.invalidate()
         }
 
         // Crop Controls
@@ -402,7 +414,17 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         annotationOverlayView.cropRectProvider = { cropImageView.getCropRect() }
         annotationOverlayView.imageBoundsProvider = { cropImageView.getImageBounds() }
         annotationOverlayView.displayBitmapProvider = { cropImageView.getDisplayBitmap() }
-        annotationOverlayView.imageMatrixProvider = { cropImageView.getImageMatrix() }
+        annotationOverlayView.imageMatrixProvider = { baseToView() }
+        annotationOverlayView.displayToBaseMatrixProvider = {
+            Matrix().also { baseToDisplayBitmap.invert(it) }
+        }
+        annotationOverlayView.baseBoundsProvider = {
+            baseBitmap?.let { RectF(0f, 0f, it.width.toFloat(), it.height.toFloat()) } ?: RectF()
+        }
+        annotationOverlayView.isPreviewFrameAvailable = { cropImageView.getDisplayBitmap() != null }
+        annotationOverlayView.onPreviewGesture = { px, py, x, y, scale ->
+            cropImageView.updatePreviewGesture(px, py, x, y, scale)
+        }
         annotationOverlayView.onAnnotationChanged = {
             subEditUndoButton.isEnabled = annotationOverlayView.hasAnnotations()
             subEditUndoButton.alpha = if (annotationOverlayView.hasAnnotations()) 1f else 0.4f
@@ -1987,16 +2009,20 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             }
             val displayed = withContext(Dispatchers.Default) {
                 ensureActive()
-                val transformed = transformBitmap(bmp, rotation.toFloat() + fineRotation, isFlippedHorizontal)
+                val degrees = rotation.toFloat() + fineRotation
+                val flipped = isFlippedHorizontal
+                val mapping = baseToDisplayMatrix(bmp, degrees, flipped)
+                val transformed = transformBitmap(bmp, degrees, flipped)
                 ensureActive()
                 val filtered = applyFilter(transformed, currentFilter)
                 if (filtered !== transformed && transformed !== bmp) transformed.recycle()
                 ensureActive()
                 val adjusted = ImageAdjuster.applyAdjustments(filtered, adjustParameters)
                 if (adjusted !== filtered && filtered !== bmp) filtered.recycle()
-                adjusted
+                adjusted to mapping
             }
-            cropImageView.setBitmap(displayed)
+            baseToDisplayBitmap = displayed.second
+            cropImageView.setBitmap(displayed.first)
             annotationOverlayView.invalidateMosaicCache()
         }
     }
@@ -2019,7 +2045,12 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             val canvas = Canvas(canvasBmp)
             canvas.drawBitmap(result, 0f, 0f, null)
             val targetRect = if (cropped != null) cropImageView.getCropOutputBounds() else cropImageView.getImageBounds()
-            annotationOverlayView.rasterize(canvas, targetRect, result)
+            val viewToOutput = Matrix().apply {
+                setRectToRect(targetRect, RectF(0f, 0f, result.width.toFloat(), result.height.toFloat()),
+                    Matrix.ScaleToFit.FILL)
+            }
+            val baseToOutput = Matrix().apply { setConcat(viewToOutput, baseToView()) }
+            annotationOverlayView.rasterize(canvas, baseToOutput)
             if (result !== baseBitmap && result !== cropped) result.recycle()
             canvasBmp
         } else {
@@ -2287,6 +2318,18 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             decoded
         }
     }.getOrNull()
+
+    /** Matrix corresponding to Bitmap.createBitmap's transformed and normalized bounds. */
+    private fun baseToDisplayMatrix(src: Bitmap, degrees: Float, flipHorizontal: Boolean): Matrix {
+        val matrix = Matrix().apply {
+            if (abs(degrees % 360f) >= 0.01f) postRotate(degrees)
+            if (flipHorizontal) postScale(-1f, 1f)
+        }
+        val bounds = RectF(0f, 0f, src.width.toFloat(), src.height.toFloat())
+        matrix.mapRect(bounds)
+        matrix.postTranslate(-bounds.left, -bounds.top)
+        return matrix
+    }
 
     private fun transformBitmap(src: Bitmap, degrees: Float, flipHorizontal: Boolean): Bitmap {
         if (abs(degrees % 360f) < 0.01f && !flipHorizontal) return src

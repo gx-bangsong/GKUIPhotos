@@ -112,6 +112,28 @@ with zipfile.ZipFile(out / 'ui-evidence.zip', 'w', compression=zipfile.ZIP_DEFLA
                 file = folder / f'{item}.{extension}'
                 if file.is_file():
                     archive.write(file, f'{name}/{file.name}')
+        # Include only synthetic multitouch evidence and sanitized JUnit cases for this suite.
+        for file in sorted(folder.glob('touch-*.png')) + sorted(folder.glob('touch-*-trace.txt')):
+            if file.is_file():
+                archive.write(file, f'{name}/{file.name}')
+        suite = ET.Element('testsuite', name='MarkupMultiTouchInstrumentedTest')
+        for report in sorted((folder / 'test-results').rglob('*.xml')):
+            try:
+                cases = ET.parse(report).getroot().iter('testcase')
+                for case in cases:
+                    if case.get('classname') != 'org.lineageos.glimpse.visual.MarkupMultiTouchInstrumentedTest':
+                        continue
+                    entry = ET.SubElement(suite, 'testcase', {
+                        key: case.get(key, '') for key in ('classname', 'name', 'time')
+                    })
+                    for result in case:
+                        if result.tag in ('failure', 'error', 'skipped'):
+                            item = ET.SubElement(entry, result.tag, message=clean(result.get('message', '')))
+                            item.text = clean(result.text or '')
+            except ET.ParseError:
+                continue
+        if len(suite):
+            archive.writestr(f'{name}/touch-junit.xml', ET.tostring(suite, encoding='utf-8', xml_declaration=True))
         for filename in ('wm-size.txt', 'wm-density.txt', 'font-scale.txt', 'night-mode.txt', 'failure-tail.txt',
                          'google-photos-status.txt', 'google-photos-error.txt', 'google-photos-start.png', 'google-photos-start.xml',
                          'google-photos-after-back.png', 'google-photos-after-back.xml',

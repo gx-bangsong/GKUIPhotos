@@ -65,6 +65,9 @@ class CropImageView @JvmOverloads constructor(
     /** Callback invoked whenever the user modifies framing via pan, zoom, or handle drag gestures. */
     var onFramingModified: (() -> Unit)? = null
 
+    /** The sibling annotation layer must redraw when preview geometry changes. */
+    var onPreviewGeometryChanged: (() -> Unit)? = null
+
     /** Tracks whether the user has actively manipulated the crop rectangle, ratio, or pan/zoom. */
     var hasUserModifiedCrop: Boolean = false
         private set
@@ -97,6 +100,7 @@ class CropImageView @JvmOverloads constructor(
     private var translateY = 0f
     private var lastTouchX = 0f
     private var lastTouchY = 0f
+    private var hadMultiplePointers = false
 
     private val scaleDetector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
         override fun onScale(detector: ScaleGestureDetector): Boolean {
@@ -149,6 +153,23 @@ class CropImageView @JvmOverloads constructor(
         cropRect.setEmpty()
         requestLayout()
         invalidate()
+        onPreviewGeometryChanged?.invoke()
+    }
+
+    /** Apply a two-finger viewport gesture without routing a synthetic event to this view. */
+    fun updatePreviewGesture(previousX: Float, previousY: Float, x: Float, y: Float, factor: Float) {
+        if (!factor.isFinite() || factor <= 0f) return
+        val old = scaleFactor
+        val next = (old * factor).coerceIn(0.3f, 8f)
+        val ratio = next / old
+        val cx = width / 2f
+        val cy = height / 2f
+        translateX = x - cx - (previousX - cx - translateX) * ratio
+        translateY = y - cy - (previousY - cy - translateY) * ratio
+        scaleFactor = next
+        hasUserModifiedCrop = true
+        onFramingModified?.invoke()
+        invalidate()
     }
 
     fun getTransformState(): Triple<Float, Float, Float> = Triple(scaleFactor, translateX, translateY)
@@ -159,6 +180,7 @@ class CropImageView @JvmOverloads constructor(
         translateY = ty
         initialized = true
         invalidate()
+        onPreviewGeometryChanged?.invoke()
     }
 
     fun reset() {
@@ -168,6 +190,7 @@ class CropImageView @JvmOverloads constructor(
         hasUserModifiedCrop = false
         computeCropRect()
         invalidate()
+        onPreviewGeometryChanged?.invoke()
     }
 
     fun getCropRect(): RectF {
@@ -222,12 +245,18 @@ class CropImageView @JvmOverloads constructor(
         }
     }
 
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        onPreviewGeometryChanged?.invoke()
+    }
+
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         super.onMeasure(widthMeasureSpec, heightMeasureSpec)
         if (!initialized && bitmap != null && width > 0 && height > 0) {
             scaleFactor = fitScale()
             computeCropRect()
             initialized = true
+            onPreviewGeometryChanged?.invoke()
         }
     }
 
@@ -390,6 +419,7 @@ class CropImageView @JvmOverloads constructor(
 
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                hadMultiplePointers = false
                 lastTouchX = event.x
                 lastTouchY = event.y
 
@@ -405,7 +435,12 @@ class CropImageView @JvmOverloads constructor(
                     else -> DragHandle.PAN
                 }
             }
+            MotionEvent.ACTION_POINTER_DOWN -> {
+                hadMultiplePointers = true
+                activeDragHandle = DragHandle.NONE
+            }
             MotionEvent.ACTION_MOVE -> {
+                if (hadMultiplePointers) return true
                 val dx = event.x - lastTouchX
                 val dy = event.y - lastTouchY
                 lastTouchX = event.x
@@ -489,6 +524,7 @@ class CropImageView @JvmOverloads constructor(
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 activeDragHandle = DragHandle.NONE
+                hadMultiplePointers = false
             }
         }
         return true

@@ -37,7 +37,7 @@ if [[ "$UI_MODE" == light && "$UI_VERSION" == candidate ]]; then
   fi
 fi
 set +e
-./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.expectedTheme="$UI_MODE" -Pandroid.testInstrumentationRunnerArguments.uiVersion="$UI_VERSION" --stacktrace 2>&1 | tee "${RUNNER_TEMP}/ui-gradle.log"
+./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.expectedTheme="$UI_MODE" -Pandroid.testInstrumentationRunnerArguments.uiVersion="$UI_VERSION" -Pandroid.testInstrumentationRunnerArguments.sourceSha="$(git rev-parse HEAD)" --stacktrace 2>&1 | tee "${RUNNER_TEMP}/ui-gradle.log"
 status=${PIPESTATUS[0]}
 set -e
 if (( probe_status != 0 )); then status=1; fi
