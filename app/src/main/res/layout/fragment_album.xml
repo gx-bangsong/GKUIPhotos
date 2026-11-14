@@ -54,4 +54,74 @@
         android:scrollbars="vertical"
         app:layout_behavior="@string/appbar_scrolling_view_behavior" />
 
+    <!-- A persistent selection sheet leaves the gallery available for further selection. -->
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/selectionSheet"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:visibility="gone"
+        app:cardBackgroundColor="?attr/colorSurfaceContainer"
+        app:cardCornerRadius="24dp"
+        app:cardElevation="6dp"
+        app:strokeWidth="0dp"
+        app:behavior_hideable="false"
+        app:layout_behavior="com.google.android.material.bottomsheet.BottomSheetBehavior">
+
+        <LinearLayout
+            android:id="@+id/selectionSheetContent"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/selectionSheetCount"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:gravity="center"
+                android:paddingHorizontal="16dp"
+                android:textAppearance="?attr/textAppearanceTitleMedium" />
+
+            <TextView
+                android:id="@+id/selectionSheetDragHint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:paddingBottom="4dp"
+                android:text="@string/selection_sheet_expand"
+                android:textAppearance="?attr/textAppearanceBodySmall"
+                android:textColor="?attr/colorOnSurfaceVariant" />
+
+            <LinearLayout
+                android:id="@+id/selectionSheetPrimary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal" />
+
+            <TextView
+                android:id="@+id/selectionSheetReason"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:paddingHorizontal="16dp"
+                android:paddingBottom="8dp"
+                android:textAppearance="?attr/textAppearanceBodySmall"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                android:visibility="gone" />
+
+            <!-- Navigation clearance is also needed while only the first row is visible. -->
+            <Space
+                android:id="@+id/selectionSheetCollapsedInset"
+                android:layout_width="match_parent"
+                android:layout_height="0dp" />
+
+            <LinearLayout
+                android:id="@+id/selectionSheetMore"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal" />
+        </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
+
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

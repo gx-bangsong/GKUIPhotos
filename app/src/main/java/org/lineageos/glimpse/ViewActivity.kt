@@ -19,6 +19,7 @@ import android.util.Log
 import android.util.Rational
 import android.view.View
 import android.widget.LinearLayout
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -37,6 +38,7 @@ import androidx.viewpager2.widget.ViewPager2
 import com.google.android.material.appbar.AppBarLayout
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
+import com.google.android.material.bottomsheet.BottomSheetDialog
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -321,23 +323,23 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
         }
 
         deleteButton.setOnClickListener {
-            viewModel.displayedMedia.value?.let {
-                dismissKeyguardAndRun {
-                    trashMedia(it)
+            viewModel.displayedMedia.value?.let { media ->
+                if (media.isTrashed) {
+                    dismissKeyguardAndRun { trashMedia(media, false) }
+                } else {
+                    showSingleMoveToTrashConfirmation(media)
                 }
             }
         }
 
         deleteButton.setOnLongClickListener {
-            viewModel.displayedMedia.value?.let {
-                MediaDialogsUtils.openDeleteForeverDialog(this, it.uri) { uris ->
+            val media = viewModel.displayedMedia.value
+            if (media == null) false else {
+                MediaDialogsUtils.openDeleteForeverDialog(this, media.uri) { uris ->
                     deleteUriContract.launch(contentResolver.createDeleteRequest(*uris))
                 }
-
                 true
             }
-
-            false
         }
 
         motionPhotoToggleButton.setOnClickListener {
@@ -677,6 +679,31 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
 
     private fun saveCurrentVideoPosition() {
         viewModel.saveCurrentVideoPosition(lastVideoUriPlayed)
+    }
+
+    private fun showSingleMoveToTrashConfirmation(media: Media) {
+        val dialog = BottomSheetDialog(this)
+        dialog.setContentView(R.layout.dialog_single_move_to_trash)
+        val content = requireNotNull(dialog.findViewById<View>(R.id.singleTrashSheetContent))
+        val originalBottomPadding = content.paddingBottom
+        ViewCompat.setOnApplyWindowInsetsListener(content) { view, insets ->
+            val bottom = insets.getInsets(WindowInsetsCompat.Type.navigationBars() or
+                WindowInsetsCompat.Type.displayCutout()).bottom
+            view.updatePadding(bottom = originalBottomPadding + bottom)
+            insets
+        }
+        requireNotNull(dialog.findViewById<TextView>(R.id.singleTrashMessage)).text =
+            resources.getQuantityString(R.plurals.move_file_to_trash_confirm_message, 1, 1)
+        requireNotNull(dialog.findViewById<View>(R.id.singleTrashCancel)).setOnClickListener { dialog.dismiss() }
+        requireNotNull(dialog.findViewById<View>(R.id.singleTrashConfirm)).setOnClickListener {
+            dialog.dismiss()
+            dismissKeyguardAndRun { trashMedia(media, true) }
+        }
+        dialog.setOnShowListener {
+            dialog.findViewById<View>(R.id.singleTrashTitle)?.requestFocus()
+            ViewCompat.requestApplyInsets(content)
+        }
+        dialog.show()
     }
 
     private fun trashMedia(media: Media, trash: Boolean = !media.isTrashed) {

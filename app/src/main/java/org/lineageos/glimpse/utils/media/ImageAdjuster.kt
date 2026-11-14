@@ -97,7 +97,9 @@ object ImageAdjuster {
     }
 
     /**
-     * Apply all adjustments to source bitmap.
+     * Reads but never recycles [source]. The returned bitmap is either [source] or
+     * a live bitmap owned by the caller; only superseded intermediates are recycled.
+     * An interrupted sharpen may return its input unchanged.
      */
     fun applyAdjustments(source: Bitmap, params: AdjustParameters): Bitmap {
         if (params.isDefault) return source
@@ -120,7 +122,7 @@ object ImageAdjuster {
         // Step 2: Sharpen
         if (params.sharpen > 0) {
             val sharpened = applySharpen(current, params.sharpen)
-            if (current !== source) current.recycle()
+            if (current !== source && current !== sharpened) current.recycle()
             current = sharpened
         }
 

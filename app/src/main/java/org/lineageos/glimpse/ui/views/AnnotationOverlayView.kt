@@ -664,6 +664,8 @@ class AnnotationOverlayView @JvmOverloads constructor(
     var onMosaicStarted: (() -> Unit)? = null
     var cropRectProvider: (() -> RectF)? = null
     var imageBoundsProvider: (() -> RectF)? = null
+    /** Crop guides are drawn last so the scrim covers photo and annotations equally. */
+    var drawPreviewForeground: ((Canvas) -> Unit)? = null
     var displayBitmapProvider: (() -> Bitmap?)? = null
     var imageMatrixProvider: (() -> Matrix)? = null
     var displayToBaseMatrixProvider: (() -> Matrix)? = null
@@ -727,9 +729,11 @@ class AnnotationOverlayView @JvmOverloads constructor(
     private var stripesShader: BitmapShader? = null
     private var noiseShader: BitmapShader? = null
 
-    // Active uncommitted shape with handles
+    // Selection references the ordered document; a blank text draft is the only exception.
     var activeShape: AnnotationItem.Shape? = null
         private set
+    // A selected committed shape stays in the list, preserving object identity and z-order.
+    private var selectedShapeOriginal: AnnotationItem.Shape? = null
 
     // Active text item
     var activeText: AnnotationItem.Text? = null
@@ -741,6 +745,9 @@ class AnnotationOverlayView @JvmOverloads constructor(
 
     // Handle dragging state
     private var draggedHandle: Int = -1 // 0: start, 1: end, -1: none
+    private var isMovingShape = false
+    private var shapeDragStartX = 0f
+    private var shapeDragStartY = 0f
     private var isDraggingTextHandle: Boolean = false
     private var isMovingText: Boolean = false
     private var textDragStartX = 0f
@@ -859,19 +866,17 @@ class AnnotationOverlayView @JvmOverloads constructor(
     }
 
     fun commitActiveShape() {
-        val s = activeShape ?: return
-        annotations.add(s)
+        if (activeShape == null) return
         activeShape = null
+        selectedShapeOriginal = null
         draggedHandle = -1
+        isMovingShape = false
         onAnnotationChanged?.invoke()
         invalidate()
     }
 
     fun commitActiveText() {
-        val t = activeText ?: return
-        if (t.text.isNotBlank()) {
-            annotations.add(t)
-        }
+        if (activeText == null) return
         activeText = null
         isDraggingTextHandle = false
         isMovingText = false
@@ -880,8 +885,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
     }
 
     fun commitActiveSticker() {
-        val s = activeSticker ?: return
-        annotations.add(s)
+        if (activeSticker == null) return
         activeSticker = null
         isDraggingStickerHandle = false
         isMovingSticker = false
@@ -889,7 +893,9 @@ class AnnotationOverlayView @JvmOverloads constructor(
         invalidate()
     }
 
+    /** The caller must not mutate or recycle bmp while the document or history can reference it. */
     fun addSticker(bmp: Bitmap) {
+        val before = historyState()
         commitActiveShape()
         commitActiveText()
         commitActiveSticker()
@@ -915,12 +921,14 @@ class AnnotationOverlayView @JvmOverloads constructor(
             centerY = cy,
             scale = initialScale,
         )
+        annotations.add(requireNotNull(activeSticker))
         constrainActiveSticker()
-        onAnnotationChanged?.invoke()
+        recordHistory(before)
         invalidate()
     }
 
     fun addTextItem(text: String, cx: Float, cy: Float) {
+        val before = historyState()
         commitActiveShape()
         commitActiveText()
         commitActiveSticker()
@@ -938,50 +946,184 @@ class AnnotationOverlayView @JvmOverloads constructor(
             hasBackgroundPill = hasTextBackgroundPill,
         )
         activeText = item
-        onAnnotationChanged?.invoke()
+        if (text.isNotBlank()) annotations.add(item)
+        recordHistory(before)
         invalidate()
     }
 
-    fun undo(): Boolean {
-        if (activeShape != null) {
-            activeShape = null
-            draggedHandle = -1
-            invalidate()
-            onAnnotationChanged?.invoke()
-            return true
+    /** Values are independent snapshots; originals preserve identity for editable selections. */
+    private data class HistoryEntry(val original: AnnotationItem, val value: AnnotationItem)
+    private data class HistoryState(
+        val items: List<HistoryEntry>,
+        val shapeIndex: Int, val textIndex: Int, val stickerIndex: Int,
+        val selectedOriginal: AnnotationItem.Shape?, val textDraft: HistoryEntry?,
+    )
+    private data class HistoryAction(val before: HistoryState, val after: HistoryState)
+    private val undoHistory = mutableListOf<HistoryAction>()
+    private val redoHistory = mutableListOf<HistoryAction>()
+    private var gestureHistoryStart: HistoryState? = null
+    private var controlHistoryStart: HistoryState? = null
+
+    // Bitmaps and SvgBrush vectors are shared read-only: callers must retain them and
+    // must not mutate/recycle them while a document or history entry can reference them.
+    // Evicting a history entry drops references only; it never recycles a bitmap.
+    private fun historyEntry(item: AnnotationItem) = HistoryEntry(item, copyItem(item))
+
+    private fun historyState(): HistoryState = HistoryState(
+        annotations.map(::historyEntry),
+        annotations.indexOfFirst { it === activeShape },
+        annotations.indexOfFirst { it === activeText },
+        annotations.indexOfFirst { it === activeSticker },
+        selectedShapeOriginal?.copy(),
+        activeText?.takeIf { it.text.isBlank() && annotations.none { item -> item === it } }
+            ?.let(::historyEntry),
+    )
+
+    // Path has no structural equals on supported Android versions. Include fill type
+    // and a fine geometric approximation rather than comparing Path object identities.
+    private fun samePath(a: Path?, b: Path?): Boolean = when {
+        a == null || b == null -> a == null && b == null
+        a.fillType != b.fillType -> false
+        else -> a.approximate(0.01f).contentEquals(b.approximate(0.01f))
+    }
+
+    private fun sameItem(a: AnnotationItem, b: AnnotationItem): Boolean = when {
+        a is AnnotationItem.Doodle && b is AnnotationItem.Doodle ->
+            a.color == b.color && a.strokeWidth == b.strokeWidth && a.brushType == b.brushType &&
+                a.customTexture === b.customTexture && samePath(a.path, b.path)
+        a is AnnotationItem.Mosaic && b is AnnotationItem.Mosaic ->
+            a.brushSize == b.brushSize && a.effect == b.effect && a.cellSize == b.cellSize &&
+                a.color == b.color && a.customPattern === b.customPattern && samePath(a.path, b.path)
+        else -> a == b
+    }
+
+    // Compare document order one-to-one. Selection and an empty draft are not content.
+    private fun sameDocument(a: HistoryState, b: HistoryState): Boolean =
+        a.items.size == b.items.size && a.items.indices.all { i -> sameItem(a.items[i].value, b.items[i].value) }
+
+    private fun restoreEntry(entry: HistoryEntry): AnnotationItem {
+        val target = entry.original
+        when (val saved = entry.value) {
+            is AnnotationItem.Shape -> restoreShape(target as AnnotationItem.Shape, saved)
+            is AnnotationItem.Text -> (target as AnnotationItem.Text).apply {
+                text = saved.text; centerX = saved.centerX; centerY = saved.centerY
+                baseTextSize = saved.baseTextSize; scale = saved.scale
+                color = saved.color; hasBackgroundPill = saved.hasBackgroundPill
+            }
+            is AnnotationItem.Sticker -> (target as AnnotationItem.Sticker).apply {
+                centerX = saved.centerX; centerY = saved.centerY
+                scale = saved.scale; rotation = saved.rotation
+            }
+            is AnnotationItem.Doodle -> (target as AnnotationItem.Doodle).path.set(saved.path)
+            is AnnotationItem.Mosaic -> {
+                val path = (target as AnnotationItem.Mosaic).path
+                if (path != null && saved.path != null) path.set(saved.path)
+            }
+            // A stamp's list can be backed by a mutable list; restore a fresh copy.
+            is AnnotationItem.StampStroke -> return copyItem(saved)
         }
-        if (activeText != null) {
+        return target
+    }
+
+    private fun restoreHistory(state: HistoryState, restoreDraft: Boolean = false) {
+        annotations.clear()
+        annotations.addAll(state.items.map(::restoreEntry))
+        activeShape = if (activeTool == MarkupTool.SHAPES)
+            annotations.getOrNull(state.shapeIndex) as? AnnotationItem.Shape else null
+        activeText = if (activeTool == MarkupTool.TEXT) {
+            (annotations.getOrNull(state.textIndex) as? AnnotationItem.Text)
+                ?: if (restoreDraft) state.textDraft?.let { restoreEntry(it) as AnnotationItem.Text } else null
+        } else null
+        activeSticker = if (activeTool == MarkupTool.STICKER)
+            annotations.getOrNull(state.stickerIndex) as? AnnotationItem.Sticker else null
+        selectedShapeOriginal = if (activeShape != null) state.selectedOriginal?.copy() else null
+        activeShape?.let {
+            activeColor = it.color
+            activeShapeStyle = it.style
+            activeStrokeWidth = it.strokeWidth * getMatrixScale(imageMatrixProvider?.invoke())
+        }
+        activeText?.let { activeColor = it.color; hasTextBackgroundPill = it.hasBackgroundPill }
+        draggedHandle = -1; isMovingShape = false
+        isMovingText = false; isDraggingTextHandle = false
+        isMovingSticker = false; isDraggingStickerHandle = false
+        invalidate()
+        onAnnotationChanged?.invoke()
+    }
+
+    private fun recordHistory(before: HistoryState) {
+        val after = historyState()
+        if (!sameDocument(before, after)) {
+            undoHistory.add(HistoryAction(before, after))
+            if (undoHistory.size > 50) undoHistory.removeAt(0)
+            redoHistory.clear()
+        }
+        onAnnotationChanged?.invoke()
+    }
+
+    fun canUndo(): Boolean = undoHistory.isNotEmpty()
+    fun canRedo(): Boolean = redoHistory.isNotEmpty()
+
+    fun undo(): Boolean {
+        val action = undoHistory.removeLastOrNull() ?: return false
+        redoHistory.add(action)
+        restoreHistory(action.before)
+        return true
+    }
+
+    fun redo(): Boolean {
+        val action = redoHistory.removeLastOrNull() ?: return false
+        undoHistory.add(action)
+        restoreHistory(action.after)
+        return true
+    }
+
+    /** Group repeated slider changes into one history action. */
+    fun beginControlEdit() { if (controlHistoryStart == null) controlHistoryStart = historyState() }
+    fun endControlEdit() { controlHistoryStart?.let(::recordHistory); controlHistoryStart = null }
+    fun updateControlEdit(edit: () -> Unit) {
+        if (controlHistoryStart != null) { edit(); invalidate() } else editAnnotation(edit)
+    }
+    fun editAnnotation(edit: () -> Unit) {
+        val before = historyState()
+        edit()
+        invalidate()
+        recordHistory(before)
+    }
+
+    fun editText(item: AnnotationItem.Text, text: String) {
+        editAnnotation {
+            if (text.isBlank()) {
+                if (activeText === item) activeText = null
+                annotations.removeAll { it === item }
+            } else {
+                item.text = text
+                if (annotations.none { it === item }) annotations.add(item)
+                constrainActiveText()
+            }
+        }
+    }
+
+    fun discardEmptyText(item: AnnotationItem.Text) {
+        if (activeText === item && item.text.isBlank()) {
             activeText = null
             invalidate()
             onAnnotationChanged?.invoke()
-            return true
         }
-        if (activeSticker != null) {
-            activeSticker = null
-            invalidate()
-            onAnnotationChanged?.invoke()
-            return true
-        }
-        if (annotations.isNotEmpty()) {
-            annotations.removeAt(annotations.size - 1)
-            invalidate()
-            onAnnotationChanged?.invoke()
-            return true
-        }
-        return false
     }
 
     fun clear() {
+        val before = historyState()
         activeShape = null
+        selectedShapeOriginal = null
         activeText = null
         activeSticker = null
         draggedHandle = -1
         annotations.clear()
         invalidate()
-        onAnnotationChanged?.invoke()
+        recordHistory(before)
     }
 
-    fun hasAnnotations(): Boolean = annotations.isNotEmpty() || activeShape != null || activeText != null || activeSticker != null
+    fun hasAnnotations(): Boolean = annotations.isNotEmpty()
 
     /** Draw one item in canonical base coordinates; the caller supplies the canvas transform. */
     private fun drawAnnotation(canvas: Canvas, item: AnnotationItem) {
@@ -1039,10 +1181,9 @@ class AnnotationOverlayView @JvmOverloads constructor(
             drawAnnotation(canvas, AnnotationItem.Mosaic(it, currentMosaicWidth, activeMosaicEffect,
                 activeMosaicCellSize, Color.BLACK, activeCustomMosaicPattern))
         }
-        activeShape?.draw(canvas)
-        activeText?.draw(canvas)
-        activeSticker?.draw(canvas)
+        activeText?.takeIf { draft -> annotations.none { it === draft } }?.draw(canvas)
         canvas.restore()
+        drawPreviewForeground?.invoke(canvas)
 
         // Handle coordinates and hit testing share the same matrix, while handle sizes stay in dp.
         canvas.save()
@@ -1088,17 +1229,76 @@ class AnnotationOverlayView @JvmOverloads constructor(
         canvas.drawLine(x - d, y + d, x + d, y - d, xPaint)
     }
 
-    private fun findTouchedHandle(shape: AnnotationItem.Shape, x: Float, y: Float): Int {
-        val hitRadius = viewLengthToBase(48f)
-        if (hypot((x - shape.startX).toDouble(), (y - shape.startY).toDouble()) <= hitRadius) return 0
-        if (hypot((x - shape.endX).toDouble(), (y - shape.endY).toDouble()) <= hitRadius) return 1
-        return -1
+    private fun findTouchedHandle(shape: AnnotationItem.Shape, viewX: Float, viewY: Float): Int {
+        val points = floatArrayOf(shape.startX, shape.startY, shape.endX, shape.endY)
+        imageMatrixProvider?.invoke()?.mapPoints(points) ?: return -1
+        val first = hypot((viewX - points[0]).toDouble(), (viewY - points[1]).toDouble())
+        val second = hypot((viewX - points[2]).toDouble(), (viewY - points[3]).toDouble())
+        val radius = 12f * resources.displayMetrics.density
+        val startHit = first <= radius ||
+            (shape.type == ShapeType.DOUBLE_ARROW && arrowHeadContains(shape, viewX, viewY, false))
+        val endHit = second <= radius ||
+            ((shape.type == ShapeType.ARROW || shape.type == ShapeType.DOUBLE_ARROW) &&
+                arrowHeadContains(shape, viewX, viewY, true))
+        return when {
+            startHit && endHit -> if (first <= second) 0 else 1
+            startHit -> 0
+            endHit -> 1
+            else -> -1
+        }
     }
 
-    private data class GestureSnapshot(
-        val items: List<AnnotationItem>, val shape: AnnotationItem.Shape?,
-        val text: AnnotationItem.Text?, val sticker: AnnotationItem.Sticker?, val lastTap: Long,
-    )
+    /** Match the triangular filled head drawn by Shape, including at high zoom. */
+    private fun arrowHeadContains(shape: AnnotationItem.Shape, x: Float, y: Float, end: Boolean): Boolean {
+        val sx = if (end) shape.startX else shape.endX
+        val sy = if (end) shape.startY else shape.endY
+        val ex = if (end) shape.endX else shape.startX
+        val ey = if (end) shape.endY else shape.startY
+        val angle = atan2((ey - sy).toDouble(), (ex - sx).toDouble())
+        val length = max(24f, shape.strokeWidth * 3.5f)
+        val points = floatArrayOf(ex, ey,
+            (ex - length * cos(angle - Math.PI / 6)).toFloat(),
+            (ey - length * sin(angle - Math.PI / 6)).toFloat(),
+            (ex - length * cos(angle + Math.PI / 6)).toFloat(),
+            (ey - length * sin(angle + Math.PI / 6)).toFloat())
+        imageMatrixProvider?.invoke()?.mapPoints(points) ?: return false
+        fun cross(i: Int, j: Int): Float =
+            (points[j] - points[i]) * (y - points[i + 1]) -
+                (points[j + 1] - points[i + 1]) * (x - points[i])
+        val a = cross(0, 2); val b = cross(2, 4); val c = cross(4, 0)
+        return (a >= 0f && b >= 0f && c >= 0f) || (a <= 0f && b <= 0f && c <= 0f)
+    }
+
+    // Render the actual shape (including arrowheads and custom paths) into a small
+    // screen-space probe. This avoids bounding-box hits on empty outline interiors.
+    private fun hitShapeBody(shape: AnnotationItem.Shape, viewX: Float, viewY: Float): Boolean {
+        val matrix = imageMatrixProvider?.invoke() ?: return false
+        val radius = max(1, (8f * resources.displayMetrics.density).toInt())
+        val side = radius * 2 + 1
+        val probe = Bitmap.createBitmap(side, side, Bitmap.Config.ARGB_8888)
+        try {
+            val canvas = Canvas(probe)
+            canvas.translate(radius - viewX, radius - viewY)
+            canvas.concat(matrix)
+            shape.draw(canvas)
+            for (yy in 0 until side) for (xx in 0 until side) {
+                val dx = xx - radius; val dy = yy - radius
+                if (dx * dx + dy * dy <= radius * radius && Color.alpha(probe.getPixel(xx, yy)) != 0) return true
+            }
+            return false
+        } finally {
+            probe.recycle()
+        }
+    }
+
+    private fun restoreShape(target: AnnotationItem.Shape, saved: AnnotationItem.Shape) {
+        target.startX = saved.startX; target.startY = saved.startY
+        target.endX = saved.endX; target.endY = saved.endY
+        target.color = saved.color; target.strokeWidth = saved.strokeWidth; target.style = saved.style
+        target.customShapeId = saved.customShapeId; target.customPathData = saved.customPathData
+    }
+
+    private data class GestureSnapshot(val document: HistoryState, val lastTap: Long)
     private var gestureSnapshot: GestureSnapshot? = null
     private var pendingTextEdit: AnnotationItem.Text? = null
     private var pendingStickerDelete = false
@@ -1121,11 +1321,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
 
     private fun cancelSingleGesture() {
         gestureSnapshot?.let { snapshot ->
-            annotations.clear()
-            annotations.addAll(snapshot.items)
-            activeShape = snapshot.shape
-            activeText = snapshot.text
-            activeSticker = snapshot.sticker
+            restoreHistory(snapshot.document, restoreDraft = true)
             lastTapTime = snapshot.lastTap
         }
         currentDoodlePath = null
@@ -1134,6 +1330,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
         pendingTextEdit = null
         pendingStickerDelete = false
         draggedHandle = -1
+        isMovingShape = false
         isDraggingTextHandle = false
         isMovingText = false
         isDraggingStickerHandle = false
@@ -1150,6 +1347,20 @@ class AnnotationOverlayView @JvmOverloads constructor(
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> gestureHistoryStart = if (activeTool != MarkupTool.NONE &&
+                isPreviewFrameAvailable?.invoke() != false) historyState() else null
+            MotionEvent.ACTION_POINTER_DOWN, MotionEvent.ACTION_CANCEL -> gestureHistoryStart = null
+        }
+        val handled = handleAnnotationTouch(event)
+        if (event.actionMasked == MotionEvent.ACTION_UP) {
+            gestureHistoryStart?.let(::recordHistory)
+            gestureHistoryStart = null
+        }
+        return handled
+    }
+
+    private fun handleAnnotationTouch(event: MotionEvent): Boolean {
         if (activeTool == MarkupTool.NONE) return false
         if (isPreviewFrameAvailable?.invoke() == false) {
             if (event.actionMasked == MotionEvent.ACTION_DOWN) return false
@@ -1157,6 +1368,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
             // remaining pointers. An interrupted single-pointer edit is rolled back.
             if (!inPreviewGesture && !suppressUntilUp) {
                 cancelSingleGesture()
+                gestureHistoryStart = null
                 suppressUntilUp = true
             }
         }
@@ -1166,8 +1378,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
                 suppressUntilUp = false
                 pendingTextEdit = null
                 pendingStickerDelete = false
-                gestureSnapshot = GestureSnapshot(annotations.map(::copyItem), activeShape?.copy(),
-                    activeText?.copy(), activeSticker?.copy(), lastTapTime)
+                gestureSnapshot = GestureSnapshot(historyState(), lastTapTime)
             }
             MotionEvent.ACTION_POINTER_DOWN -> {
                 if (suppressUntilUp && !inPreviewGesture) return true
@@ -1333,15 +1544,25 @@ class AnnotationOverlayView @JvmOverloads constructor(
                 when (event.actionMasked) {
                     MotionEvent.ACTION_DOWN -> {
                         val existing = activeShape
-                        if (existing != null) {
-                            val handleIdx = findTouchedHandle(existing, x, y)
-                            if (handleIdx != -1) {
-                                draggedHandle = handleIdx
+                        val candidates = annotations.asReversed().filterIsInstance<AnnotationItem.Shape>()
+                            .toMutableList()
+                        if (existing != null && annotations.none { it === existing }) candidates.add(0, existing)
+                        for (candidate in candidates) {
+                            val handle = findTouchedHandle(candidate, event.x, event.y)
+                            if (handle != -1 || hitShapeBody(candidate, event.x, event.y)) {
+                                if (candidate !== existing) {
+                                    commitActiveShape()
+                                    activeShape = candidate
+                                    selectedShapeOriginal = candidate.copy()
+                                }
+                                draggedHandle = handle
+                                isMovingShape = handle == -1
+                                shapeDragStartX = x; shapeDragStartY = y
+                                invalidate()
                                 return true
-                            } else {
-                                commitActiveShape()
                             }
                         }
+                        commitActiveShape()
 
                         activeShape = AnnotationItem.Shape(
                             type = selectedShapeType,
@@ -1355,7 +1576,9 @@ class AnnotationOverlayView @JvmOverloads constructor(
                             customShapeId = activeCustomShape?.id,
                             customPathData = activeCustomShape?.pathData,
                         )
+                        annotations.add(requireNotNull(activeShape))
                         draggedHandle = 1
+                        isMovingShape = false
                         onShapeStarted?.invoke()
                         invalidate()
                         return true
@@ -1368,12 +1591,18 @@ class AnnotationOverlayView @JvmOverloads constructor(
                         } else if (draggedHandle == 1) {
                             shape.endX = x
                             shape.endY = y
+                        } else if (isMovingShape) {
+                            val dx = x - shapeDragStartX; val dy = y - shapeDragStartY
+                            shape.startX += dx; shape.startY += dy
+                            shape.endX += dx; shape.endY += dy
+                            shapeDragStartX = x; shapeDragStartY = y
                         }
                         invalidate()
                         return true
                     }
                     MotionEvent.ACTION_UP -> {
                         draggedHandle = -1
+                        isMovingShape = false
                         onAnnotationChanged?.invoke()
                         invalidate()
                         return true
@@ -1424,7 +1653,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
                             item is AnnotationItem.Text && RectF().also { item.computeBounds(it) }.contains(x, y)
                         }
                         if (index >= 0) {
-                            activeText = annotations.removeAt(index) as AnnotationItem.Text
+                            activeText = annotations[index] as AnnotationItem.Text
                             isMovingText = true
                             textDragStartX = x
                             textDragStartY = y
@@ -1578,7 +1807,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
                             item is AnnotationItem.Sticker && item.contains(x, y)
                         }
                         if (index >= 0) {
-                            activeSticker = annotations.removeAt(index) as AnnotationItem.Sticker
+                            activeSticker = annotations[index] as AnnotationItem.Sticker
                             isMovingSticker = true
                             stickerDragStartX = x
                             stickerDragStartY = y
@@ -1614,6 +1843,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
                     }
                     MotionEvent.ACTION_UP -> {
                         if (pendingStickerDelete) {
+                            activeSticker?.let { sticker -> annotations.removeAll { it === sticker } }
                             activeSticker = null
                             pendingStickerDelete = false
                             onAnnotationChanged?.invoke()

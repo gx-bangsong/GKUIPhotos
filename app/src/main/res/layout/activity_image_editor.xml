@@ -88,7 +88,7 @@
                 <org.lineageos.glimpse.ui.views.AngleRulerView
                     android:id="@+id/cropAngleRuler"
                     android:layout_width="match_parent"
-                    android:layout_height="24dp"
+                    android:layout_height="@dimen/editor_tool_icon_size"
                     android:layout_marginHorizontal="24dp"
                     android:layout_marginBottom="12dp" />
 
@@ -104,19 +104,21 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginHorizontal="14dp"
+                        android:minWidth="@dimen/editor_tool_item_min_width"
+                        android:minHeight="@dimen/editor_tool_touch_size"
                         android:clickable="true"
                         android:focusable="true"
                         android:gravity="center"
                         android:orientation="vertical">
 
                         <FrameLayout
-                            android:layout_width="48dp"
-                            android:layout_height="48dp"
+                            android:layout_width="@dimen/editor_tool_touch_size"
+                            android:layout_height="@dimen/editor_tool_touch_size"
                             android:background="@drawable/bg_circle_tool">
 
                             <ImageView
-                                android:layout_width="24dp"
-                                android:layout_height="24dp"
+                                android:layout_width="@dimen/editor_tool_icon_size"
+                                android:layout_height="@dimen/editor_tool_icon_size"
                                 android:layout_gravity="center"
                                 android:src="@drawable/ic_crop_ratio"
                                 app:tint="@android:color/white" />
@@ -126,10 +128,10 @@
                             android:id="@+id/cropRatioLabel"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="4dp"
-                            android:text="@string/editor_crop"
+                            android:layout_marginTop="@dimen/editor_tool_label_gap"
+                            android:text="@string/editor_crop_free"
                             android:textColor="#B0B0B0"
-                            android:textSize="11sp" />
+                            android:textSize="@dimen/editor_tool_label_size" />
                     </LinearLayout>
 
                     <!-- Rotate Item -->
@@ -138,19 +140,21 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginHorizontal="14dp"
+                        android:minWidth="@dimen/editor_tool_item_min_width"
+                        android:minHeight="@dimen/editor_tool_touch_size"
                         android:clickable="true"
                         android:focusable="true"
                         android:gravity="center"
                         android:orientation="vertical">
 
                         <FrameLayout
-                            android:layout_width="48dp"
-                            android:layout_height="48dp"
+                            android:layout_width="@dimen/editor_tool_touch_size"
+                            android:layout_height="@dimen/editor_tool_touch_size"
                             android:background="@drawable/bg_circle_tool">
 
                             <ImageView
-                                android:layout_width="24dp"
-                                android:layout_height="24dp"
+                                android:layout_width="@dimen/editor_tool_icon_size"
+                                android:layout_height="@dimen/editor_tool_icon_size"
                                 android:layout_gravity="center"
                                 android:src="@drawable/ic_rotate"
                                 app:tint="@android:color/white" />
@@ -159,10 +163,10 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="4dp"
+                            android:layout_marginTop="@dimen/editor_tool_label_gap"
                             android:text="@string/editor_rotate"
                             android:textColor="#B0B0B0"
-                            android:textSize="11sp" />
+                            android:textSize="@dimen/editor_tool_label_size" />
                     </LinearLayout>
 
                     <!-- Flip Item -->
@@ -171,20 +175,22 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginHorizontal="14dp"
+                        android:minWidth="@dimen/editor_tool_item_min_width"
+                        android:minHeight="@dimen/editor_tool_touch_size"
                         android:clickable="true"
                         android:focusable="true"
                         android:gravity="center"
                         android:orientation="vertical">
 
                         <FrameLayout
-                            android:layout_width="48dp"
-                            android:layout_height="48dp"
+                            android:layout_width="@dimen/editor_tool_touch_size"
+                            android:layout_height="@dimen/editor_tool_touch_size"
                             android:background="@drawable/bg_circle_tool">
 
                             <ImageView
                                 android:id="@+id/cropFlipIcon"
-                                android:layout_width="24dp"
-                                android:layout_height="24dp"
+                                android:layout_width="@dimen/editor_tool_icon_size"
+                                android:layout_height="@dimen/editor_tool_icon_size"
                                 android:layout_gravity="center"
                                 android:src="@drawable/ic_flip"
                                 app:tint="@android:color/white" />
@@ -194,10 +200,10 @@
                             android:id="@+id/cropFlipLabel"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="4dp"
+                            android:layout_marginTop="@dimen/editor_tool_label_gap"
                             android:text="@string/editor_flip"
                             android:textColor="#B0B0B0"
-                            android:textSize="11sp" />
+                            android:textSize="@dimen/editor_tool_label_size" />
                     </LinearLayout>
 
                     <!-- Reset Crop Item -->
@@ -206,6 +212,8 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginStart="14dp"
+                        android:minHeight="@dimen/editor_tool_touch_size"
+                        android:gravity="center"
                         android:clickable="true"
                         android:focusable="true"
                         android:padding="8dp"
@@ -328,10 +336,9 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:fillViewport="true"
-                    android:fadeScrollbars="false"
                     android:requiresFadingEdge="horizontal"
                     android:fadingEdgeLength="20dp"
-                    android:scrollbars="horizontal">
+                    android:scrollbars="none">
 
                     <LinearLayout
                         android:id="@+id/markupToolsRow"
@@ -349,8 +356,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="180dp"
                     android:fillViewport="false"
-                    android:fadeScrollbars="false"
-                    android:scrollbars="vertical"
+                    android:scrollbars="none"
                     android:visibility="gone">
                     <LinearLayout
                         android:id="@+id/markupOptionsContent"
@@ -377,19 +383,21 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginHorizontal="24dp"
+                    android:minWidth="@dimen/editor_tool_item_min_width"
+                    android:minHeight="@dimen/editor_tool_touch_size"
                     android:clickable="true"
                     android:focusable="true"
                     android:gravity="center"
                     android:orientation="vertical">
 
                     <FrameLayout
-                        android:layout_width="48dp"
-                        android:layout_height="48dp"
+                        android:layout_width="@dimen/editor_tool_touch_size"
+                        android:layout_height="@dimen/editor_tool_touch_size"
                         android:background="@drawable/bg_circle_tool">
 
                         <ImageView
-                            android:layout_width="24dp"
-                            android:layout_height="24dp"
+                            android:layout_width="@dimen/editor_tool_icon_size"
+                            android:layout_height="@dimen/editor_tool_icon_size"
                             android:layout_gravity="center"
                             android:src="@drawable/ic_id_photo"
                             app:tint="@android:color/white" />
@@ -398,10 +406,10 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="4dp"
+                        android:layout_marginTop="@dimen/editor_tool_label_gap"
                         android:text="@string/id_photo_title"
                         android:textColor="#B0B0B0"
-                        android:textSize="11sp" />
+                        android:textSize="@dimen/editor_tool_label_size" />
                 </LinearLayout>
 
                 <LinearLayout
@@ -409,20 +417,22 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginHorizontal="24dp"
+                    android:minWidth="@dimen/editor_tool_item_min_width"
+                    android:minHeight="@dimen/editor_tool_touch_size"
                     android:clickable="true"
                     android:focusable="true"
                     android:gravity="center"
                     android:orientation="vertical">
 
                     <FrameLayout
-                        android:layout_width="48dp"
-                        android:layout_height="48dp"
+                        android:layout_width="@dimen/editor_tool_touch_size"
+                        android:layout_height="@dimen/editor_tool_touch_size"
                         android:background="@drawable/bg_circle_tool">
 
                         <ImageView
                             android:id="@+id/watermarkIcon"
-                            android:layout_width="24dp"
-                            android:layout_height="24dp"
+                            android:layout_width="@dimen/editor_tool_icon_size"
+                            android:layout_height="@dimen/editor_tool_icon_size"
                             android:layout_gravity="center"
                             android:src="@drawable/ic_privacy_watermark"
                             app:tint="@android:color/white" />
@@ -432,10 +442,10 @@
                         android:id="@+id/watermarkLabel"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="4dp"
+                        android:layout_marginTop="@dimen/editor_tool_label_gap"
                         android:text="@string/editor_watermark"
                         android:textColor="#B0B0B0"
-                        android:textSize="11sp" />
+                        android:textSize="@dimen/editor_tool_label_size" />
                 </LinearLayout>
             </LinearLayout>
         </FrameLayout>
@@ -560,6 +570,34 @@
                     android:focusable="true"
                     android:padding="12dp"
                     android:src="@drawable/ic_undo"
+                    android:contentDescription="@string/editor_markup_undo"
+                    app:tint="@android:color/white" />
+
+                <ImageView
+                    android:id="@+id/subEditRedoButton"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:padding="12dp"
+                    android:scaleX="-1"
+                    android:src="@drawable/ic_undo"
+                    android:contentDescription="@string/editor_redo"
+                    android:visibility="gone"
+                    app:tint="@android:color/white" />
+
+                <ImageView
+                    android:id="@+id/subEditClearButton"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:padding="12dp"
+                    android:src="@drawable/ic_delete_sweep"
+                    android:contentDescription="@string/markup_clear_annotations"
+                    android:visibility="gone"
                     app:tint="@android:color/white" />
 
                 <View
@@ -577,7 +615,7 @@
                     android:background="@drawable/bg_google_photos_save_button"
                     android:clickable="true"
                     android:focusable="true"
-                    android:paddingHorizontal="24dp"
+                    android:paddingHorizontal="8dp"
                     android:paddingVertical="10dp"
                     android:text="@string/editor_done"
                     android:textColor="#001D35"

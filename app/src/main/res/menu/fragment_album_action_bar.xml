@@ -8,6 +8,7 @@
 
     <item
         android:id="@+id/collage"
+        android:icon="@drawable/ic_collage"
         android:title="@string/collage_title"
         app:showAsAction="never" />
 

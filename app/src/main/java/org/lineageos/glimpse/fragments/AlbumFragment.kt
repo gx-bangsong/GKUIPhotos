@@ -19,6 +19,8 @@ import android.view.Menu
 import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
+import android.view.Gravity
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -26,6 +28,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.os.bundleOf
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.doOnLayout
 import androidx.core.view.isVisible
 import androidx.core.view.updateLayoutParams
 import androidx.core.view.updatePadding
@@ -44,6 +47,7 @@ import androidx.recyclerview.selection.StorageStrategy
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.appbar.AppBarLayout
 import com.google.android.material.appbar.MaterialToolbar
+import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.shape.MaterialShapeDrawable
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
@@ -132,6 +136,17 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
         }
 
     private var actionMode: ActionMode? = null
+    private var selectionNavigationBar: View? = null
+    private var navigationBarWasVisible = false
+    private var bottomInset = 0
+    private val selectionSheet by getViewProperty<View>(R.id.selectionSheet)
+    private val selectionSheetContent by getViewProperty<LinearLayout>(R.id.selectionSheetContent)
+    private val selectionSheetCount by getViewProperty<TextView>(R.id.selectionSheetCount)
+    private val selectionSheetHint by getViewProperty<TextView>(R.id.selectionSheetDragHint)
+    private val selectionSheetReason by getViewProperty<TextView>(R.id.selectionSheetReason)
+    private val selectionPrimary by getViewProperty<LinearLayout>(R.id.selectionSheetPrimary)
+    private val selectionMore by getViewProperty<LinearLayout>(R.id.selectionSheetMore)
+    private val sheetBehavior get() = BottomSheetBehavior.from(selectionSheet)
 
     private val actionModeCallback = object : ActionMode.Callback {
         override fun onCreateActionMode(mode: ActionMode?, menu: Menu?): Boolean {
@@ -326,6 +341,11 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
             } ?: false
 
         override fun onDestroyActionMode(mode: ActionMode?) {
+            actionMode = null
+            selectionSheet.isVisible = false
+            selectionNavigationBar?.isVisible = navigationBarWasVisible
+            selectionNavigationBar = null
+            updateSelectionGridPadding()
             selectionTracker?.clearSelection()
         }
     }
@@ -454,12 +474,36 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
                 leftMargin = insets.left
                 rightMargin = insets.right
             }
-            recyclerView.updatePadding(bottom = insets.bottom)
+            bottomInset = insets.bottom
+            selectionSheet.updateLayoutParams<ViewGroup.MarginLayoutParams> {
+                leftMargin = insets.left
+                rightMargin = insets.right
+            }
+            selectionSheetContent.updatePadding(bottom = bottomInset)
+            view.findViewById<View>(R.id.selectionSheetCollapsedInset).updateLayoutParams<ViewGroup.LayoutParams> {
+                height = bottomInset
+            }
+            updateSelectionGridPadding()
+            updateSelectionPeekHeight()
 
             windowInsets
         }
 
         appBarLayout.isVisible = !hideToolbar
+        sheetBehavior.addBottomSheetCallback(object : BottomSheetBehavior.BottomSheetCallback() {
+            override fun onSlide(bottomSheet: View, slideOffset: Float) = updateSelectionGridPadding()
+            override fun onStateChanged(bottomSheet: View, newState: Int) {
+                selectionSheetHint.setText(if (newState == BottomSheetBehavior.STATE_EXPANDED)
+                    R.string.selection_sheet_collapse else R.string.selection_sheet_expand)
+                updateSelectionGridPadding()
+            }
+        })
+        selectionSheet.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> updateSelectionGridPadding() }
+        selectionSheetCount.setOnClickListener {
+            sheetBehavior.state = if (sheetBehavior.state == BottomSheetBehavior.STATE_EXPANDED)
+                BottomSheetBehavior.STATE_COLLAPSED else BottomSheetBehavior.STATE_EXPANDED
+        }
+        selectionSheetHint.setOnClickListener { selectionSheetCount.performClick() }
 
         toolbar.setupWithNavController(findNavController())
 
@@ -704,11 +748,11 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
         viewModel.setInSelectionMode(selectionTracker?.hasSelection() == true)
 
         selectionTracker?.selection?.count()?.takeIf { it > 0 }?.let {
-            startSelectionMode().apply {
-                title = resources.getQuantityString(
-                    R.plurals.thumbnail_selection_count, it, it
-                )
-            }
+            val mode = startSelectionMode()
+            val title = resources.getQuantityString(R.plurals.thumbnail_selection_count, it, it)
+            mode.title = title
+            selectionSheetCount.text = title
+            refreshCollageAvailability()
         }
     }
 
@@ -716,6 +760,97 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
         actionModeCallback
     ).also {
         actionMode = it
+        buildSelectionSheet(it)
+    }
+
+    private fun buildSelectionSheet(mode: ActionMode) {
+        // The reels grid is hosted above MainFragment's navigation bar. Hide that
+        // bar during selection so the contextual sheet reaches the screen bottom.
+        if (hideToolbar) {
+            selectionNavigationBar = activity?.findViewById(R.id.navigationBarView)
+            selectionNavigationBar?.let { bar ->
+                navigationBarWasVisible = bar.isVisible
+                bar.isVisible = false
+            }
+        }
+        selectionPrimary.removeAllViews()
+        selectionMore.removeAllViews()
+        val menu = mode.menu
+        val preferred = listOf(R.id.collage, R.id.share, R.id.moveToTrash,
+            R.id.restoreFromTrash, R.id.deleteForever, R.id.done, R.id.toolbox, R.id.lockMedia)
+        val items = (0 until menu.size()).map { menu.getItem(it) }
+            .sortedBy { preferred.indexOf(it.itemId).let { index -> if (index < 0) Int.MAX_VALUE else index } }
+        val density = resources.displayMetrics.density
+        items.forEachIndexed { index, item ->
+            val cell = LinearLayout(requireContext()).apply {
+                tag = item.itemId
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                minimumHeight = (80 * density).toInt()
+                setPadding((4 * density).toInt(), (8 * density).toInt(), (4 * density).toInt(), (8 * density).toInt())
+                isClickable = true
+                isFocusable = true
+                setBackgroundResource(android.R.drawable.list_selector_background)
+                setOnClickListener { actionModeCallback.onActionItemClicked(mode, item) }
+            }
+            cell.addView(ImageView(requireContext()).apply {
+                setImageDrawable(item.icon)
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            }, LinearLayout.LayoutParams((24 * density).toInt(), (24 * density).toInt()))
+            cell.addView(TextView(requireContext()).apply {
+                text = item.title
+                gravity = Gravity.CENTER
+                maxLines = 2
+                setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_LabelMedium)
+            }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                topMargin = (6 * density).toInt()
+            })
+            (if (index < 3) selectionPrimary else selectionMore).addView(cell,
+                LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            // The ActionMode remains responsible for back/cancel and action dispatch,
+            // while the persistent sheet is the sole action presentation.
+            item.isVisible = false
+        }
+        selectionMore.isVisible = items.size > 3
+        selectionSheetHint.isVisible = items.size > 3
+        selectionSheet.isVisible = true
+        sheetBehavior.state = BottomSheetBehavior.STATE_COLLAPSED
+        refreshCollageAvailability()
+        updateSelectionPeekHeight()
+    }
+
+    private fun refreshCollageAvailability() {
+        val types = selectionTracker?.selection?.map { it.mediaType } ?: emptyList()
+        val error = collageSelectionError(types)
+        selectionPrimary.findViewWithTag<View>(R.id.collage)?.apply {
+            isEnabled = error == null
+            alpha = if (isEnabled) 1f else 0.45f
+        }
+        val hasCollage = selectionPrimary.findViewWithTag<View>(R.id.collage) != null
+        selectionSheetReason.isVisible = hasCollage && error != null
+        if (hasCollage && error != null) selectionSheetReason.setText(when (error) {
+            CollageSelectionError.VIDEO -> R.string.collage_video_error
+            CollageSelectionError.COUNT -> R.string.collage_count_error
+        })
+        updateSelectionPeekHeight()
+    }
+
+    private fun updateSelectionPeekHeight() {
+        if (!selectionSheet.isVisible) return
+        selectionSheetContent.doOnLayout {
+            if (view == null || !selectionSheet.isVisible) return@doOnLayout
+            sheetBehavior.peekHeight = selectionSheetCount.height +
+                (if (selectionSheetHint.isVisible) selectionSheetHint.height else 0) +
+                selectionPrimary.height + (if (selectionSheetReason.isVisible) selectionSheetReason.height else 0) + bottomInset
+            updateSelectionGridPadding()
+        }
+    }
+
+    private fun updateSelectionGridPadding() {
+        val root = view ?: return
+        val covered = if (selectionSheet.isVisible && selectionSheet.isLaidOut)
+            (root.height - selectionSheet.top).coerceAtLeast(0) else 0
+        recyclerView.updatePadding(bottom = maxOf(bottomInset, covered))
     }
 
     private fun endSelectionMode() {
