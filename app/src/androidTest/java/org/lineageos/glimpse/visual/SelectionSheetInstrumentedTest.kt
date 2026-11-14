@@ -126,6 +126,8 @@ class SelectionSheetInstrumentedTest {
         thumbnails[0].longClick()
         assertTrue("Selection pill did not appear", device.wait(Until.hasObject(By.res(context.packageName, "selectionPill")), 10000))
         device.waitForIdle()
+        // Capture even when an assertion fails so the actual interaction can be diagnosed.
+        capture("selection-sheet-initial")
         instrumentation.runOnMainSync {
             val pill = requiredView("selectionPill") as ViewGroup
             val close = requiredView("selectionCancel")
