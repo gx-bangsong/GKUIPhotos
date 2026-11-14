@@ -54,6 +54,46 @@
         android:scrollbars="vertical"
         app:layout_behavior="@string/appbar_scrolling_view_behavior" />
 
+    <!-- The background reaches the status bar; only the content receives its inset. -->
+    <FrameLayout
+        android:id="@+id/selectionTopBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:background="?attr/colorSurface"
+        android:elevation="8dp"
+        android:visibility="gone">
+        <LinearLayout
+            android:id="@+id/selectionPill"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginHorizontal="16dp"
+            android:layout_marginVertical="4dp"
+            android:background="@drawable/bg_selection_pill"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingEnd="16dp">
+            <ImageView
+                android:id="@+id/selectionCancel"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:clickable="true"
+                android:focusable="true"
+                android:contentDescription="@string/cancel"
+                android:padding="12dp"
+                android:src="@drawable/ic_close"
+                app:tint="?attr/colorOnSurface" />
+            <TextView
+                android:id="@+id/selectionCount"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:accessibilityLiveRegion="polite"
+                android:textAppearance="?attr/textAppearanceTitleMedium"
+                android:textColor="?attr/colorOnSurface" />
+        </LinearLayout>
+    </FrameLayout>
+
     <!-- A persistent selection sheet leaves the gallery available for further selection. -->
     <com.google.android.material.card.MaterialCardView
         android:id="@+id/selectionSheet"
@@ -75,20 +115,14 @@
             android:orientation="vertical">
 
             <TextView
-                android:id="@+id/selectionSheetCount"
+                android:id="@+id/selectionSheetDragHint"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:minHeight="48dp"
                 android:gravity="center"
-                android:paddingHorizontal="16dp"
-                android:textAppearance="?attr/textAppearanceTitleMedium" />
-
-            <TextView
-                android:id="@+id/selectionSheetDragHint"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:gravity="center"
-                android:paddingBottom="4dp"
+                android:clickable="true"
+                android:focusable="true"
+                android:background="?attr/selectableItemBackground"
                 android:text="@string/selection_sheet_expand"
                 android:textAppearance="?attr/textAppearanceBodySmall"
                 android:textColor="?attr/colorOnSurfaceVariant" />
@@ -109,12 +143,6 @@
                 android:textAppearance="?attr/textAppearanceBodySmall"
                 android:textColor="?attr/colorOnSurfaceVariant"
                 android:visibility="gone" />
-
-            <!-- Navigation clearance is also needed while only the first row is visible. -->
-            <Space
-                android:id="@+id/selectionSheetCollapsedInset"
-                android:layout_width="match_parent"
-                android:layout_height="0dp" />
 
             <LinearLayout
                 android:id="@+id/selectionSheetMore"

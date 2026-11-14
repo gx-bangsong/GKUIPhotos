@@ -14,8 +14,6 @@ import android.net.Uri
 import android.os.Bundle
 import android.provider.MediaStore
 import android.util.Log
-import android.view.ActionMode
-import android.view.Menu
 import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
@@ -24,14 +22,16 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.os.bundleOf
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.doOnLayout
+import androidx.core.view.doOnNextLayout
 import androidx.core.view.isVisible
 import androidx.core.view.updateLayoutParams
 import androidx.core.view.updatePadding
+import androidx.appcompat.widget.PopupMenu
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.fragment.app.viewModels
@@ -135,53 +135,27 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
             }
         }
 
-    private var actionMode: ActionMode? = null
+    private var selectionActive = false
     private var selectionNavigationBar: View? = null
     private var navigationBarWasVisible = false
+    private var selectionParentAppBar: View? = null
+    private var parentAppBarWasVisible = false
     private var bottomInset = 0
+    private var selectionBackCallback: OnBackPressedCallback? = null
+    private val selectionTopBar by getViewProperty<View>(R.id.selectionTopBar)
+    private val selectionCount by getViewProperty<TextView>(R.id.selectionCount)
     private val selectionSheet by getViewProperty<View>(R.id.selectionSheet)
-    private val selectionSheetContent by getViewProperty<LinearLayout>(R.id.selectionSheetContent)
-    private val selectionSheetCount by getViewProperty<TextView>(R.id.selectionSheetCount)
     private val selectionSheetHint by getViewProperty<TextView>(R.id.selectionSheetDragHint)
     private val selectionSheetReason by getViewProperty<TextView>(R.id.selectionSheetReason)
     private val selectionPrimary by getViewProperty<LinearLayout>(R.id.selectionSheetPrimary)
     private val selectionMore by getViewProperty<LinearLayout>(R.id.selectionSheetMore)
     private val sheetBehavior get() = BottomSheetBehavior.from(selectionSheet)
 
-    private val actionModeCallback = object : ActionMode.Callback {
-        override fun onCreateActionMode(mode: ActionMode?, menu: Menu?): Boolean {
-            requireActivity().menuInflater.inflate(
-                when (viewModel.albumRequest.value?.albumType) {
-                    AlbumType.TRASH -> R.menu.album_action_bar_trash
-                    else -> when (intentsViewModel.isPicking.value) {
-                        true -> R.menu.fragment_album_pick_action_bar
-                        false -> R.menu.fragment_album_action_bar
-                    }
-                },
-                menu
-            )
-
-            val colorOnSurface = com.google.android.material.color.MaterialColors.getColor(
-                toolbar, com.google.android.material.R.attr.colorOnSurface
-            )
-            for (i in 0 until (menu?.size() ?: 0)) {
-                val menuItem = menu?.getItem(i) ?: continue
-                menuItem.icon?.let { icon ->
-                    val wrapped = androidx.core.graphics.drawable.DrawableCompat.wrap(icon.mutate())
-                    androidx.core.graphics.drawable.DrawableCompat.setTint(wrapped, colorOnSurface)
-                    menuItem.icon = wrapped
-                }
-            }
-            return true
-        }
-
-        override fun onPrepareActionMode(mode: ActionMode?, menu: Menu?) = false
-
-        override fun onActionItemClicked(mode: ActionMode?, item: MenuItem?) =
+    private fun onSelectionAction(item: MenuItem) =
             selectionTracker?.selection?.toList()?.toTypedArray()?.takeUnless {
                 it.isEmpty()
             }?.let { selection ->
-                when (item?.itemId) {
+                when (item.itemId) {
                     R.id.deleteForever -> {
                         MediaDialogsUtils.openDeleteForeverDialog(requireContext(), *selection) {
                             deleteForeverContract.launch(
@@ -340,15 +314,6 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
                 }
             } ?: false
 
-        override fun onDestroyActionMode(mode: ActionMode?) {
-            actionMode = null
-            selectionSheet.isVisible = false
-            selectionNavigationBar?.isVisible = navigationBarWasVisible
-            selectionNavigationBar = null
-            updateSelectionGridPadding()
-            selectionTracker?.clearSelection()
-        }
-    }
 
     // Contracts
     private var lastProcessedSelection: Array<out Media>? = null
@@ -479,10 +444,11 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
                 leftMargin = insets.left
                 rightMargin = insets.right
             }
-            selectionSheetContent.updatePadding(bottom = bottomInset)
-            view.findViewById<View>(R.id.selectionSheetCollapsedInset).updateLayoutParams<ViewGroup.LayoutParams> {
-                height = bottomInset
+            // The sheet is positioned above navigation; do not add a second spacer/padding.
+            selectionSheet.updateLayoutParams<ViewGroup.MarginLayoutParams> {
+                bottomMargin = bottomInset
             }
+            selectionTopBar.updatePadding(top = insets.top)
             updateSelectionGridPadding()
             updateSelectionPeekHeight()
 
@@ -498,12 +464,19 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
                 updateSelectionGridPadding()
             }
         })
-        selectionSheet.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> updateSelectionGridPadding() }
-        selectionSheetCount.setOnClickListener {
+        selectionSheet.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            updateSelectionPeekHeight()
+            updateSelectionGridPadding()
+        }
+        selectionTopBar.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> updateSelectionGridPadding() }
+        selectionSheetHint.setOnClickListener {
             sheetBehavior.state = if (sheetBehavior.state == BottomSheetBehavior.STATE_EXPANDED)
                 BottomSheetBehavior.STATE_COLLAPSED else BottomSheetBehavior.STATE_EXPANDED
         }
-        selectionSheetHint.setOnClickListener { selectionSheetCount.performClick() }
+        view.findViewById<View>(R.id.selectionCancel).setOnClickListener { selectionTracker?.clearSelection() }
+        selectionBackCallback = object : OnBackPressedCallback(false) {
+            override fun handleOnBackPressed() { selectionTracker?.clearSelection() }
+        }.also { requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner, it) }
 
         toolbar.setupWithNavController(findNavController())
 
@@ -600,6 +573,7 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
             thumbnailAdapter.selectionTracker = it
             it.addObserver(selectionTrackerObserver)
         }
+        if (savedInstanceState != null) selectionTracker?.onRestoreInstanceState(savedInstanceState)
 
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -616,8 +590,12 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
             PreferenceManager.getDefaultSharedPreferences(requireContext()).quickSelectDateEnabled
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        selectionTracker?.onSaveInstanceState(outState)
+        super.onSaveInstanceState(outState)
+    }
+
     override fun onDestroyView() {
-        // Clear action mode if still active
         endSelectionMode()
 
         thumbnailAdapter.selectionTracker = null
@@ -734,53 +712,59 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
                 viewModel.inSelectionMode.collectLatest {
                     thumbnailAdapter.setInSelectionMode(it)
 
-                    if (it) {
-                        startSelectionMode()
-                    } else {
-                        endSelectionMode()
-                    }
                 }
             }
         }
     }
 
     private fun updateSelection() {
-        viewModel.setInSelectionMode(selectionTracker?.hasSelection() == true)
-
-        selectionTracker?.selection?.count()?.takeIf { it > 0 }?.let {
-            val mode = startSelectionMode()
-            val title = resources.getQuantityString(R.plurals.thumbnail_selection_count, it, it)
-            mode.title = title
-            selectionSheetCount.text = title
-            refreshCollageAvailability()
+        val count = selectionTracker?.selection?.count() ?: 0
+        viewModel.setInSelectionMode(count > 0)
+        if (count == 0) {
+            endSelectionMode()
+            return
         }
+        if (!selectionActive) startSelectionMode()
+        selectionCount.text = resources.getQuantityString(R.plurals.thumbnail_selection_count, count, count)
+        refreshCollageAvailability()
     }
 
-    private fun startSelectionMode() = actionMode ?: toolbar.startActionMode(
-        actionModeCallback
-    ).also {
-        actionMode = it
-        buildSelectionSheet(it)
-    }
-
-    private fun buildSelectionSheet(mode: ActionMode) {
-        // The reels grid is hosted above MainFragment's navigation bar. Hide that
-        // bar during selection so the contextual sheet reaches the screen bottom.
+    private fun startSelectionMode() {
+        if (selectionActive) return
+        selectionActive = true
+        selectionBackCallback?.isEnabled = true
+        // The Reels page lives beneath MainFragment's app bar. Remove only the app
+        // chrome temporarily, so this fragment's background reaches the status bar.
         if (hideToolbar) {
+            selectionParentAppBar = parentFragment?.view?.findViewById(R.id.appBarLayout)
+            selectionParentAppBar?.let { parentAppBarWasVisible = it.isVisible; it.isVisible = false }
             selectionNavigationBar = activity?.findViewById(R.id.navigationBarView)
-            selectionNavigationBar?.let { bar ->
-                navigationBarWasVisible = bar.isVisible
-                bar.isVisible = false
-            }
+            selectionNavigationBar?.let { navigationBarWasVisible = it.isVisible; it.isVisible = false }
+        } else {
+            appBarLayout.isVisible = false
         }
+        selectionTopBar.isVisible = true
+        ViewCompat.requestApplyInsets(requireView())
+        buildSelectionSheet()
+    }
+
+    private fun buildSelectionSheet() {
         selectionPrimary.removeAllViews()
         selectionMore.removeAllViews()
-        val menu = mode.menu
+        val popup = PopupMenu(requireContext(), toolbar)
+        popup.inflate(when (viewModel.albumRequest.value?.albumType) {
+            AlbumType.TRASH -> R.menu.album_action_bar_trash
+            else -> if (intentsViewModel.isPicking.value) R.menu.fragment_album_pick_action_bar
+                else R.menu.fragment_album_action_bar
+        })
+        val menu = popup.menu
         val preferred = listOf(R.id.collage, R.id.share, R.id.moveToTrash,
             R.id.restoreFromTrash, R.id.deleteForever, R.id.done, R.id.toolbox, R.id.lockMedia)
         val items = (0 until menu.size()).map { menu.getItem(it) }
             .sortedBy { preferred.indexOf(it.itemId).let { index -> if (index < 0) Int.MAX_VALUE else index } }
         val density = resources.displayMetrics.density
+        val foreground = com.google.android.material.color.MaterialColors.getColor(
+            selectionSheet, com.google.android.material.R.attr.colorOnSurface)
         items.forEachIndexed { index, item ->
             val cell = LinearLayout(requireContext()).apply {
                 tag = item.itemId
@@ -790,11 +774,13 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
                 setPadding((4 * density).toInt(), (8 * density).toInt(), (4 * density).toInt(), (8 * density).toInt())
                 isClickable = true
                 isFocusable = true
+                contentDescription = item.title
                 setBackgroundResource(android.R.drawable.list_selector_background)
-                setOnClickListener { actionModeCallback.onActionItemClicked(mode, item) }
+                setOnClickListener { onSelectionAction(item) }
             }
             cell.addView(ImageView(requireContext()).apply {
-                setImageDrawable(item.icon)
+                setImageDrawable(item.icon?.mutate())
+                imageTintList = android.content.res.ColorStateList.valueOf(foreground)
                 importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
             }, LinearLayout.LayoutParams((24 * density).toInt(), (24 * density).toInt()))
             cell.addView(TextView(requireContext()).apply {
@@ -807,16 +793,15 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
             })
             (if (index < 3) selectionPrimary else selectionMore).addView(cell,
                 LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            // The ActionMode remains responsible for back/cancel and action dispatch,
-            // while the persistent sheet is the sole action presentation.
-            item.isVisible = false
         }
         selectionMore.isVisible = items.size > 3
         selectionSheetHint.isVisible = items.size > 3
+        // The fallback is positive even before the first layout of a formerly GONE view.
+        sheetBehavior.peekHeight = (128 * density).toInt()
         selectionSheet.isVisible = true
         sheetBehavior.state = BottomSheetBehavior.STATE_COLLAPSED
+        selectionSheet.doOnNextLayout { updateSelectionPeekHeight(); updateSelectionGridPadding() }
         refreshCollageAvailability()
-        updateSelectionPeekHeight()
     }
 
     private fun refreshCollageAvailability() {
@@ -836,26 +821,34 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
     }
 
     private fun updateSelectionPeekHeight() {
-        if (!selectionSheet.isVisible) return
-        selectionSheetContent.doOnLayout {
-            if (view == null || !selectionSheet.isVisible) return@doOnLayout
-            sheetBehavior.peekHeight = selectionSheetCount.height +
-                (if (selectionSheetHint.isVisible) selectionSheetHint.height else 0) +
-                selectionPrimary.height + (if (selectionSheetReason.isVisible) selectionSheetReason.height else 0) + bottomInset
-            updateSelectionGridPadding()
-        }
+        if (!selectionActive || !selectionSheet.isVisible) return
+        val height = (if (selectionSheetHint.isVisible) selectionSheetHint.height else 0) +
+            selectionPrimary.height + (if (selectionSheetReason.isVisible) selectionSheetReason.height else 0)
+        if (height > 0 && sheetBehavior.peekHeight != height) sheetBehavior.peekHeight = height
+        updateSelectionGridPadding()
     }
 
     private fun updateSelectionGridPadding() {
-        val root = view ?: return
-        val covered = if (selectionSheet.isVisible && selectionSheet.isLaidOut)
-            (root.height - selectionSheet.top).coerceAtLeast(0) else 0
-        recyclerView.updatePadding(bottom = maxOf(bottomInset, covered))
+        if (view == null) return
+        val covered = if (selectionActive && selectionSheet.isVisible && selectionSheet.isLaidOut)
+            (recyclerView.bottom - selectionSheet.top).coerceAtLeast(0) else 0
+        val top = if (selectionActive) selectionTopBar.height else 0
+        recyclerView.updatePadding(top = top, bottom = maxOf(bottomInset, covered))
     }
 
     private fun endSelectionMode() {
-        actionMode?.finish()
-        actionMode = null
+        if (!selectionActive) return
+        selectionActive = false
+        selectionBackCallback?.isEnabled = false
+        selectionTopBar.isVisible = false
+        selectionSheet.isVisible = false
+        selectionNavigationBar?.isVisible = navigationBarWasVisible
+        selectionNavigationBar = null
+        selectionParentAppBar?.isVisible = parentAppBarWasVisible
+        selectionParentAppBar = null
+        appBarLayout.isVisible = !hideToolbar
+        updateSelectionGridPadding()
+        view?.let { ViewCompat.requestApplyInsets(it) }
     }
 
     private fun trashMedias(trash: Boolean, vararg medias: Media) {
