@@ -41,6 +41,8 @@ import androidx.core.view.isVisible
 import androidx.core.view.updatePadding
 import androidx.exifinterface.media.ExifInterface
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.preference.PreferenceManager
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.card.MaterialCardView
@@ -67,6 +69,7 @@ import org.lineageos.glimpse.models.CustomBrush
 import org.lineageos.glimpse.models.CustomCropRatioManager
 import org.lineageos.glimpse.models.CustomEditorAssetManager
 import org.lineageos.glimpse.models.CustomShape
+import org.lineageos.glimpse.models.MarkupFonts
 import org.lineageos.glimpse.models.CustomShapeParseResult
 import org.lineageos.glimpse.ui.views.AngleRulerView
 import org.lineageos.glimpse.ui.views.AnnotationItem
@@ -77,6 +80,7 @@ import org.lineageos.glimpse.ui.views.MarkupTool
 import org.lineageos.glimpse.ui.views.MosaicEffect
 import org.lineageos.glimpse.ui.views.ShapeStyle
 import org.lineageos.glimpse.ui.views.ShapeType
+import org.lineageos.glimpse.ui.views.TextAlignment
 import org.lineageos.glimpse.utils.EditSaveBehavior
 import org.lineageos.glimpse.utils.media.AdjustParameters
 import org.lineageos.glimpse.utils.media.ImageAdjuster
@@ -151,7 +155,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
     // Strip Controls: Markup
     private val markupToolsScroll by lazy { findViewById<HorizontalScrollView>(R.id.markupToolsScroll) }
     private enum class MarkupSubtool {
-        BRUSH, WIDTH, COLOR, ADVANCED, SHAPE, STYLE, TEXT, BACKGROUND,
+        BRUSH, WIDTH, COLOR, ADVANCED, SHAPE, STYLE, TEXT, FONT, ALIGNMENT, BACKGROUND,
         EFFECT, STICKER_PRESET, STICKER_CUSTOM, STICKER_IMPORT
     }
     private val markupSubtoolByTool = mutableMapOf<MarkupTool, MarkupSubtool>()
@@ -235,6 +239,16 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         } else {
             pendingOverwrite = null
             hideSaving()
+        }
+    }
+
+    private val pickMarkupFontLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) lifecycleScope.launch {
+            val id = withContext(Dispatchers.IO) { MarkupFonts.importFont(applicationContext, uri) }
+            if (id == null) Toast.makeText(this@ImageEditorActivity, R.string.markup_font_import_failed, Toast.LENGTH_LONG).show()
+            else showMarkupToolOptions(MarkupTool.TEXT)
         }
     }
 
@@ -360,9 +374,20 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         }
     }
 
+    class MarkupRetainedState : ViewModel() {
+        var document: Any? = null
+    }
+    private val markupRetainedState by lazy { ViewModelProvider(this).get(MarkupRetainedState::class.java) }
+
+    override fun onDestroy() {
+        if (isChangingConfigurations) markupRetainedState.document = annotationOverlayView.retainDocument()
+        super.onDestroy()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        MarkupFonts.initialize(this)
 
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.editorRootLayout)) { _, insets ->
             val status = insets.getInsets(WindowInsetsCompat.Type.statusBars())
@@ -481,6 +506,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             cropImageView.updatePreviewGesture(px, py, x, y, scale)
         }
         annotationOverlayView.onAnnotationChanged = { updateMarkupHistoryButtons() }
+        annotationOverlayView.onTextSelectionChanged = { showMarkupToolOptions(MarkupTool.TEXT) }
         annotationOverlayView.onTextEditRequested = { textItem ->
             showTextInputDialog(textItem)
         }
@@ -490,6 +516,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         setupMarkupControls()
         setupCategoryTabs()
         switchCategory(EditorCategory.CROP)
+        annotationOverlayView.restoreRetainedDocument(markupRetainedState.document)
 
         lifecycleScope.launch {
             val bmp = withContext(Dispatchers.IO) { loadBitmap(uri) }
@@ -1394,8 +1421,10 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         )
         MarkupTool.TEXT -> listOf(
             MarkupSubtoolItem(MarkupSubtool.TEXT, R.string.markup_text_section, R.drawable.ic_markup_text),
-            MarkupSubtoolItem(MarkupSubtool.COLOR, R.string.markup_color_section, R.drawable.ic_markup_palette),
+            MarkupSubtoolItem(MarkupSubtool.FONT, R.string.markup_font, R.drawable.ic_markup_font),
+            MarkupSubtoolItem(MarkupSubtool.ALIGNMENT, R.string.markup_alignment, R.drawable.ic_markup_align_center),
             MarkupSubtoolItem(MarkupSubtool.BACKGROUND, R.string.editor_markup_text_bg, R.drawable.ic_markup_fill),
+            MarkupSubtoolItem(MarkupSubtool.COLOR, R.string.markup_color_section, R.drawable.ic_markup_palette),
         )
         MarkupTool.MOSAIC -> listOf(
             MarkupSubtoolItem(MarkupSubtool.EFFECT, R.string.markup_effect_section, R.drawable.ic_markup_mosaic),
@@ -1488,6 +1517,56 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                             annotationOverlayView.activeText?.let { showTextInputDialog(it) }
                         }
                     })
+                }
+                MarkupSubtool.FONT -> addMarkupSection(R.string.markup_font, true, false) {
+                    val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+                    (listOf("sans", "serif", "mono") + MarkupFonts.ids()).forEach { id ->
+                        val face = MarkupFonts.resolve(id)
+                        row.addView(Chip(this).apply {
+                            text = getString(R.string.markup_font_sample)
+                            typeface = face
+                            minHeight = (48 * density).toInt()
+                            isCheckable = true
+                            isChecked = (annotationOverlayView.activeText?.fontId ?: annotationOverlayView.activeTextFontId) == id
+                            setOnClickListener {
+                                annotationOverlayView.activeTextFontId = id
+                                annotationOverlayView.editAnnotation {
+                                    annotationOverlayView.activeText?.fontId = id
+                                }
+                                showMarkupToolOptions(tool)
+                            }
+                        })
+                    }
+                    row.addView(MaterialButton(this).apply {
+                        text = getString(R.string.markup_font_import)
+                        minHeight = (48 * density).toInt()
+                        setAllCaps(false)
+                        setOnClickListener { pickMarkupFontLauncher.launch(arrayOf("font/ttf", "font/otf", "application/octet-stream")) }
+                    })
+                    markupOptionsContent.addView(row)
+                }
+                MarkupSubtool.ALIGNMENT -> addMarkupSection(R.string.markup_alignment, true, false) {
+                    val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+                    listOf(Triple(TextAlignment.LEFT, R.string.markup_align_left, R.drawable.ic_markup_align_left),
+                        Triple(TextAlignment.CENTER, R.string.markup_align_center, R.drawable.ic_markup_align_center),
+                        Triple(TextAlignment.RIGHT, R.string.markup_align_right, R.drawable.ic_markup_align_right)).forEach { (value, label, icon) ->
+                        row.addView(ImageView(this).apply {
+                            layoutParams = LinearLayout.LayoutParams((48 * density).toInt(), (48 * density).toInt())
+                            setPadding((12 * density).toInt(), (12 * density).toInt(), (12 * density).toInt(), (12 * density).toInt())
+                            setImageResource(icon)
+                            imageTintList = ColorStateList.valueOf(Color.WHITE)
+                            contentDescription = getString(label)
+                            isSelected = (annotationOverlayView.activeText?.alignment ?: annotationOverlayView.activeTextAlignment) == value
+                            if (isSelected) background = markupBackground(true)
+                            isFocusable = true
+                            setOnClickListener {
+                                annotationOverlayView.activeTextAlignment = value
+                                annotationOverlayView.editAnnotation { annotationOverlayView.activeText?.alignment = value }
+                                showMarkupToolOptions(tool)
+                            }
+                        })
+                    }
+                    markupOptionsContent.addView(row)
                 }
                 MarkupSubtool.BACKGROUND -> addMarkupSection(R.string.editor_markup_text_bg, true, false) {
                     markupOptionsContent.addView(Chip(this).apply {

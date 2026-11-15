@@ -18,12 +18,17 @@ import android.graphics.PorterDuff
 import android.graphics.PorterDuffColorFilter
 import android.graphics.RectF
 import android.graphics.Shader
+import android.text.Layout
+import android.text.StaticLayout
+import android.text.TextDirectionHeuristics
+import android.text.TextPaint
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
 import org.lineageos.glimpse.models.BrushColorMode
 import org.lineageos.glimpse.models.CustomBrush
 import org.lineageos.glimpse.models.CustomShape
+import org.lineageos.glimpse.models.MarkupFonts
 import org.lineageos.glimpse.models.StampPoint
 import org.lineageos.glimpse.models.StampStrokeSampler
 import org.lineageos.glimpse.models.SvgBrush
@@ -70,6 +75,8 @@ enum class BrushType {
     DASHED,
     CUSTOM_TEXTURE,
 }
+
+enum class TextAlignment { LEFT, CENTER, RIGHT }
 
 enum class MosaicEffect {
     PIXELATE,
@@ -355,6 +362,11 @@ sealed interface AnnotationItem {
         }
     }
 
+    /** The anchor is the centre of a fixed-width box in base-image coordinates.
+     * Width and text size scale together; explicit newlines and soft wraps use the
+     * same layout for drawing and selection. Alignment is physical, not relative
+     * to the paragraph direction. Android's text shaper still handles bidi runs.
+     */
     data class Text(
         var text: String,
         var centerX: Float,
@@ -363,51 +375,71 @@ sealed interface AnnotationItem {
         var scale: Float = 1.0f,
         var color: Int = Color.WHITE,
         var hasBackgroundPill: Boolean = true,
+        var fontId: String = "sans",
+        var alignment: TextAlignment = TextAlignment.CENTER,
+        var boxWidth: Float = baseTextSize * 8f,
+        var rotation: Float = 0f,
     ) : AnnotationItem {
-        val effectiveTextSize: Float
-            get() = (baseTextSize * scale).coerceAtLeast(1f)
+        val effectiveTextSize: Float get() = (baseTextSize * scale).coerceAtLeast(1f)
 
-        fun computeBounds(outRect: RectF) {
-            val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        private fun layout(): StaticLayout {
+            val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
                 textSize = effectiveTextSize
-                isFakeBoldText = true
+                color = this@Text.color
+                typeface = MarkupFonts.resolve(fontId)
             }
-            val textWidth = paint.measureText(text.ifEmpty { " " })
-            val fm = paint.fontMetrics
-            val textHeight = fm.bottom - fm.top
+            val align = when (alignment) {
+                TextAlignment.LEFT -> Layout.Alignment.ALIGN_NORMAL
+                TextAlignment.CENTER -> Layout.Alignment.ALIGN_CENTER
+                TextAlignment.RIGHT -> Layout.Alignment.ALIGN_OPPOSITE
+            }
+            return StaticLayout.Builder.obtain(text.ifEmpty { " " }, 0, text.ifEmpty { " " }.length,
+                paint, (boxWidth * scale).toInt().coerceAtLeast(1))
+                .setAlignment(align)
+                .setTextDirection(TextDirectionHeuristics.LTR)
+                .setIncludePad(true)
+                .build()
+        }
+
+        private fun unrotatedBounds(outRect: RectF) {
+            val layout = layout()
             val padX = effectiveTextSize * 0.45f
             val padY = effectiveTextSize * 0.3f
-
-            val w = textWidth + padX * 2f
-            val h = textHeight + padY * 2f
+            val w = layout.width + padX * 2f
+            val h = layout.height + padY * 2f
             outRect.set(centerX - w / 2f, centerY - h / 2f, centerX + w / 2f, centerY + h / 2f)
+        }
+
+        fun computeBounds(outRect: RectF) {
+            unrotatedBounds(outRect)
+            Matrix().apply { setRotate(rotation, centerX, centerY) }.mapRect(outRect)
+        }
+
+        fun contains(x: Float, y: Float): Boolean {
+            val p = floatArrayOf(x, y)
+            Matrix().apply { setRotate(-rotation, centerX, centerY) }.mapPoints(p)
+            return RectF().also { unrotatedBounds(it) }.contains(p[0], p[1])
         }
 
         override fun draw(canvas: Canvas) {
             if (text.isBlank()) return
-
-            val bounds = RectF()
-            computeBounds(bounds)
-
+            val layout = layout()
+            val bounds = RectF().also { unrotatedBounds(it) }
+            canvas.save()
+            canvas.rotate(rotation, centerX, centerY)
             if (hasBackgroundPill) {
                 val pillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                     color = if (this@Text.color == Color.WHITE) Color.argb(160, 0, 0, 0) else Color.argb(160, 255, 255, 255)
                     style = Paint.Style.FILL
                 }
-                val pillRadius = bounds.height() * 0.25f
-                canvas.drawRoundRect(bounds, pillRadius, pillRadius, pillPaint)
+                val radius = bounds.height() * 0.25f
+                canvas.drawRoundRect(bounds, radius, radius, pillPaint)
             }
-
-            val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                textSize = effectiveTextSize
-                color = this@Text.color
-                isFakeBoldText = true
-                textAlign = Paint.Align.CENTER
-            }
-
-            val fm = paint.fontMetrics
-            val baseline = bounds.centerY() - (fm.descent + fm.ascent) / 2f
-            canvas.drawText(text, bounds.centerX(), baseline, paint)
+            canvas.save()
+            canvas.translate(centerX - layout.width / 2f, centerY - layout.height / 2f)
+            layout.draw(canvas)
+            canvas.restore()
+            canvas.restore()
         }
     }
 
@@ -663,6 +695,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
 
     var onAnnotationChanged: (() -> Unit)? = null
     var onTextEditRequested: ((AnnotationItem.Text) -> Unit)? = null
+    var onTextSelectionChanged: (() -> Unit)? = null
     var onShapeStarted: (() -> Unit)? = null
     var onDoodleStarted: (() -> Unit)? = null
     var onMosaicStarted: (() -> Unit)? = null
@@ -740,6 +773,8 @@ class AnnotationOverlayView @JvmOverloads constructor(
     private var selectedShapeOriginal: AnnotationItem.Shape? = null
 
     // Active text item
+    var activeTextFontId = "sans"
+    var activeTextAlignment = TextAlignment.CENTER
     var activeText: AnnotationItem.Text? = null
         private set
 
@@ -758,6 +793,8 @@ class AnnotationOverlayView @JvmOverloads constructor(
     private var textDragStartY = 0f
     private var textInitialDist = 0f
     private var textInitialScale = 1f
+    private var textInitialAngle = 0f
+    private var textBaseRotation = 0f
     private var lastTapTime = 0L
 
     // Sticker dragging state
@@ -948,6 +985,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
             baseTextSize = viewLengthToBase(32f),
             color = activeColor,
             hasBackgroundPill = hasTextBackgroundPill,
+            fontId = activeTextFontId, alignment = activeTextAlignment,
         )
         activeText = item
         if (text.isNotBlank()) annotations.add(item)
@@ -965,6 +1003,27 @@ class AnnotationOverlayView @JvmOverloads constructor(
     private data class HistoryAction(val before: HistoryState, val after: HistoryState)
     private val undoHistory = mutableListOf<HistoryAction>()
     private val redoHistory = mutableListOf<HistoryAction>()
+    private data class RetainedDocument(
+        val state: HistoryState,
+        val undo: List<HistoryAction>,
+        val redo: List<HistoryAction>,
+        val fontId: String,
+        val alignment: TextAlignment,
+    )
+
+    // Non-configuration state contains annotation values only, never the old View or Activity.
+    fun retainDocument(): Any = RetainedDocument(historyState(), undoHistory.toList(), redoHistory.toList(),
+        activeTextFontId, activeTextAlignment)
+
+    fun restoreRetainedDocument(document: Any?) {
+        val saved = document as? RetainedDocument ?: return
+        undoHistory.clear(); undoHistory.addAll(saved.undo)
+        redoHistory.clear(); redoHistory.addAll(saved.redo)
+        activeTextFontId = saved.fontId
+        activeTextAlignment = saved.alignment
+        restoreHistory(saved.state)
+    }
+
     private var gestureHistoryStart: HistoryState? = null
     private var controlHistoryStart: HistoryState? = null
 
@@ -1013,6 +1072,8 @@ class AnnotationOverlayView @JvmOverloads constructor(
                 text = saved.text; centerX = saved.centerX; centerY = saved.centerY
                 baseTextSize = saved.baseTextSize; scale = saved.scale
                 color = saved.color; hasBackgroundPill = saved.hasBackgroundPill
+                fontId = saved.fontId; alignment = saved.alignment; boxWidth = saved.boxWidth
+                rotation = saved.rotation
             }
             is AnnotationItem.Sticker -> (target as AnnotationItem.Sticker).apply {
                 centerX = saved.centerX; centerY = saved.centerY
@@ -1046,7 +1107,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
             activeShapeStyle = it.style
             activeStrokeWidth = it.strokeWidth * getMatrixScale(imageMatrixProvider?.invoke())
         }
-        activeText?.let { activeColor = it.color; hasTextBackgroundPill = it.hasBackgroundPill }
+        activeText?.let { activeColor = it.color; hasTextBackgroundPill = it.hasBackgroundPill; activeTextFontId = it.fontId; activeTextAlignment = it.alignment }
         draggedHandle = -1; isMovingShape = false
         isMovingText = false; isDraggingTextHandle = false
         isMovingSticker = false; isDraggingStickerHandle = false
@@ -1632,11 +1693,13 @@ class AnnotationOverlayView @JvmOverloads constructor(
                                 isDraggingTextHandle = true
                                 textInitialDist = hypot((x - t.centerX).toDouble(), (y - t.centerY).toDouble()).toFloat().coerceAtLeast(10f)
                                 textInitialScale = t.scale
+                                textInitialAngle = Math.toDegrees(atan2((y - t.centerY).toDouble(), (x - t.centerX).toDouble())).toFloat()
+                                textBaseRotation = t.rotation
                                 return true
                             }
 
                             // 2. Check tap/move inside bounds
-                            if (bounds.contains(x, y)) {
+                            if (t.contains(x, y)) {
                                 val now = System.currentTimeMillis()
                                 if (now - lastTapTime < 300) {
                                     pendingTextEdit = t
@@ -1656,10 +1719,13 @@ class AnnotationOverlayView @JvmOverloads constructor(
 
                         // Previously committed items remain editable. Search from the topmost item.
                         val index = annotations.indexOfLast { item ->
-                            item is AnnotationItem.Text && RectF().also { item.computeBounds(it) }.contains(x, y)
+                            item is AnnotationItem.Text && item.contains(x, y)
                         }
                         if (index >= 0) {
                             activeText = annotations[index] as AnnotationItem.Text
+                            activeTextFontId = activeText!!.fontId
+                            activeTextAlignment = activeText!!.alignment
+                            onTextSelectionChanged?.invoke()
                             isMovingText = true
                             textDragStartX = x
                             textDragStartY = y
@@ -1679,6 +1745,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
                             baseTextSize = viewLengthToBase(32f),
                             color = activeColor,
                             hasBackgroundPill = hasTextBackgroundPill,
+                            fontId = activeTextFontId, alignment = activeTextAlignment,
                         )
                         activeText = newItem
                         invalidate()
@@ -1692,6 +1759,8 @@ class AnnotationOverlayView @JvmOverloads constructor(
                             val currentDist = hypot((x - currentText.centerX).toDouble(), (y - currentText.centerY).toDouble()).toFloat()
                             val newScale = (currentDist / textInitialDist * textInitialScale).coerceIn(0.3f, 6.0f)
                             currentText.scale = newScale
+                            val angle = Math.toDegrees(atan2((y - currentText.centerY).toDouble(), (x - currentText.centerX).toDouble())).toFloat()
+                            currentText.rotation = textBaseRotation + angle - textInitialAngle
                             constrainActiveText()
                             onAnnotationChanged?.invoke()
                             invalidate()

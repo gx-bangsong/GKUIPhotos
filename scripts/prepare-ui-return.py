@@ -24,7 +24,8 @@ expected = ('markup-idle', 'markup-idle-zh', 'markup-shapes', 'markup-density', 
             'markup-text-black', 'markup-sticker', 'collage-two', 'collage-four', 'collage-four-layouts', 'collage-six', 'collage-selected', 'collage-small', 'collage-landscape',
             'markup-brush-zh', 'markup-shapes-zh', 'markup-text-zh', 'markup-mosaic-zh', 'markup-sticker-zh', 'collage-four-zh', 'collage-four-layouts-zh', 'collage-two-layouts', 'collage-six-layouts')
 # The new dock exists only in the candidate; historical baseline stays unchanged.
-candidate_dock = ('markup-dock-text-edit', 'markup-dock-text-color', 'markup-dock-text-background',
+candidate_dock = ('markup-text-fonts', 'markup-text-align-left', 'markup-text-align-center', 'markup-text-align-right',
+                  'markup-dock-text-edit', 'markup-dock-text-color', 'markup-dock-text-background',
                   'markup-dock-brush', 'markup-dock-shapes', 'markup-dock-mosaic-effect',
                   'markup-dock-mosaic-width', 'markup-dock-sticker', 'markup-dock-text-restored',
                   'markup-dock-non-markup', 'markup-dock-categories', 'markup-dock-undo', 'markup-dock-redo',

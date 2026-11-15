@@ -591,4 +591,12 @@
     <string name="collage_replace_failed">Could not replace photo. Choose a readable image.</string>
     <string name="collage_mode_photos">Photos</string>
     <string name="collage_layout_prompt">Choose a layout</string>
+    <string name="markup_font">Font</string>
+    <string name="markup_alignment">Alignment</string>
+    <string name="markup_font_sample">Aa 中文</string>
+    <string name="markup_align_left">Align left</string>
+    <string name="markup_align_center">Align center</string>
+    <string name="markup_align_right">Align right</string>
+    <string name="markup_font_import">Import font</string>
+    <string name="markup_font_import_failed">Unable to import this font. Use a valid TTF or OTF under 8 MB with basic Latin characters.</string>
 </resources>

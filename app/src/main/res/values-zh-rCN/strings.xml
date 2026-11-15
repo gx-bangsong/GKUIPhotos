@@ -536,4 +536,12 @@
     <string name="collage_replace_failed">无法替换照片，请选择可读取的图片。</string>
     <string name="collage_mode_photos">照片</string>
     <string name="collage_layout_prompt">选择布局</string>
+    <string name="markup_font">字体</string>
+    <string name="markup_alignment">对齐</string>
+    <string name="markup_font_sample">Aa 中文</string>
+    <string name="markup_align_left">左对齐</string>
+    <string name="markup_align_center">居中对齐</string>
+    <string name="markup_align_right">右对齐</string>
+    <string name="markup_font_import">导入字体</string>
+    <string name="markup_font_import_failed">无法导入字体。请使用小于 8 MB 且包含基本拉丁字符的有效 TTF 或 OTF。</string>
 </resources>

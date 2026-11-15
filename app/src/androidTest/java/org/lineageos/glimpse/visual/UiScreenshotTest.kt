@@ -141,7 +141,20 @@ class UiScreenshotTest {
         if (!isCandidate()) return
         val row = device.wait(Until.findObject(By.res(context.packageName, "markupSubtoolsRow")), 5000)
         assertNotNull("Subtool dock missing", row)
-        val item = row!!.findObject(By.desc(context.getString(label)))
+        var item = row!!.findObject(By.desc(context.getString(label)))
+        if (item == null) {
+            val scroll = device.findObject(By.res(context.packageName, "markupSubtoolsScroll"))
+            assertNotNull("Subtool scroll missing", scroll)
+            val bounds = scroll!!.visibleBounds
+            device.swipe(bounds.right - 5, bounds.centerY(), bounds.left + 5, bounds.centerY(), 20)
+            item = device.findObject(By.desc(context.getString(label)))
+        }
+        if (item == null) {
+            val scroll = device.findObject(By.res(context.packageName, "markupSubtoolsScroll"))!!
+            val bounds = scroll.visibleBounds
+            device.swipe(bounds.left + 5, bounds.centerY(), bounds.right - 5, bounds.centerY(), 20)
+            item = device.findObject(By.desc(context.getString(label)))
+        }
         assertNotNull("Subtool missing: ${context.getString(label)}", item)
         item!!.click()
         device.waitForIdle()
@@ -678,6 +691,126 @@ class UiScreenshotTest {
     @Test fun collageTwoLayouts() { collageLayouts(2, "collage-two-layouts") }
     @Test fun collageSixLayouts() { collageLayouts(6, "collage-six-layouts") }
 
+    @Test fun markupMultilineFontAndAlignment() {
+        assumeTrue("Text layout is candidate-only", isCandidate())
+        editor(); tool(R.string.editor_markup_text)
+        val overlay = activity!!.findViewById<AnnotationOverlayView>(R.id.annotationOverlayView)
+        val crop = activity!!.findViewById<CropImageView>(R.id.cropImageView)
+        instrumentation.runOnMainSync {
+            overlay.addTextItem("Hello 中文 line one\nA longer line wraps inside the text box", crop.width / 2f, crop.height / 2f)
+        }
+        fun stringId(name: String): Int = context.resources.getIdentifier(name, "string", context.packageName)
+            .also { assertTrue("Missing resource $name", it != 0) }
+        subtool(stringId("markup_font")); capture("markup-text-fonts")
+        subtool(stringId("markup_alignment"))
+        listOf(stringId("markup_align_left") to "markup-text-align-left",
+            stringId("markup_align_center") to "markup-text-align-center",
+            stringId("markup_align_right") to "markup-text-align-right").forEach { (id, name) ->
+            val option = device.wait(Until.findObject(By.desc(context.getString(id))), 5000)
+            assertNotNull("Alignment option missing", option)
+            option!!.click(); device.waitForIdle(); capture(name)
+        }
+        instrumentation.runOnMainSync {
+            val item = requireNotNull(overlay.activeText)
+            val alignment = item.javaClass.getDeclaredField("alignment").apply { isAccessible = true }
+            assertEquals("RIGHT", alignment.get(item).toString())
+            val rect = android.graphics.RectF().also { item.computeBounds(it) }
+            assertTrue("Multiline layout has only one line of height", rect.height() > item.effectiveTextSize * 2)
+            assertTrue("Alignment undo failed", overlay.undo())
+            assertEquals("CENTER", alignment.get(item).toString())
+            assertTrue("Alignment redo failed", overlay.javaClass.getMethod("redo").invoke(overlay) as Boolean)
+            assertEquals("RIGHT", alignment.get(item).toString())
+            val original = item.copy()
+            item.hasBackgroundPill = false
+            item.text = "Hello 中文\nHi"
+            item.centerX = 256f; item.centerY = 256f
+            item.scale = 1f; item.baseTextSize = 30f
+            val width = item.javaClass.getDeclaredField("boxWidth").apply { isAccessible = true }
+            val oldWidth = width.getFloat(item); width.setFloat(item, 300f)
+            val bounds = android.graphics.RectF().also { item.computeBounds(it) }
+            val enumClass = alignment.type.enumConstants
+            fun render(name: String): Bitmap {
+                alignment.set(item, enumClass.first { it.toString() == name })
+                return Bitmap.createBitmap(512, 512, Bitmap.Config.ARGB_8888).also {
+                    item.draw(android.graphics.Canvas(it))
+                }
+            }
+            fun leftEdge(b: Bitmap): Int {
+                for (x in 0 until b.width) for (y in 0 until b.height) if (b.getPixel(x, y) != Color.TRANSPARENT) return x
+                return b.width
+            }
+            val left = render("LEFT"); val center = render("CENTER"); val right = render("RIGHT")
+            assertTrue("Left, center and right did not alter glyph positions", leftEdge(left) < leftEdge(center) && leftEdge(center) < leftEdge(right))
+            val after = android.graphics.RectF().also { item.computeBounds(it) }
+            assertEquals("Alignment moved the text frame", bounds, after)
+            val direct = right
+            val exported = Bitmap.createBitmap(512, 512, Bitmap.Config.ARGB_8888)
+            val getBounds = overlay.javaClass.getMethod("getBaseBoundsProvider")
+            val setBounds = overlay.javaClass.getMethod("setBaseBoundsProvider", kotlin.jvm.functions.Function0::class.java)
+            val oldBounds = getBounds.invoke(overlay)
+            val exportBounds: () -> android.graphics.RectF = { android.graphics.RectF(0f, 0f, 512f, 512f) }
+            setBounds.invoke(overlay, exportBounds)
+            overlay.javaClass.getMethod("rasterize", android.graphics.Canvas::class.java, android.graphics.Matrix::class.java)
+                .invoke(overlay, android.graphics.Canvas(exported), android.graphics.Matrix())
+            setBounds.invoke(overlay, oldBounds)
+            assertTrue("Direct text layout differs from export", direct.sameAs(exported))
+            left.recycle(); center.recycle(); right.recycle(); exported.recycle()
+            item.text = original.text; item.centerX = original.centerX; item.centerY = original.centerY
+            item.scale = original.scale; item.baseTextSize = original.baseTextSize
+            item.hasBackgroundPill = original.hasBackgroundPill; width.setFloat(item, oldWidth)
+        }
+    }
+
+    @Test fun markupFontImportValidationAndRecreation() {
+        assumeTrue("Font import is candidate-only", isCandidate())
+        editor(); tool(R.string.editor_markup_text)
+        val fonts = Class.forName("org.lineageos.glimpse.models.MarkupFonts")
+        val instance = fonts.getField("INSTANCE").get(null)
+        val importMethod = fonts.getMethod("importFont", android.content.Context::class.java, Uri::class.java)
+        fun importFile(file: File): String? = importMethod.invoke(instance, context, Uri.fromFile(file)) as? String
+        val cache = File(context.cacheDir, "font-validation").apply { mkdirs() }
+        val fake = File(cache, "spoof.ttf").apply { writeText("not a font") }
+        val huge = File(cache, "large.otf").apply { outputStream().use { it.write(ByteArray(8 * 1024 * 1024 + 1)) } }
+        val collection = File(cache, "collection.ttf").apply { writeBytes("ttcf00000000".toByteArray()) }
+        assertEquals("Spoof accepted", null, importFile(fake))
+        assertEquals("Oversized font accepted", null, importFile(huge))
+        assertEquals("Collection accepted", null, importFile(collection))
+        val systemFont = File("/system/fonts/Roboto-Regular.ttf")
+        assertTrue("Expected emulator TTF is missing", systemFont.isFile)
+        val valid = File(cache, "misnamed.otf").apply { systemFont.copyTo(this, overwrite = true) }
+        val id = requireNotNull(importFile(valid)) { "System TTF rejected" }
+        assertTrue("ID is not stable", id.matches(Regex("[0-9a-f]{64}")))
+        assertEquals(id, importFile(valid))
+        val overlay = activity!!.findViewById<AnnotationOverlayView>(R.id.annotationOverlayView)
+        val crop = activity!!.findViewById<CropImageView>(R.id.cropImageView)
+        instrumentation.runOnMainSync {
+            overlay.addTextItem("Font 中文", crop.width / 2f, crop.height / 2f)
+            val item = requireNotNull(overlay.activeText)
+            val field = item.javaClass.getDeclaredField("fontId").apply { isAccessible = true }
+            val change: () -> Unit = { field.set(item, id) }
+            overlay.javaClass.getMethod("editAnnotation", kotlin.jvm.functions.Function0::class.java).invoke(overlay, change)
+            assertTrue("Font undo failed", overlay.undo())
+            assertEquals("sans", field.get(item))
+            assertTrue("Font redo failed", overlay.javaClass.getMethod("redo").invoke(overlay) as Boolean)
+            assertEquals(id, field.get(item))
+        }
+        val monitor = instrumentation.addMonitor(ImageEditorActivity::class.java.name, null, false)
+        instrumentation.runOnMainSync { activity!!.recreate() }
+        val recreated = instrumentation.waitForMonitorWithTimeout(monitor, 15000)
+        instrumentation.removeMonitor(monitor)
+        assertNotNull("Activity was not recreated", recreated)
+        activity = recreated
+        device.waitForIdle()
+        val restored = recreated!!.findViewById<AnnotationOverlayView>(R.id.annotationOverlayView)
+        instrumentation.runOnMainSync {
+            val item = restored.annotations.filterIsInstance<org.lineageos.glimpse.ui.views.AnnotationItem.Text>().single()
+            val field = item.javaClass.getDeclaredField("fontId").apply { isAccessible = true }
+            assertEquals("Font ID lost during recreation", id, field.get(item))
+            assertTrue("Imported font file missing", File(context.filesDir, "markup-fonts/$id.font").isFile)
+        }
+        cache.deleteRecursively()
+    }
+
     @Test fun markupTextControlsHaveSeparateTouchTargets() {
         assumeTrue("Text control spacing is candidate-only", isCandidate())
         editor(); tool(R.string.editor_markup_text)
@@ -694,7 +827,17 @@ class UiScreenshotTest {
         instrumentation.runOnMainSync {
             val dock = activity!!.findViewById<ViewGroup>(dockId)
             val min = (48 * context.resources.displayMetrics.density).toInt()
-            assertEquals(3, dock.childCount)
+            assertEquals(5, dock.childCount)
+            val font = activity!!.resources.getIdentifier("markup_font", "string", activity!!.packageName)
+            val alignment = activity!!.resources.getIdentifier("markup_alignment", "string", activity!!.packageName)
+            assertTrue("Font and alignment resources missing", font != 0 && alignment != 0)
+            val expectedPills = listOf(R.string.markup_text_section, font,
+                alignment, R.string.editor_markup_text_bg, R.string.markup_color_section)
+            expectedPills.forEach { label ->
+                assertTrue("Missing expected text subtool", (0 until dock.childCount).any {
+                    dock.getChildAt(it).contentDescription == activity!!.getString(label)
+                })
+            }
             val actionPill = (0 until dock.childCount).map { dock.getChildAt(it) }
                 .first { it.contentDescription == activity!!.getString(R.string.markup_text_section) }
             val backgroundPill = (0 until dock.childCount).map { dock.getChildAt(it) }
