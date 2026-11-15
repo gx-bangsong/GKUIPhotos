@@ -1004,6 +1004,57 @@ class UiScreenshotTest {
         }
     }
 
+    @Test fun markupFontPageUsesSpacedTouchTargets() {
+        assumeTrue("Font page is candidate-only", isCandidate())
+        editor(); tool(R.string.editor_markup_text)
+        val fontPage = context.resources.getIdentifier("markup_font", "string", context.packageName)
+        val importLabel = context.resources.getIdentifier("markup_font_import", "string", context.packageName)
+        assertTrue("Font resources missing", fontPage != 0 && importLabel != 0)
+        subtool(fontPage)
+        instrumentation.runOnMainSync {
+            val root = activity!!.findViewById<ViewGroup>(R.id.markupOptionsContent)
+            fun findGroup(parent: ViewGroup): com.google.android.material.chip.ChipGroup? {
+                for (i in 0 until parent.childCount) {
+                    val child = parent.getChildAt(i)
+                    if (child is com.google.android.material.chip.ChipGroup) return child
+                    if (child is ViewGroup) findGroup(child)?.let { return it }
+                }
+                return null
+            }
+            fun findText(parent: ViewGroup, text: String): TextView? {
+                for (i in 0 until parent.childCount) {
+                    val child = parent.getChildAt(i)
+                    if (child is TextView && child.text.toString() == text) return child
+                    if (child is ViewGroup) findText(child, text)?.let { return it }
+                }
+                return null
+            }
+            val group = requireNotNull(findGroup(root)) { "Font choices missing" }
+            assertTrue("Built-in fonts missing", group.childCount >= 3)
+            val density = context.resources.displayMetrics.density
+            val min = (48 * density).toInt()
+            val gap = (8 * density).toInt()
+            val chips = (0 until group.childCount).map { group.getChildAt(it) }
+            chips.forEach { chip ->
+                assertTrue("Font choice lacks 48dp touch target", chip.width >= min && chip.height >= min)
+                assertTrue("Font choice lacks accessibility label", !chip.contentDescription.isNullOrBlank())
+                assertTrue("Font choice is not clickable", chip.isClickable)
+            }
+            for (i in 1 until chips.size) {
+                assertTrue("Font choices are too close", chips[i].left - chips[i - 1].right >= gap)
+                assertTrue("Font choices are misaligned", kotlin.math.abs(chips[i].top - chips[0].top) <= 1)
+            }
+            val importButton = requireNotNull(findText(root, context.getString(importLabel)))
+            assertTrue("Import needs a 48dp touch target", importButton.width >= min && importButton.height >= min)
+            assertTrue("Import must be clickable", importButton.isClickable)
+            assertEquals("Import text size", 12f * context.resources.displayMetrics.scaledDensity, importButton.textSize, 0.5f)
+            val a = IntArray(2); val b = IntArray(2)
+            group.getLocationOnScreen(a); importButton.getLocationOnScreen(b)
+            assertTrue("Import overlaps the font choices", b[0] - (a[0] + group.width) >= gap)
+        }
+        capture("markup-font-styled")
+    }
+
     @Test fun markupTextControlsHaveSeparateTouchTargets() {
         assumeTrue("Text control spacing is candidate-only", isCandidate())
         editor(); tool(R.string.editor_markup_text)

@@ -1519,14 +1519,23 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                     })
                 }
                 MarkupSubtool.FONT -> addMarkupSection(R.string.markup_font, true, false) {
-                    val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+                    // Keep font styling local to this page; the mosaic selector is unchanged.
+                    val group = ChipGroup(this).apply {
+                        isSingleSelection = true
+                        isSingleLine = true
+                        chipSpacingHorizontal = (8 * density).toInt()
+                    }
                     (listOf("sans", "serif", "mono") + MarkupFonts.ids()).forEach { id ->
                         val face = MarkupFonts.resolve(id)
-                        row.addView(Chip(this).apply {
+                        group.addView(Chip(this).apply {
                             text = getString(R.string.markup_font_sample)
                             contentDescription = getString(R.string.markup_font_option, id.take(12))
                             typeface = face
+                            minWidth = (48 * density).toInt()
                             minHeight = (48 * density).toInt()
+                            chipStartPadding = 8 * density
+                            chipEndPadding = 8 * density
+                            gravity = Gravity.CENTER
                             isCheckable = true
                             isChecked = (annotationOverlayView.activeText?.fontId ?: annotationOverlayView.activeTextFontId) == id
                             setOnClickListener {
@@ -1538,13 +1547,21 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                             }
                         })
                     }
-                    row.addView(MaterialButton(this).apply {
+                    markupOptionsContent.addView(group)
+                    markupOptionsContent.addView(TextView(this).apply {
+                        minimumWidth = (48 * density).toInt()
+                        minimumHeight = (48 * density).toInt()
+                        gravity = Gravity.CENTER
+                        isFocusable = true
                         text = getString(R.string.markup_font_import)
-                        minHeight = (48 * density).toInt()
-                        setAllCaps(false)
+                        background = markupBackground(false)
+                        setTextColor(MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary))
+                        textSize = 12f
+                        setPadding((14 * density).toInt(), (8 * density).toInt(),
+                            (14 * density).toInt(), (8 * density).toInt())
                         setOnClickListener { pickMarkupFontLauncher.launch(arrayOf("font/ttf", "font/otf", "application/octet-stream")) }
-                    })
-                    markupOptionsContent.addView(row)
+                    }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginStart = (8 * density).toInt() })
                 }
                 MarkupSubtool.ALIGNMENT -> addMarkupSection(R.string.markup_alignment, true, false) {
                     val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
