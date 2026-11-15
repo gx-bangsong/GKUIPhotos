@@ -219,6 +219,28 @@ class SelectionSheetInstrumentedTest {
         }
     }
 
+    @Test fun selectionUiAutomatorLongClickSelectsOnlyItsTarget() {
+        val grid = requiredView("recyclerView") as RecyclerView
+        val thumbnails = device.findObjects(By.res(context.packageName, "thumbnailImageView"))
+        assertTrue("Need a visible photo", thumbnails.isNotEmpty())
+        val center = thumbnails[0].visibleCenter
+        lateinit var expected: Media
+        lateinit var tracker: SelectionTracker<Media>
+        instrumentation.runOnMainSync {
+            tracker = requireNotNull((grid.adapter as ThumbnailAdapter).selectionTracker)
+            val pos = IntArray(2); grid.getLocationOnScreen(pos)
+            val child = requireNotNull(grid.findChildViewUnder((center.x - pos[0]).toFloat(), (center.y - pos[1]).toFloat()))
+            expected = requireNotNull((grid.getChildViewHolder(child) as ThumbnailAdapter.ThumbnailViewHolder).itemDetails.selectionKey)
+            assertTrue("Target is not a synthetic fixture", images.contains(expected.uri))
+        }
+        thumbnails[0].longClick()
+        device.waitForIdle()
+        instrumentation.runOnMainSync {
+            assertEquals("Long click selected unexpected keys", listOf(expected), tracker.selection.toList())
+            assertTrue("Long click opened a photo or hid the selection sheet", requiredView("selectionSheet").isShown)
+        }
+    }
+
     @Test fun selectionSheetNavigationInsets() {
         val overlays = device.executeShellCommand("cmd overlay list --user current")
         val enabled = overlays.lineSequence().map { it.trim() }
