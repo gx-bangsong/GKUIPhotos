@@ -520,6 +520,25 @@ class SelectionSheetInstrumentedTest {
             device.waitForIdle()
         }
         capture("selection-sheet-expanded-scroll")
+        instrumentation.runOnMainSync {
+            val scrollGrid = requiredView("recyclerView") as RecyclerView
+            val sheet = requiredView("selectionSheet")
+            val gridPos = IntArray(2); val sheetPos = IntArray(2)
+            scrollGrid.getLocationOnScreen(gridPos); sheet.getLocationOnScreen(sheetPos)
+            val last = scrollGrid.findViewHolderForAdapterPosition(scrollGrid.adapter!!.itemCount - 1)?.itemView
+            val lastPos = IntArray(2); last?.getLocationOnScreen(lastPos)
+            val gridVisible = Rect(); val sheetVisible = Rect(); val lastVisible = Rect()
+            scrollGrid.getGlobalVisibleRect(gridVisible); sheet.getGlobalVisibleRect(sheetVisible)
+            val lastShown = last?.getGlobalVisibleRect(lastVisible) ?: false
+            val trace = "gridPos=${gridPos.contentToString()} gridSize=${scrollGrid.width}x${scrollGrid.height} gridVisible=$gridVisible paddingTop=${scrollGrid.paddingTop} paddingBottom=${scrollGrid.paddingBottom} canScrollDown=${scrollGrid.canScrollVertically(1)} sheetPos=${sheetPos.contentToString()} sheetVisible=$sheetVisible lastPos=${lastPos.contentToString()} lastSize=${last?.width}x${last?.height} lastVisible=$lastVisible lastShown=$lastShown\n"
+            val values = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, "selection-trace-grid-scroll.txt")
+                put(MediaStore.Downloads.MIME_TYPE, "text/plain")
+                put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/GlimpseUiTest")
+            }
+            val uri = requireNotNull(context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values))
+            requireNotNull(context.contentResolver.openOutputStream(uri)).use { it.write(trace.toByteArray()) }
+        }
         val lastLocation = IntArray(2)
         instrumentation.runOnMainSync {
             val grid = requiredView("recyclerView") as RecyclerView
