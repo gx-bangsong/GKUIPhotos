@@ -111,7 +111,9 @@ class SelectionSheetInstrumentedTest {
         assertTrue("Unable to capture $name", device.takeScreenshot(temp))
         val hierarchy = File(context.cacheDir, "$name.xml")
         device.dumpWindowHierarchy(hierarchy)
-        listOf(temp to "image/png", hierarchy to "application/xml").forEach { (file, mime) ->
+        // Store screenshots as generic downloads so the gallery under test does
+        // not ingest its own evidence and reorder the active selection grid.
+        listOf(temp to "application/octet-stream", hierarchy to "application/xml").forEach { (file, mime) ->
             val values = ContentValues().apply {
                 put(MediaStore.Downloads.DISPLAY_NAME, file.name)
                 put(MediaStore.Downloads.MIME_TYPE, mime)
@@ -467,7 +469,11 @@ class SelectionSheetInstrumentedTest {
         instrumentation.runOnMainSync {
             val holder = (0 until grid.childCount).mapNotNull { i ->
                 grid.getChildViewHolder(grid.getChildAt(i)) as? ThumbnailAdapter.ThumbnailViewHolder
-            }.first { it.itemDetails.selectionKey?.let { key -> key != firstKey && images.contains(key.uri) } == true }
+            }.first {
+                val bounds = Rect()
+                it.itemDetails.selectionKey?.let { key -> key != firstKey && images.contains(key.uri) } == true &&
+                    it.itemView.getGlobalVisibleRect(bounds) && bounds.width() == it.itemView.width && bounds.height() == it.itemView.height
+            }
             secondKey = requireNotNull(holder.itemDetails.selectionKey)
             val bounds = Rect()
             assertTrue("Second fixture must be fully visible", holder.itemView.getGlobalVisibleRect(bounds) &&
