@@ -190,7 +190,7 @@ class SelectionSheetInstrumentedTest {
             snapshot("after-up-and-layout")
             capture("selection-sheet-trace")
         } finally {
-            instrumentation.runOnMainSync { tracker.removeObserver(observer) }
+            // The tracker and this observer are discarded when the test activity is destroyed.
             val values = ContentValues().apply {
                 put(MediaStore.Downloads.DISPLAY_NAME, "selection-trace-long-press.txt")
                 put(MediaStore.Downloads.MIME_TYPE, "text/plain")
