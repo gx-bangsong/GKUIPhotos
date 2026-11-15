@@ -531,9 +531,9 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
         }
 
         thumbnailAdapter.setOnItemSelected { media ->
-            // Some touch dispatch paths deliver a click on the long-press UP.
-            // The tracker already selected the initiating item; do not open it.
-            if (pendingSelectionStart) return@setOnItemSelected
+            // SelectionTracker owns clicks while a selection exists, including
+            // a delayed click posted by the initiating long press.
+            if (!intentsViewModel.isPicking.value && selectionTracker?.hasSelection() == true) return@setOnItemSelected
             if (intentsViewModel.isPicking.value) {
                 selectionTracker?.select(media)
             } else {

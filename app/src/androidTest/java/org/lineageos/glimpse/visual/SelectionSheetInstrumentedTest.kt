@@ -221,19 +221,20 @@ class SelectionSheetInstrumentedTest {
 
     @Test fun selectionUiAutomatorLongClickSelectsOnlyItsTarget() {
         val grid = requiredView("recyclerView") as RecyclerView
-        val thumbnails = device.findObjects(By.res(context.packageName, "thumbnailImageView"))
-        assertTrue("Need a visible photo", thumbnails.isNotEmpty())
-        val center = thumbnails[0].visibleCenter
         lateinit var expected: Media
         lateinit var tracker: SelectionTracker<Media>
+        val bounds = Rect()
         instrumentation.runOnMainSync {
             tracker = requireNotNull((grid.adapter as ThumbnailAdapter).selectionTracker)
-            val pos = IntArray(2); grid.getLocationOnScreen(pos)
-            val child = requireNotNull(grid.findChildViewUnder((center.x - pos[0]).toFloat(), (center.y - pos[1]).toFloat()))
-            expected = requireNotNull((grid.getChildViewHolder(child) as ThumbnailAdapter.ThumbnailViewHolder).itemDetails.selectionKey)
-            assertTrue("Target is not a synthetic fixture", images.contains(expected.uri))
+            val holder = (0 until grid.childCount).mapNotNull { i ->
+                grid.getChildViewHolder(grid.getChildAt(i)) as? ThumbnailAdapter.ThumbnailViewHolder
+            }.first { images.contains(it.itemDetails.selectionKey?.uri) }
+            expected = requireNotNull(holder.itemDetails.selectionKey)
+            assertTrue(holder.itemView.getGlobalVisibleRect(bounds))
         }
-        thumbnails[0].longClick()
+        val thumbnail = device.findObjects(By.res(context.packageName, "thumbnailImageView"))
+            .first { bounds.contains(it.visibleCenter.x, it.visibleCenter.y) }
+        thumbnail.longClick()
         device.waitForIdle()
         instrumentation.runOnMainSync {
             assertEquals("Long click selected unexpected keys", listOf(expected), tracker.selection.toList())
