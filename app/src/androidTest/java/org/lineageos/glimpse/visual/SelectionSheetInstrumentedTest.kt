@@ -509,7 +509,10 @@ class SelectionSheetInstrumentedTest {
                 sample = "${grid.isLayoutRequested}:${grid.hasPendingAdapterUpdates()}:${grid.paddingTop}:${grid.paddingBottom}:$rows"
             }
             if (sample != previous) tapTrace.append("stability=$sample\n")
-            stableSamples = if (sample == previous && !sample.startsWith("true:") && !sample.startsWith("false:true:")) stableSamples + 1 else 0
+            // Some layout managers keep isLayoutRequested set while the
+            // snapshot is unchanged. Require identical geometry and no pending
+            // adapter updates; record the layout flag for diagnosis.
+            stableSamples = if (sample == previous && sample.split(':', limit = 3)[1] == "false") stableSamples + 1 else 0
             previous = sample
             if (stableSamples < 3) SystemClock.sleep(100)
         } while (stableSamples < 3 && SystemClock.uptimeMillis() < stableDeadline)
