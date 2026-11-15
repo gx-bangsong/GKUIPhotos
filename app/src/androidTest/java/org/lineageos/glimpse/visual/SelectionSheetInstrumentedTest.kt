@@ -372,6 +372,23 @@ class SelectionSheetInstrumentedTest {
         lateinit var tracker: SelectionTracker<Media>
         lateinit var firstKey: Media
         var firstX = 0f; var firstY = 0f
+        val tapTrace = StringBuilder()
+        fun fixture(media: Media) = images.indexOf(media.uri).let { if (it < 0) "nonfixture" else "fixture-$it" }
+        fun traceStage(stage: String) {
+            instrumentation.runOnMainSync {
+                val sheet = requiredView("selectionSheet"); val sheetRect = Rect()
+                val sheetVisible = sheet.getGlobalVisibleRect(sheetRect)
+                tapTrace.append("$stage selected=${tracker.selection.map(::fixture).sorted()} gridPadding=${grid.paddingTop},${grid.paddingBottom} sheetVisible=$sheetVisible sheet=$sheetRect\n")
+                for (i in 0 until grid.childCount) {
+                    val holder = grid.getChildViewHolder(grid.getChildAt(i)) as? ThumbnailAdapter.ThumbnailViewHolder ?: continue
+                    val key = holder.itemDetails.selectionKey ?: continue
+                    if (!images.contains(key.uri)) continue
+                    val position = IntArray(2); holder.itemView.getLocationOnScreen(position)
+                    val rect = Rect(); val visible = holder.itemView.getGlobalVisibleRect(rect)
+                    tapTrace.append("  key=${fixture(key)} adapterPosition=${holder.bindingAdapterPosition} origin=${position.contentToString()} size=${holder.itemView.width}x${holder.itemView.height} visible=$visible bounds=$rect\n")
+                }
+            }
+        }
         instrumentation.runOnMainSync {
             tracker = requireNotNull((grid.adapter as ThumbnailAdapter).selectionTracker)
             val holder = (0 until grid.childCount).mapNotNull { i ->
@@ -384,6 +401,7 @@ class SelectionSheetInstrumentedTest {
             firstX = bounds.exactCenterX(); firstY = bounds.exactCenterY()
             assertEquals("Selection not initially empty", 0, tracker.selection.count())
         }
+        traceStage("before-long-press")
         val downTime = SystemClock.uptimeMillis()
         fun finger(action: Int) {
             val properties = arrayOf(MotionEvent.PointerProperties().apply { id = 0; toolType = MotionEvent.TOOL_TYPE_FINGER })
@@ -464,6 +482,7 @@ class SelectionSheetInstrumentedTest {
         }
         screenshot.recycle()
         capture("selection-sheet-one")
+        traceStage("after-sheet-layout")
         lateinit var secondKey: Media
         var secondX = 0; var secondY = 0
         instrumentation.runOnMainSync {
@@ -484,8 +503,24 @@ class SelectionSheetInstrumentedTest {
                 bounds.width() == holder.itemView.width && bounds.height() == holder.itemView.height)
             secondX = bounds.centerX(); secondY = bounds.centerY()
         }
+        tapTrace.append("expected=${listOf(fixture(firstKey), fixture(secondKey)).sorted()} point=($secondX,$secondY)\n")
+        instrumentation.runOnMainSync {
+            val origin = IntArray(2); grid.getLocationOnScreen(origin)
+            val hit = grid.findChildViewUnder((secondX - origin[0]).toFloat(), (secondY - origin[1]).toFloat())
+            val holder = hit?.let { grid.getChildViewHolder(it) } as? ThumbnailAdapter.ThumbnailViewHolder
+            tapTrace.append("hit position=${holder?.bindingAdapterPosition} key=${holder?.itemDetails?.selectionKey?.let(::fixture)} view=${hit?.javaClass?.simpleName}\n")
+        }
+        traceStage("before-second-click")
         assertTrue("Second fixture tap failed", device.click(secondX, secondY))
         device.waitForIdle()
+        traceStage("after-second-click")
+        val values = ContentValues().apply {
+            put(MediaStore.Downloads.DISPLAY_NAME, "selection-trace-second-tap.txt")
+            put(MediaStore.Downloads.MIME_TYPE, "text/plain")
+            put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/GlimpseUiTest")
+        }
+        val traceUri = requireNotNull(context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values))
+        requireNotNull(context.contentResolver.openOutputStream(traceUri)).use { it.write(tapTrace.toString().toByteArray()) }
         instrumentation.runOnMainSync {
             assertEquals("Wrong two selection keys", setOf(firstKey, secondKey), tracker.selection.toSet())
             assertEquals(context.resources.getQuantityString(R.plurals.thumbnail_selection_count, 2, 2),
