@@ -176,8 +176,16 @@ class SelectionSheetInstrumentedTest {
         snapshot("before-down")
         val downTime = SystemClock.uptimeMillis()
         fun inject(action: Int) {
-            val event = MotionEvent.obtain(downTime, SystemClock.uptimeMillis(), action, x, y, 0)
-            event.source = android.view.InputDevice.SOURCE_TOUCHSCREEN
+            val properties = arrayOf(MotionEvent.PointerProperties().apply {
+                id = 0
+                toolType = MotionEvent.TOOL_TYPE_FINGER
+            })
+            val coordinates = arrayOf(MotionEvent.PointerCoords().apply {
+                this.x = x; this.y = y; pressure = 1f; size = 1f
+            })
+            val event = MotionEvent.obtain(downTime, SystemClock.uptimeMillis(), action, 1,
+                properties, coordinates, 0, 0, 1f, 1f, 0, 0,
+                android.view.InputDevice.SOURCE_TOUCHSCREEN, 0)
             try { check(instrumentation.uiAutomation.injectInputEvent(event, true)) } finally { event.recycle() }
         }
         try {
