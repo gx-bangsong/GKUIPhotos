@@ -355,7 +355,7 @@
                     android:id="@+id/markupOptionsScroll"
                     android:layout_width="match_parent"
                     android:layout_height="96dp"
-                    android:fillViewport="false"
+                    android:fillViewport="true"
                     android:scrollbars="none"
                     android:visibility="gone">
                     <LinearLayout
@@ -363,7 +363,8 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
-                        android:background="?attr/colorSurfaceContainer"
+                        android:gravity="center_vertical"
+                        android:background="@android:color/black"
                         android:paddingHorizontal="12dp"
                         android:paddingVertical="8dp" />
                 </ScrollView>

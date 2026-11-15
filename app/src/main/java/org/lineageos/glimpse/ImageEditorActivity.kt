@@ -534,19 +534,12 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                 setPadding((16 * density).toInt(), (8 * density).toInt(), (16 * density).toInt(), (8 * density).toInt())
                 val isSelected = category == activeCategory
                 if (isSelected) {
-                    if (activeCategory == EditorCategory.MARKUP) {
-                        background = markupBackground(true)
-                        setTextColor(MaterialColors.getColor(this, com.google.android.material.R.attr.colorOnPrimaryContainer))
-                    } else {
-                        setBackgroundResource(R.drawable.bg_google_photos_pill_selected)
-                        setTextColor(Color.WHITE)
-                    }
+                    setBackgroundResource(R.drawable.bg_google_photos_pill_selected)
+                    setTextColor(Color.WHITE)
                     typeface = Typeface.DEFAULT_BOLD
                 } else {
                     background = null
-                    setTextColor(if (activeCategory == EditorCategory.MARKUP)
-                        MaterialColors.getColor(this, com.google.android.material.R.attr.colorOnSurfaceVariant)
-                    else Color.parseColor("#A0A0A0"))
+                    setTextColor(Color.parseColor("#A0A0A0"))
                     typeface = Typeface.DEFAULT
                 }
                 setOnClickListener {
@@ -571,11 +564,9 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
 
     private fun switchCategory(category: EditorCategory) {
         activeCategory = category
-        val markup = category == EditorCategory.MARKUP
-        val foreground = if (markup) MaterialColors.getColor(editorBottomDeck,
-            com.google.android.material.R.attr.colorOnSurface) else Color.WHITE
-        val deckColor = if (markup) MaterialColors.getColor(editorBottomDeck,
-            com.google.android.material.R.attr.colorSurface) else Color.BLACK
+        // All editor categories share the same dark canvas and action-bar colors.
+        val foreground = Color.WHITE
+        val deckColor = Color.BLACK
         editorBottomDeck.setBackgroundColor(deckColor)
         WindowInsetsControllerCompat(window, window.decorView).isAppearanceLightNavigationBars =
             androidx.core.graphics.ColorUtils.calculateLuminance(deckColor) > 0.5
@@ -1162,8 +1153,8 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         android.graphics.drawable.GradientDrawable().apply {
             shape = if (circle) android.graphics.drawable.GradientDrawable.OVAL else android.graphics.drawable.GradientDrawable.RECTANGLE
             cornerRadius = 24f * resources.displayMetrics.density
-            setColor(MaterialColors.getColor(markupToolsRow, if (selected)
-                com.google.android.material.R.attr.colorPrimaryContainer else com.google.android.material.R.attr.colorSurfaceVariant))
+            // Match the editor's selected category and neutral tool backgrounds.
+            setColor(Color.parseColor(if (selected) "#383838" else "#282A2C"))
         }
 
     private fun updateMarkupToolButtons() {
@@ -1226,8 +1217,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                     }
                     setImageResource(iconRes)
                     imageTintList = ColorStateList.valueOf(
-                        MaterialColors.getColor(this, if (selected) com.google.android.material.R.attr.colorOnPrimaryContainer
-                            else com.google.android.material.R.attr.colorOnSurfaceVariant)
+                        if (selected) Color.WHITE else Color.parseColor("#B0B0B0")
                     )
                 }
                 addView(iv)
@@ -1241,8 +1231,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                 importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
                 textSize = if (compact) 14f else 11f
                 setTypeface(null, if (selected) Typeface.BOLD else Typeface.NORMAL)
-                setTextColor(MaterialColors.getColor(this, if (selected) androidx.appcompat.R.attr.colorPrimary
-                    else com.google.android.material.R.attr.colorOnSurface))
+                setTextColor(if (selected) Color.WHITE else Color.parseColor("#A0A0A0"))
                 setPadding(0, if (compact) 0 else (4 * density).toInt(), 0, 0)
             }
 
@@ -1443,9 +1432,8 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                 layoutParams = LinearLayout.LayoutParams(size, size)
                 setPadding((12 * density).toInt(), (12 * density).toInt(), (12 * density).toInt(), (12 * density).toInt())
                 setImageResource(item.icon)
-                imageTintList = ColorStateList.valueOf(MaterialColors.getColor(this,
-                    if (selected) com.google.android.material.R.attr.colorOnPrimaryContainer
-                    else com.google.android.material.R.attr.colorOnSurfaceVariant))
+                imageTintList = ColorStateList.valueOf(
+                    if (selected) Color.WHITE else Color.parseColor("#B0B0B0"))
                 if (selected) background = markupBackground(true)
                 contentDescription = getString(item.label)
                 isFocusable = true

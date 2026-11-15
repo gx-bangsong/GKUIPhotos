@@ -294,6 +294,38 @@ class UiScreenshotTest {
         capture("markup-dock-non-markup")
     }
 
+    @Test fun markupMatchesEditorColorsAndCentersOptions() {
+        assumeTrue("Candidate editor styling", isCandidate())
+        editor()
+        instrumentation.runOnMainSync {
+            val deck = activity!!.findViewById<View>(R.id.editorBottomDeck)
+            assertEquals("Markup deck should match the black editor", Color.BLACK,
+                (deck.background as android.graphics.drawable.ColorDrawable).color)
+            val tabs = activity!!.findViewById<ViewGroup>(R.id.categoryTabsContainer)
+            val selected = (0 until tabs.childCount).map { tabs.getChildAt(it) }
+                .filterIsInstance<TextView>().first { it.text == activity!!.getString(R.string.editor_tab_markup) }
+            val expected = context.getDrawable(R.drawable.bg_google_photos_pill_selected) as android.graphics.drawable.GradientDrawable
+            assertEquals("Markup category uses a different selected color", expected.color!!.defaultColor,
+                (selected.background as android.graphics.drawable.GradientDrawable).color!!.defaultColor)
+            assertEquals(Color.WHITE, selected.currentTextColor)
+        }
+        tool(R.string.editor_markup_doodle)
+        instrumentation.runOnMainSync {
+            val deck = activity!!.findViewById<View>(R.id.editorBottomDeck)
+            assertEquals(Color.BLACK, (deck.background as android.graphics.drawable.ColorDrawable).color)
+            val options = activity!!.findViewById<ViewGroup>(R.id.markupOptionsContent)
+            assertEquals(Color.BLACK, (options.background as android.graphics.drawable.ColorDrawable).color)
+            val section = options.getChildAt(0)
+            val top = section.top
+            val bottom = options.height - section.bottom
+            assertTrue("Option row is not vertically centered", kotlin.math.abs(top - bottom) <= (2 * context.resources.displayMetrics.density).toInt())
+            val row = activity!!.findViewById<ViewGroup>(R.id.markupToolsRow)
+            val active = (0 until row.childCount).map { row.getChildAt(it) }.first { it.isSelected }
+            assertEquals("Selected tool should match editor tabs", Color.parseColor("#383838"),
+                (active.background as android.graphics.drawable.GradientDrawable).color!!.defaultColor)
+        }
+    }
+
     @Test fun markupIdle() { editor(); capture("markup-idle"); assertMarkupAlignment() }
     @Test fun markupIdleChinese() {
         try {
