@@ -513,6 +513,7 @@ class SelectionSheetInstrumentedTest {
             device.swipe(swipeArea.centerX(), swipeArea.bottom - 20, swipeArea.centerX(), swipeArea.top + 20, 25)
             device.waitForIdle()
         }
+        capture("selection-sheet-expanded-scroll")
         val lastLocation = IntArray(2)
         instrumentation.runOnMainSync {
             val grid = requiredView("recyclerView") as RecyclerView

@@ -864,10 +864,14 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
     private fun updateSelectionGridPadding() {
         if (view == null) return
         val covered = if (selectionActive && selectionSheet.isVisible && selectionSheet.isLaidOut) {
-            val gridBounds = android.graphics.Rect()
-            val sheetBounds = android.graphics.Rect()
-            if (recyclerView.getGlobalVisibleRect(gridBounds) && selectionSheet.getGlobalVisibleRect(sheetBounds))
-                (gridBounds.bottom - sheetBounds.top).coerceAtLeast(0) else 0
+            // RecyclerView can extend beyond the window because of the app-bar
+            // scrolling behavior. Use its actual bottom, not its clipped visible
+            // rect, so the last row can scroll above the sheet.
+            val gridOrigin = IntArray(2)
+            val sheetOrigin = IntArray(2)
+            recyclerView.getLocationOnScreen(gridOrigin)
+            selectionSheet.getLocationOnScreen(sheetOrigin)
+            (gridOrigin[1] + recyclerView.height - sheetOrigin[1]).coerceAtLeast(0)
         } else 0
         val top = if (selectionActive) selectionTopBar.height else 0
         recyclerView.updatePadding(top = top, bottom = maxOf(bottomInset, covered))
