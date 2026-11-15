@@ -461,13 +461,6 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
 
         appBarLayout.isVisible = !hideToolbar
         sheetBehavior.addBottomSheetCallback(object : BottomSheetBehavior.BottomSheetCallback() {
-            // Coordinator's child layout listener runs before BottomSheetBehavior
-            // offsets the sheet. Recompute after the behavior finishes placement.
-            override fun onLayout(bottomSheet: View) {
-                bottomSheet.post {
-                    if (view != null && selectionActive) updateSelectionGridPadding()
-                }
-            }
             override fun onSlide(bottomSheet: View, slideOffset: Float) = updateSelectionGridPadding()
             override fun onStateChanged(bottomSheet: View, newState: Int) {
                 selectionSheetHint.setText(if (newState == BottomSheetBehavior.STATE_EXPANDED)
@@ -475,9 +468,13 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
                 updateSelectionGridPadding()
             }
         })
-        selectionSheet.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+        selectionSheet.addOnLayoutChangeListener { sheet, _, _, _, _, _, _, _, _ ->
             updateSelectionPeekHeight()
-            updateSelectionGridPadding()
+            // The behavior offsets the sheet after the view's layout callback.
+            // Read its final position in the next frame, not the pre-offset top.
+            sheet.post {
+                if (view != null && selectionActive) updateSelectionGridPadding()
+            }
         }
         selectionTopBar.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> updateSelectionGridPadding() }
         selectionSheetHint.setOnClickListener {
