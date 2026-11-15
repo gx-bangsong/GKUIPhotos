@@ -45,6 +45,12 @@ import org.junit.runner.RunWith
 import org.lineageos.glimpse.MainActivity
 import org.lineageos.glimpse.R
 import org.lineageos.glimpse.ext.manageMediaPermissionDialogDismissed
+import org.lineageos.glimpse.models.Media
+import org.lineageos.glimpse.ui.recyclerview.ThumbnailAdapter
+import androidx.recyclerview.selection.SelectionTracker
+import android.os.SystemClock
+import android.view.MotionEvent
+import android.view.ViewConfiguration
 import java.io.File
 
 @RunWith(AndroidJUnit4::class)
@@ -117,6 +123,84 @@ class SelectionSheetInstrumentedTest {
             values.clear(); values.put(MediaStore.Downloads.IS_PENDING, 0)
             context.contentResolver.update(uri, values, null, null)
             file.delete()
+        }
+    }
+
+    /** Trace only synthetic keys; never write media names, URIs, or user media identifiers. */
+    @Test fun selectionStationaryLongPressTrace() {
+        val trace = StringBuffer()
+        fun line(message: String) { trace.append(message).append('\n') }
+        fun fixtureKey(media: Media) = images.indexOf(media.uri).let { if (it < 0) "nonfixture" else "fixture-$it" }
+        val grid = requiredView("recyclerView") as RecyclerView
+        lateinit var tracker: SelectionTracker<Media>
+        var target = ""
+        var x = 0f
+        var y = 0f
+        lateinit var observer: SelectionTracker.SelectionObserver<Media>
+        fun snapshot(stage: String) {
+            instrumentation.runOnMainSync {
+                val keys = tracker.selection.map(::fixtureKey).sorted()
+                val gridPos = IntArray(2); grid.getLocationOnScreen(gridPos)
+                val hit = grid.findChildViewUnder(x - gridPos[0], y - gridPos[1])
+                val holder = hit?.let { grid.getChildViewHolder(it) }
+                val hitKey = (holder as? ThumbnailAdapter.ThumbnailViewHolder)?.itemDetails?.selectionKey?.let(::fixtureKey) ?: "no-fixture"
+                line("$stage hitView=${hit?.javaClass?.simpleName} position=${holder?.bindingAdapterPosition} key=$hitKey gridPaddingTop=${grid.paddingTop} gridPaddingBottom=${grid.paddingBottom}")
+                val sheet = requiredView("selectionSheet")
+                val parent = sheet.parent as View
+                val bounds = Rect(); val visible = sheet.getGlobalVisibleRect(bounds)
+                val b = BottomSheetBehavior.from(sheet)
+                val lp = sheet.layoutParams as ViewGroup.MarginLayoutParams
+                val insets = ViewCompat.getRootWindowInsets(sheet)?.getInsets(WindowInsetsCompat.Type.navigationBars())
+                line("$stage keys=$keys count=${keys.size} sheetVisibility=${sheet.visibility} isShown=${sheet.isShown} width=${sheet.measuredWidth} height=${sheet.measuredHeight} bounds=$bounds globalVisible=$visible state=${b.state} peek=${b.peekHeight} parent=${parent.width}x${parent.height} insetBottom=${insets?.bottom} marginBottom=${lp.bottomMargin} paddingBottom=${sheet.paddingBottom} contentPaddingBottom=${requiredView("selectionSheetContent").paddingBottom}")
+            }
+        }
+        instrumentation.runOnMainSync {
+            val adapter = grid.adapter as ThumbnailAdapter
+            tracker = requireNotNull(adapter.selectionTracker)
+            observer = object : SelectionTracker.SelectionObserver<Media>() {
+                override fun onItemStateChanged(key: Media, selected: Boolean) {
+                    line("selection-change key=${fixtureKey(key)} selected=$selected keys=${tracker.selection.map(::fixtureKey).sorted()}")
+                }
+            }
+            tracker.addObserver(observer)
+            val holders = (0 until grid.childCount).mapNotNull { i ->
+                grid.getChildViewHolder(grid.getChildAt(i)) as? ThumbnailAdapter.ThumbnailViewHolder
+            }
+            val holder = holders.first { images.contains(it.itemDetails.selectionKey?.uri) }
+            val rect = Rect()
+            check(holder.itemView.getGlobalVisibleRect(rect) && rect.width() == holder.itemView.width && rect.height() == holder.itemView.height)
+            x = rect.exactCenterX(); y = rect.exactCenterY()
+            target = fixtureKey(requireNotNull(holder.itemDetails.selectionKey))
+            line("target=$target position=${holder.bindingAdapterPosition} view=${holder.itemView.javaClass.simpleName} bounds=$rect point=($x,$y)")
+        }
+        snapshot("before-down")
+        val downTime = SystemClock.uptimeMillis()
+        fun inject(action: Int) {
+            val event = MotionEvent.obtain(downTime, SystemClock.uptimeMillis(), action, x, y, 0)
+            event.source = android.view.InputDevice.SOURCE_TOUCHSCREEN
+            try { check(instrumentation.uiAutomation.injectInputEvent(event, true)) } finally { event.recycle() }
+        }
+        try {
+            inject(MotionEvent.ACTION_DOWN)
+            snapshot("after-down")
+            Thread.sleep(ViewConfiguration.getLongPressTimeout().toLong() + 250L)
+            snapshot("long-press-before-up")
+            inject(MotionEvent.ACTION_UP)
+            device.waitForIdle()
+            snapshot("after-up-and-layout")
+            capture("selection-sheet-trace")
+        } finally {
+            instrumentation.runOnMainSync { tracker.removeObserver(observer) }
+            val values = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, "selection-trace-long-press.txt")
+                put(MediaStore.Downloads.MIME_TYPE, "text/plain")
+                put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/GlimpseUiTest")
+            }
+            val uri = requireNotNull(context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values))
+            requireNotNull(context.contentResolver.openOutputStream(uri)).use { it.write(trace.toString().toByteArray()) }
+        }
+        instrumentation.runOnMainSync {
+            assertEquals("Stationary long press must select only its fixture key", listOf(target), tracker.selection.map(::fixtureKey).sorted())
         }
     }
 

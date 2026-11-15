@@ -145,7 +145,8 @@ with zipfile.ZipFile(out / 'ui-evidence.zip', 'w', compression=zipfile.ZIP_DEFLA
         if len(suite):
             archive.writestr(f'{name}/touch-junit.xml', ET.tostring(suite, encoding='utf-8', xml_declaration=True))
         # Selection screenshots and sanitized JUnit results use synthetic local photos.
-        for file in sorted(folder.glob('selection-sheet-*.png')) + sorted(folder.glob('selection-sheet-*.xml')):
+        for file in (sorted(folder.glob('selection-sheet-*.png')) + sorted(folder.glob('selection-sheet-*.xml')) +
+                     sorted(folder.glob('selection-trace-*.txt'))):
             if file.is_file():
                 archive.write(file, f'{name}/{file.name}')
         selection_suite = ET.Element('testsuite', name='SelectionSheetInstrumentedTest')
