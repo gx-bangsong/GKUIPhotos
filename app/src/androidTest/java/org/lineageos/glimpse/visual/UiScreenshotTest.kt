@@ -919,6 +919,10 @@ class UiScreenshotTest {
             return found
         }
         val before = outputs()
+        val previousSize = device.executeShellCommand("wm size")
+        val overrideSize = Regex("Override size: (\\d+x\\d+)").find(previousSize)?.groupValues?.get(1)
+        device.executeShellCommand("wm size 720x1520")
+        device.waitForIdle()
         val preferences = androidx.preference.PreferenceManager.getDefaultSharedPreferences(context)
         val previous = preferences.getString("edit_save_behavior", null)
         preferences.edit().putString("edit_save_behavior", "always_save_as_new").commit()
@@ -940,6 +944,16 @@ class UiScreenshotTest {
                 item.javaClass.getDeclaredField("fontId").apply { isAccessible = true }.set(item, fontId)
                 val alignment = item.javaClass.getDeclaredField("alignment").apply { isAccessible = true }
                 alignment.set(item, alignment.type.enumConstants.first { it.toString() == "RIGHT" })
+                overlay.javaClass.getMethod("constrainActiveText").invoke(overlay)
+                val textBounds = android.graphics.RectF().also { item.computeBounds(it) }
+                @Suppress("UNCHECKED_CAST")
+                val matrix = overlay.javaClass.getMethod("getImageMatrixProvider").invoke(overlay) as () -> android.graphics.Matrix
+                matrix().mapRect(textBounds)
+                val frame = requireNotNull(activity!!.javaClass.getDeclaredMethod("editorFrame").apply { isAccessible = true }.invoke(activity))
+                val snapshot = frame.javaClass.getDeclaredField("crop").apply { isAccessible = true }.get(frame)
+                val visible = snapshot.javaClass.getMethod("getViewBounds").invoke(snapshot) as android.graphics.RectF
+                assertTrue("Text frame extends beyond the cropped preview", textBounds.left >= visible.left - 1f &&
+                    textBounds.top >= visible.top - 1f && textBounds.right <= visible.right + 1f && textBounds.bottom <= visible.bottom + 1f)
                 overlay.invalidate()
             }
             device.findObject(By.res(context.packageName, "subEditDoneButton"))!!.click()
@@ -985,6 +999,8 @@ class UiScreenshotTest {
             val edit = preferences.edit()
             if (previous == null) edit.remove("edit_save_behavior") else edit.putString("edit_save_behavior", previous)
             edit.commit()
+            device.executeShellCommand(if (overrideSize == null) "wm size reset" else "wm size $overrideSize")
+            device.waitForIdle()
         }
     }
 
