@@ -23,6 +23,16 @@ names = ('ui-baseline-light', 'ui-baseline-dark', 'ui-candidate-light', 'ui-cand
 expected = ('markup-idle', 'markup-idle-zh', 'markup-shapes', 'markup-density', 'markup-brush', 'markup-brush-scroll', 'markup-brush-small', 'markup-brush-small-scroll', 'markup-mosaic', 'markup-text-selected',
             'markup-text-black', 'markup-sticker', 'collage-two', 'collage-four', 'collage-four-layouts', 'collage-six', 'collage-selected', 'collage-small', 'collage-landscape',
             'markup-brush-zh', 'markup-shapes-zh', 'markup-text-zh', 'markup-mosaic-zh', 'markup-sticker-zh', 'collage-four-zh', 'collage-four-layouts-zh', 'collage-two-layouts', 'collage-six-layouts')
+# The new dock exists only in the candidate; historical baseline stays unchanged.
+candidate_dock = ('markup-dock-text-edit', 'markup-dock-text-color', 'markup-dock-text-background',
+                  'markup-dock-brush', 'markup-dock-shapes', 'markup-dock-mosaic-effect',
+                  'markup-dock-mosaic-width', 'markup-dock-sticker', 'markup-dock-text-restored',
+                  'markup-dock-non-markup', 'markup-dock-categories', 'markup-dock-undo', 'markup-dock-redo',
+                  'markup-dock-close', 'markup-dock-done', 'markup-dock-narrow-large-font')
+
+def expected_for(name):
+    return expected + candidate_dock if name.startswith('ui-candidate-') else expected
+
 pattern = re.compile(r'^\[(\d+),(\d+)\]\[(\d+),(\d+)\]$')
 
 
@@ -67,7 +77,7 @@ for name in names:
     density_text = density_file.read_text(errors='replace') if density_file.is_file() else ''
     densities = re.findall(r'(?:Physical|Override) density:\s*(\d+)', density_text)
     density = int(densities[-1]) if densities else None
-    for item in expected:
+    for item in expected_for(name):
         key = f'{name}/{item}'
         xml = folder / f'{item}.xml'
         png = folder / f'{item}.png'
@@ -107,7 +117,7 @@ else:
 with zipfile.ZipFile(out / 'ui-evidence.zip', 'w', compression=zipfile.ZIP_DEFLATED) as archive:
     for name in names:
         folder = root / name
-        for item in expected:
+        for item in expected_for(name):
             for extension in ('png', 'xml'):
                 file = folder / f'{item}.{extension}'
                 if file.is_file():
@@ -155,6 +165,24 @@ with zipfile.ZipFile(out / 'ui-evidence.zip', 'w', compression=zipfile.ZIP_DEFLA
                 continue
         if len(selection_suite):
             archive.writestr(f'{name}/selection-junit.xml', ET.tostring(selection_suite, encoding='utf-8', xml_declaration=True))
+        # Return individual Markup outcomes, including assumptions and failures.
+        markup_suite = ET.Element('testsuite', name='MarkupUiScreenshotTest')
+        for report in sorted((folder / 'test-results').rglob('*.xml')):
+            try:
+                for case in ET.parse(report).getroot().iter('testcase'):
+                    if case.get('classname') != 'org.lineageos.glimpse.visual.UiScreenshotTest' or not case.get('name', '').startswith('markup'):
+                        continue
+                    entry = ET.SubElement(markup_suite, 'testcase', {
+                        key: case.get(key, '') for key in ('classname', 'name', 'time')
+                    })
+                    for result in case:
+                        if result.tag in ('failure', 'error', 'skipped'):
+                            item = ET.SubElement(entry, result.tag, message=clean(result.get('message', '')))
+                            item.text = clean(result.text or '')
+            except ET.ParseError:
+                continue
+        if len(markup_suite):
+            archive.writestr(f'{name}/markup-junit.xml', ET.tostring(markup_suite, encoding='utf-8', xml_declaration=True))
         for filename in ('wm-size.txt', 'wm-density.txt', 'font-scale.txt', 'night-mode.txt', 'failure-tail.txt',
                          'google-photos-status.txt', 'google-photos-error.txt', 'google-photos-start.png', 'google-photos-start.xml',
                          'google-photos-after-back.png', 'google-photos-after-back.xml',

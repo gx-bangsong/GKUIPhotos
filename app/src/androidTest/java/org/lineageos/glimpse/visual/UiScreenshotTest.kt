@@ -136,6 +136,20 @@ class UiScreenshotTest {
         device.waitForIdle()
     }
 
+    // Candidate-only: the fixed dock is not present in the historical baseline.
+    private fun subtool(label: Int) {
+        if (!isCandidate()) return
+        val row = device.wait(Until.findObject(By.res(context.packageName, "markupSubtoolsRow")), 5000)
+        assertNotNull("Subtool dock missing", row)
+        val item = row!!.findObject(By.desc(context.getString(label)))
+        assertNotNull("Subtool missing: ${context.getString(label)}", item)
+        item!!.click()
+        device.waitForIdle()
+        val selected = device.findObject(By.res(context.packageName, "markupSubtoolsRow"))
+            ?.findObject(By.desc(context.getString(label)))
+        assertTrue("Subtool not selected", selected?.isSelected == true)
+    }
+
     private fun collage(count: Int) {
         start(CollageActivity.createIntent(context, images.take(count)))
         val save = device.wait(Until.findObject(By.res(context.packageName, "collageSave")), 15000)
@@ -273,6 +287,13 @@ class UiScreenshotTest {
         }
     }
 
+    @Test fun markupNonMarkupCategories() {
+        assumeTrue("Candidate navigation evidence", isCandidate())
+        start(ImageEditorActivity.createIntent(context, images.first(), "image/jpeg"))
+        assertTrue("Editor categories not shown", activity!!.findViewById<View>(R.id.categoryTabsScroll).visibility == View.VISIBLE)
+        capture("markup-dock-non-markup")
+    }
+
     @Test fun markupIdle() { editor(); capture("markup-idle"); assertMarkupAlignment() }
     @Test fun markupIdleChinese() {
         try {
@@ -305,10 +326,24 @@ class UiScreenshotTest {
                 }
                 val views = descendants(root)
                 val importButton = views.filterIsInstance<TextView>().first { it.text == activity!!.getString(R.string.editor_brush_import) }
-                val red = views.first { it.contentDescription == activity!!.getString(R.string.markup_color_red) }
                 val density = activity!!.resources.displayMetrics.density
                 assertEquals((14 * density).toInt(), importButton.paddingLeft)
-                assertEquals((2 * density).toInt(), (red.layoutParams as LinearLayout.LayoutParams).marginEnd)
+            }
+            if (isCandidate()) {
+                subtool(R.string.markup_color_section)
+                instrumentation.runOnMainSync {
+                    val root = activity!!.findViewById<ViewGroup>(R.id.markupOptionsContent)
+                    fun find(group: ViewGroup): View? {
+                        for (i in 0 until group.childCount) {
+                            val child = group.getChildAt(i)
+                            if (child.contentDescription == activity!!.getString(R.string.markup_color_red)) return child
+                            if (child is ViewGroup) find(child)?.let { return it }
+                        }
+                        return null
+                    }
+                    val red = requireNotNull(find(root))
+                    assertEquals((2 * activity!!.resources.displayMetrics.density).toInt(), (red.layoutParams as LinearLayout.LayoutParams).marginEnd)
+                }
             }
             capture("markup-density")
         } finally {
@@ -332,7 +367,10 @@ class UiScreenshotTest {
     }
 
     @Test fun markupBrush() {
-        editor(); tool(R.string.editor_markup_doodle); assertSingleOptionLabel(R.string.editor_markup_stroke_width)
+        editor(); tool(R.string.editor_markup_doodle)
+        subtool(R.string.editor_markup_stroke_width)
+        assertSingleOptionLabel(R.string.editor_markup_stroke_width)
+        subtool(R.string.markup_color_section)
         if (isCandidate()) instrumentation.runOnMainSync {
             val root = activity!!.findViewById<ViewGroup>(R.id.markupOptionsContent)
             fun find(group: ViewGroup): View? {
@@ -361,6 +399,7 @@ class UiScreenshotTest {
             device.waitForIdle()
             Thread.sleep(1000)
             editor(); tool(R.string.editor_markup_doodle)
+            subtool(R.string.markup_color_section)
             var canScroll = false
             instrumentation.runOnMainSync {
                 canScroll = activity!!.findViewById<View>(R.id.markupOptionsScroll).canScrollVertically(1)
@@ -377,7 +416,12 @@ class UiScreenshotTest {
             device.waitForIdle()
         }
     }
-    @Test fun markupMosaic() { editor(); tool(R.string.editor_markup_mosaic); assertSingleOptionLabel(R.string.editor_markup_mosaic_brush); capture("markup-mosaic") }
+    @Test fun markupMosaic() {
+        editor(); tool(R.string.editor_markup_mosaic)
+        subtool(R.string.editor_markup_mosaic_brush)
+        assertSingleOptionLabel(R.string.editor_markup_mosaic_brush)
+        capture("markup-mosaic")
+    }
     @Test fun markupSticker() { editor(); tool(R.string.editor_markup_sticker); capture("markup-sticker") }
     @Test fun markupTextSelected() {
         editor(); tool(R.string.editor_markup_text)
@@ -394,6 +438,7 @@ class UiScreenshotTest {
             assertTrue("Text layer was not selected", overlayView?.activeText?.text == "Sample text")
         }
         capture("markup-text-selected")
+        subtool(R.string.markup_color_section)
         val black = device.wait(Until.findObject(By.desc(context.getString(R.string.markup_color_black))), 5000)
         assertNotNull("Black swatch unavailable", black)
         black!!.click()
@@ -404,6 +449,135 @@ class UiScreenshotTest {
         }
         capture("markup-text-black")
     }
+    @Test fun markupFixedSubtoolDockPreservesFrameAndSelection() {
+        assumeTrue("Subtool dock is candidate-only", isCandidate())
+        editor()
+        capture("markup-dock-categories")
+        instrumentation.runOnMainSync {
+            assertEquals("Category bar missing before sub-edit", View.VISIBLE, activity!!.findViewById<View>(R.id.categoryTabsScroll).visibility)
+        }
+        tool(R.string.editor_markup_text)
+        instrumentation.runOnMainSync {
+            assertEquals("Category bar visible during Markup", View.GONE, activity!!.findViewById<View>(R.id.categoryTabsScroll).visibility)
+            assertEquals("Markup main tools missing", View.VISIBLE, activity!!.findViewById<View>(R.id.markupToolsScroll).visibility)
+        }
+        val crop = activity!!.findViewById<CropImageView>(R.id.cropImageView)
+        val overlay = activity!!.findViewById<AnnotationOverlayView>(R.id.annotationOverlayView)
+        var originalText: org.lineageos.glimpse.ui.views.AnnotationItem.Text? = null
+        var originalMatrix = FloatArray(9)
+        var originalWidth = 0
+        var originalHeight = 0
+        instrumentation.runOnMainSync {
+            overlay.addTextItem("Dock test", crop.width / 2f, crop.height / 2f)
+            originalText = overlay.activeText
+            crop.getImageMatrix().getValues(originalMatrix)
+            originalWidth = crop.width; originalHeight = crop.height
+        }
+        capture("markup-dock-text-edit")
+        subtool(R.string.markup_color_section); capture("markup-dock-text-color")
+        subtool(R.string.editor_markup_text_bg); capture("markup-dock-text-background")
+        val tools = listOf(
+            R.string.editor_markup_doodle to "markup-dock-brush",
+            R.string.editor_markup_shapes to "markup-dock-shapes",
+            R.string.editor_markup_mosaic to "markup-dock-mosaic-effect",
+            R.string.editor_markup_sticker to "markup-dock-sticker",
+            R.string.editor_markup_text to "markup-dock-text-restored",
+        )
+        for ((toolName, screenshot) in tools) {
+            tool(toolName)
+            capture(screenshot)
+            instrumentation.runOnMainSync {
+                val matrix = FloatArray(9)
+                crop.getImageMatrix().getValues(matrix)
+                assertEquals("Preview width changed", originalWidth, crop.width)
+                assertEquals("Preview height changed", originalHeight, crop.height)
+                for (i in matrix.indices) assertEquals("Image matrix changed at $i", originalMatrix[i], matrix[i], .001f)
+                assertTrue("Selected text was lost on tool switch", overlay.activeText === originalText)
+                assertTrue("Annotation lost", overlay.hasAnnotations())
+                val dockId = context.resources.getIdentifier("markupSubtoolsRow", "id", context.packageName)
+                val dock = activity!!.findViewById<ViewGroup>(dockId)
+                assertTrue("Subtool pills missing", dock.childCount >= 2)
+                for (i in 0 until dock.childCount) {
+                    val pill = dock.getChildAt(i)
+                    assertTrue("Subtool must be icon-only", pill is ImageView)
+                    assertTrue("Subtool must have an accessible name", !pill.contentDescription.isNullOrBlank())
+                }
+            }
+            if (toolName == R.string.editor_markup_mosaic) {
+                subtool(R.string.editor_markup_mosaic_brush); capture("markup-dock-mosaic-width")
+                subtool(R.string.markup_effect_section)
+                assertNotNull("Effect entry disappeared", device.findObject(By.text(context.getString(R.string.editor_mosaic_pixelate))))
+            }
+        }
+        val clearLabel = context.resources.getIdentifier("markup_clear_annotations", "string", context.packageName)
+        assertTrue("Clear accessibility label missing", clearLabel != 0)
+        val clear = device.findObject(By.desc(context.getString(clearLabel)))
+        assertNotNull("Clear button missing", clear)
+        clear!!.click(); device.waitForIdle()
+        instrumentation.runOnMainSync { assertTrue("Clear left annotations", !overlay.hasAnnotations()) }
+        val undo = device.findObject(By.desc(context.getString(R.string.editor_markup_undo)))
+        assertNotNull("Undo button missing", undo)
+        undo!!.click(); device.waitForIdle()
+        instrumentation.runOnMainSync { assertTrue("Undo did not restore cleared annotation", overlay.hasAnnotations()) }
+        capture("markup-dock-undo")
+        val redo = device.findObject(By.desc(context.getString(R.string.editor_redo)))
+        assertNotNull("Redo button missing", redo)
+        redo!!.click(); device.waitForIdle()
+        instrumentation.runOnMainSync { assertTrue("Redo did not clear annotations", !overlay.hasAnnotations()) }
+        capture("markup-dock-redo")
+        undo.click(); device.waitForIdle()
+        device.findObject(By.res(context.packageName, "subEditCancelButton"))!!.click(); device.waitForIdle()
+        instrumentation.runOnMainSync {
+            assertEquals("Category bar not restored after close", View.VISIBLE, activity!!.findViewById<View>(R.id.categoryTabsScroll).visibility)
+            assertTrue("Close lost annotation", overlay.hasAnnotations())
+        }
+        capture("markup-dock-close")
+        tool(R.string.editor_markup_text)
+        device.findObject(By.res(context.packageName, "subEditDoneButton"))!!.click(); device.waitForIdle()
+        instrumentation.runOnMainSync {
+            assertEquals("Category bar not restored after done", View.VISIBLE, activity!!.findViewById<View>(R.id.categoryTabsScroll).visibility)
+            assertTrue("Done lost annotation", overlay.hasAnnotations())
+        }
+        capture("markup-dock-done")
+    }
+
+    @Test fun markupDockNarrowAndLargeFont() {
+        assumeTrue("Subtool dock is candidate-only", isCandidate())
+        val previousScale = device.executeShellCommand("settings get system font_scale").trim()
+        try {
+            device.executeShellCommand("wm size 720x1520")
+            device.executeShellCommand("wm density 320")
+            device.executeShellCommand("settings put system font_scale 1.3")
+            device.waitForIdle()
+            Thread.sleep(1000)
+            editor(); tool(R.string.editor_markup_shapes)
+            capture("markup-dock-narrow-large-font")
+            instrumentation.runOnMainSync {
+                val scrollId = context.resources.getIdentifier("markupSubtoolsScroll", "id", context.packageName)
+                assertTrue("Subtool scroller missing", scrollId != 0)
+                val scroll = activity!!.findViewById<View>(scrollId)
+                val cancel = activity!!.findViewById<View>(R.id.subEditCancelButton)
+                val done = activity!!.findViewById<View>(R.id.subEditDoneButton)
+                val nav = androidx.core.view.ViewCompat.getRootWindowInsets(scroll)
+                    ?.getInsets(androidx.core.view.WindowInsetsCompat.Type.navigationBars())?.bottom ?: 0
+                val scrollRect = Rect(); val doneRect = Rect(); val cancelRect = Rect()
+                assertTrue("Dock not visible", scroll.getGlobalVisibleRect(scrollRect))
+                assertTrue("Close clipped", cancel.getGlobalVisibleRect(cancelRect) && cancelRect.width() == cancel.width)
+                assertTrue("Done clipped", done.getGlobalVisibleRect(doneRect) && doneRect.width() == done.width)
+                assertTrue("Subtool viewport too narrow", scrollRect.width() >= (48 * activity!!.resources.displayMetrics.density).toInt())
+                assertTrue("Dock overlaps navigation bar", scrollRect.bottom <= scroll.rootView.height - nav)
+            }
+            subtool(R.string.markup_color_section)
+        } finally {
+            activity?.finish(); activity = null
+            device.executeShellCommand("wm size reset")
+            device.executeShellCommand("wm density reset")
+            if (previousScale == "null" || previousScale.isEmpty()) device.executeShellCommand("settings delete system font_scale")
+            else device.executeShellCommand("settings put system font_scale $previousScale")
+            device.waitForIdle()
+        }
+    }
+
     @Test fun markupMosaicChoices() {
         assumeTrue("Flat effect selector only applies to the candidate", isCandidate())
         editor(); tool(R.string.editor_markup_mosaic)
@@ -460,27 +634,46 @@ class UiScreenshotTest {
 
     @Test fun markupTextControlsHaveSeparateTouchTargets() {
         assumeTrue("Text control spacing is candidate-only", isCandidate())
-        editor()
-        tool(R.string.editor_markup_text)
+        editor(); tool(R.string.editor_markup_text)
+        val dockId = context.resources.getIdentifier("markupSubtoolsRow", "id", context.packageName)
+        assertTrue("Missing fixed subtool dock", dockId != 0)
+        fun findText(group: ViewGroup, label: String): TextView? {
+            for (i in 0 until group.childCount) {
+                val child = group.getChildAt(i)
+                if (child is TextView && child.text.toString() == label) return child
+                if (child is ViewGroup) findText(child, label)?.let { return it }
+            }
+            return null
+        }
+        instrumentation.runOnMainSync {
+            val dock = activity!!.findViewById<ViewGroup>(dockId)
+            val min = (48 * context.resources.displayMetrics.density).toInt()
+            assertEquals(3, dock.childCount)
+            val actionPill = (0 until dock.childCount).map { dock.getChildAt(it) }
+                .first { it.contentDescription == activity!!.getString(R.string.markup_text_section) }
+            val backgroundPill = (0 until dock.childCount).map { dock.getChildAt(it) }
+                .first { it.contentDescription == activity!!.getString(R.string.editor_markup_text_bg) }
+            val a = IntArray(2); val b = IntArray(2)
+            actionPill.getLocationOnScreen(a); backgroundPill.getLocationOnScreen(b)
+            assertTrue("Text controls overlap or lack spacing", b[0] - (a[0] + actionPill.width) >= (11f * context.resources.displayMetrics.density).toInt())
+            for (item in listOf(actionPill, backgroundPill)) {
+                assertTrue("Subtool touch target too small", item.width >= min && item.height >= min)
+            }
+            val root = activity!!.findViewById<ViewGroup>(R.id.markupOptionsContent)
+            val action = requireNotNull(findText(root, activity!!.getString(R.string.markup_text_action)))
+            assertTrue("Text action touch target too small", action.height >= min)
+            assertTrue("Background must not appear on the edit page", findText(root, activity!!.getString(R.string.editor_markup_text_bg)) == null)
+        }
+        subtool(R.string.editor_markup_text_bg)
         instrumentation.runOnMainSync {
             val root = activity!!.findViewById<ViewGroup>(R.id.markupOptionsContent)
-            fun find(group: ViewGroup, label: String): TextView? {
-                for (i in 0 until group.childCount) {
-                    val child = group.getChildAt(i)
-                    if (child is TextView && child.text.toString() == label) return child
-                    if (child is ViewGroup) find(child, label)?.let { return it }
-                }
-                return null
-            }
-            val action = requireNotNull(find(root, activity!!.getString(R.string.markup_text_action)))
-            val background = requireNotNull(find(root, activity!!.getString(R.string.editor_markup_text_bg)))
-            val a = IntArray(2); val b = IntArray(2)
-            action.getLocationOnScreen(a); background.getLocationOnScreen(b)
-            val density = context.resources.displayMetrics.density
-            assertTrue("Text controls overlap or lack spacing", b[0] - (a[0] + action.width) >= (11f * density).toInt())
-            assertTrue("Text action touch target too small", action.height >= (48f * density).toInt())
-            assertTrue("Background touch target too small", background.height >= (48f * density).toInt())
+            val background = requireNotNull(findText(root, activity!!.getString(R.string.editor_markup_text_bg)))
+            assertTrue("Background touch target too small", background.height >= (48f * context.resources.displayMetrics.density).toInt())
+            assertTrue("Text action must not appear on the background page", findText(root, activity!!.getString(R.string.markup_text_action)) == null)
+            assertTrue("Background control must be clickable", background.isClickable)
         }
+        subtool(R.string.markup_color_section)
+        assertNotNull("Text color choices missing", device.findObject(By.desc(context.getString(R.string.markup_color_black))))
     }
 
     @Test fun collagePreviewGesturesStayOnTheirStartingPhoto() {

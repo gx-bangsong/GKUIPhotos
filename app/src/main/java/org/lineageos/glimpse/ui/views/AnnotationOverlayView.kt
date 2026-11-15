@@ -544,9 +544,13 @@ class AnnotationOverlayView @JvmOverloads constructor(
     var activeTool: MarkupTool = MarkupTool.NONE
         set(value) {
             if (field == value) return
-            commitActiveShape()
-            commitActiveText()
-            commitActiveSticker()
+            // Switching between markup tools must not discard the selected object.
+            // Closing markup still dismisses the handles and selection as before.
+            if (value == MarkupTool.NONE) {
+                commitActiveShape()
+                commitActiveText()
+                commitActiveSticker()
+            }
             field = value
             invalidate()
         }
@@ -1189,13 +1193,15 @@ class AnnotationOverlayView @JvmOverloads constructor(
         canvas.save()
         canvas.concat(matrix)
         boundsDashPaint.strokeWidth = viewLengthToBase(2f)
-        activeShape?.let { drawHandle(canvas, it.startX, it.startY); drawHandle(canvas, it.endX, it.endY) }
-        activeText?.let {
+        if (activeTool == MarkupTool.SHAPES) activeShape?.let {
+            drawHandle(canvas, it.startX, it.startY); drawHandle(canvas, it.endX, it.endY)
+        }
+        if (activeTool == MarkupTool.TEXT) activeText?.let {
             val rect = RectF().also { bounds -> it.computeBounds(bounds) }
             canvas.drawRoundRect(rect, viewLengthToBase(8f), viewLengthToBase(8f), boundsDashPaint)
             drawHandle(canvas, rect.right, rect.bottom)
         }
-        activeSticker?.let {
+        if (activeTool == MarkupTool.STICKER) activeSticker?.let {
             val rect = RectF().also { bounds -> it.computeBounds(bounds) }
             canvas.drawRoundRect(rect, viewLengthToBase(8f), viewLengthToBase(8f), boundsDashPaint)
             drawHandle(canvas, rect.right, rect.bottom)

@@ -28,19 +28,13 @@ if [[ "$UI_MODE" == dark ]]; then
 else
   adb shell cmd uimode night no
 fi
-# Inspect the installed reference only once on the same emulator configuration.
-probe_status=0
-if [[ "$UI_MODE" == light && "$UI_VERSION" == candidate ]]; then
-  if ! bash scripts/probe-google-photos.sh; then
-    echo 'Result: reference probe failed before completion; see sanitized local trace.' >> ui-evidence/google-photos-status.txt
-    probe_status=1
-  fi
-fi
+# Use only the user-provided reference; do not launch Google Photos or transfer
+# a reference fixture into it during this run.
+echo 'Result: external reference probe disabled; supplied screenshots only.' > ui-evidence/google-photos-status.txt
 set +e
 ./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.expectedTheme="$UI_MODE" -Pandroid.testInstrumentationRunnerArguments.uiVersion="$UI_VERSION" -Pandroid.testInstrumentationRunnerArguments.sourceSha="$(git rev-parse HEAD)" --stacktrace 2>&1 | tee "${RUNNER_TEMP}/ui-gradle.log"
 status=${PIPESTATUS[0]}
 set -e
-if (( probe_status != 0 )); then status=1; fi
 python3 scripts/ui-safe-tail.py "${RUNNER_TEMP}/ui-gradle.log" > ui-evidence/failure-tail.txt
 if (( status != 0 )); then
   python3 scripts/report-ui-diagnostics.py --log "${RUNNER_TEMP}/ui-gradle.log" \
@@ -64,6 +58,16 @@ if (( status == 0 )); then
       if [[ ! -s "ui-evidence/$name.$extension" ]]; then
         echo "::error::Missing screenshot evidence: $name.$extension"
         echo "Missing screenshot evidence: $name.$extension" >> ui-evidence/failure-tail.txt
+        status=1
+      fi
+    done
+  done
+fi
+if (( status == 0 )) && [[ "$UI_VERSION" == candidate ]]; then
+  for name in markup-dock-text-edit markup-dock-text-color markup-dock-text-background markup-dock-brush markup-dock-shapes markup-dock-mosaic-effect markup-dock-mosaic-width markup-dock-sticker markup-dock-text-restored markup-dock-non-markup markup-dock-categories markup-dock-undo markup-dock-redo markup-dock-close markup-dock-done markup-dock-narrow-large-font; do
+    for extension in png xml; do
+      if [[ ! -s "ui-evidence/$name.$extension" ]]; then
+        echo "::error::Missing dock evidence: $name.$extension"
         status=1
       fi
     done

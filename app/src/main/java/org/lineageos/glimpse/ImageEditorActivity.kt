@@ -150,7 +150,15 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
 
     // Strip Controls: Markup
     private val markupToolsScroll by lazy { findViewById<HorizontalScrollView>(R.id.markupToolsScroll) }
-    private var markupAdvancedExpanded = false
+    private enum class MarkupSubtool {
+        BRUSH, WIDTH, COLOR, ADVANCED, SHAPE, STYLE, TEXT, BACKGROUND,
+        EFFECT, STICKER_PRESET, STICKER_CUSTOM, STICKER_IMPORT
+    }
+    private val markupSubtoolByTool = mutableMapOf<MarkupTool, MarkupSubtool>()
+    private val markupSubtoolsScroll by lazy { findViewById<View>(R.id.markupSubtoolsScroll) }
+    private val markupSubtoolsRow by lazy { findViewById<LinearLayout>(R.id.markupSubtoolsRow) }
+    private val markupHistoryBar by lazy { findViewById<View>(R.id.markupHistoryBar) }
+    private val subEditSpacer by lazy { findViewById<View>(R.id.subEditSpacer) }
     private var activeCustomMosaicId: String? = null
     private val markupToolsRow by lazy { findViewById<LinearLayout>(R.id.markupToolsRow) }
     private val markupOptionsScroll by lazy { findViewById<View>(R.id.markupOptionsScroll) }
@@ -608,6 +616,8 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         setCategoryTabsVisible(true)
         regularActionBar.isVisible = true
         subEditActionBar.isVisible = false
+        markupHistoryBar.isVisible = false
+        subEditSpacer.isVisible = true
     }
 
     private fun updateFlipButtonUI() {
@@ -1266,10 +1276,12 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         showMarkupToolOptions(tool)
 
         if (tool != MarkupTool.NONE) {
-            // Keep the tab and options footprints unchanged while editing.
-            setCategoryTabsVisible(true)
+            // Only the editor-level categories disappear; all five Markup tools remain available.
+            setCategoryTabsVisible(false)
             regularActionBar.isVisible = false
             subEditActionBar.isVisible = true
+            markupHistoryBar.isVisible = true
+            subEditSpacer.isVisible = false
 
             subEditCancelButton.setText(R.string.editor_markup_close)
             subEditCancelButton.contentDescription = getString(R.string.editor_markup_close)
@@ -1299,10 +1311,11 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         annotationOverlayView.activeTool = MarkupTool.NONE
         updateMarkupToolButtons()
         showMarkupToolOptions(MarkupTool.NONE)
-        // The reserved options viewport keeps the canvas stable when closing a tool.
         setCategoryTabsVisible(true)
         regularActionBar.isVisible = true
         subEditActionBar.isVisible = false
+        markupHistoryBar.isVisible = false
+        subEditSpacer.isVisible = true
     }
 
     /** Each section owns its own scroll direction; sliders never live in a horizontal scroller. */
@@ -1365,7 +1378,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         // Keep the viewport independent of the selected tool and expanded sections.
         // Otherwise the deck resizes the image and its annotation coordinate mapping.
         // The contents remain scrollable when the window or font scale is small.
-        val height = minOf((260 * resources.displayMetrics.density).toInt(), (screenHeight * 0.30f).toInt())
+        val height = minOf((160 * resources.displayMetrics.density).toInt(), (screenHeight * 0.22f).toInt())
         val params = markupOptionsScroll.layoutParams
         if (params.height != height) {
             params.height = height
@@ -1373,48 +1386,110 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         }
     }
 
+    private data class MarkupSubtoolItem(val key: MarkupSubtool, val label: Int, val icon: Int)
+
+    private fun markupSubtools(tool: MarkupTool): List<MarkupSubtoolItem> = when (tool) {
+        MarkupTool.DOODLE -> buildList {
+            add(MarkupSubtoolItem(MarkupSubtool.BRUSH, R.string.markup_brush_section, R.drawable.ic_markup_brush))
+            add(MarkupSubtoolItem(MarkupSubtool.WIDTH, R.string.editor_markup_stroke_width, R.drawable.ic_markup_width))
+            add(MarkupSubtoolItem(MarkupSubtool.COLOR, R.string.markup_color_section, R.drawable.ic_markup_palette))
+            if (annotationOverlayView.activeCustomBrush != null)
+                add(MarkupSubtoolItem(MarkupSubtool.ADVANCED, R.string.markup_advanced, R.drawable.ic_adjust))
+        }
+        MarkupTool.SHAPES -> listOf(
+            MarkupSubtoolItem(MarkupSubtool.SHAPE, R.string.markup_shape_section, R.drawable.ic_markup_shapes),
+            MarkupSubtoolItem(MarkupSubtool.STYLE, R.string.markup_style_section, R.drawable.ic_markup_fill),
+            MarkupSubtoolItem(MarkupSubtool.WIDTH, R.string.editor_markup_stroke_width, R.drawable.ic_markup_width),
+            MarkupSubtoolItem(MarkupSubtool.COLOR, R.string.markup_color_section, R.drawable.ic_markup_palette),
+        )
+        MarkupTool.TEXT -> listOf(
+            MarkupSubtoolItem(MarkupSubtool.TEXT, R.string.markup_text_section, R.drawable.ic_markup_text),
+            MarkupSubtoolItem(MarkupSubtool.COLOR, R.string.markup_color_section, R.drawable.ic_markup_palette),
+            MarkupSubtoolItem(MarkupSubtool.BACKGROUND, R.string.editor_markup_text_bg, R.drawable.ic_markup_fill),
+        )
+        MarkupTool.MOSAIC -> listOf(
+            MarkupSubtoolItem(MarkupSubtool.EFFECT, R.string.markup_effect_section, R.drawable.ic_markup_mosaic),
+            MarkupSubtoolItem(MarkupSubtool.WIDTH, R.string.editor_markup_mosaic_brush, R.drawable.ic_markup_width),
+        )
+        MarkupTool.STICKER -> listOf(
+            MarkupSubtoolItem(MarkupSubtool.STICKER_PRESET, R.string.markup_preset_stickers, R.drawable.ic_markup_sticker),
+            MarkupSubtoolItem(MarkupSubtool.STICKER_CUSTOM, R.string.markup_custom_stickers, R.drawable.ic_image),
+            MarkupSubtoolItem(MarkupSubtool.STICKER_IMPORT, R.string.markup_import_section, R.drawable.ic_markup_import),
+        )
+        MarkupTool.NONE -> emptyList()
+    }
+
     private fun showMarkupToolOptions(tool: MarkupTool) {
+        // A late import callback must not replace the dock for a different tool.
+        if (tool != MarkupTool.NONE && (activeCategory != EditorCategory.MARKUP ||
+                annotationOverlayView.activeTool != tool)) return
+        val items = if (activeCategory == EditorCategory.MARKUP) markupSubtools(tool) else emptyList()
+        val current = markupSubtoolByTool[tool]?.takeIf { selected -> items.any { it.key == selected } }
+            ?: items.firstOrNull()?.key
+        if (current != null) markupSubtoolByTool[tool] = current
+        markupSubtoolsScroll.isVisible = items.isNotEmpty()
+        markupOptionsScroll.isVisible = items.isNotEmpty()
         markupOptionsContent.removeAllViews()
-        markupOptionsScroll.isVisible = activeCategory == EditorCategory.MARKUP && tool != MarkupTool.NONE
+        markupSubtoolsRow.removeAllViews()
+        if (current == null) return
+
+        markupSubtoolsRow.background = markupBackground(false)
+        val density = resources.displayMetrics.density
+        items.forEach { item ->
+            val selected = item.key == current
+            markupSubtoolsRow.addView(ImageView(this).apply {
+                val size = (48 * density).toInt()
+                layoutParams = LinearLayout.LayoutParams(size, size)
+                setPadding((12 * density).toInt(), (12 * density).toInt(), (12 * density).toInt(), (12 * density).toInt())
+                setImageResource(item.icon)
+                imageTintList = ColorStateList.valueOf(MaterialColors.getColor(this,
+                    if (selected) com.google.android.material.R.attr.colorOnPrimaryContainer
+                    else com.google.android.material.R.attr.colorOnSurfaceVariant))
+                if (selected) background = markupBackground(true)
+                contentDescription = getString(item.label)
+                isFocusable = true
+                isClickable = true
+                isSelected = selected
+                setOnClickListener {
+                    markupSubtoolByTool[tool] = item.key
+                    showMarkupToolOptions(tool)
+                }
+            })
+        }
         when (tool) {
-            MarkupTool.DOODLE -> {
-                addMarkupSection(R.string.markup_brush_section, true) { addDoodleBrushTypeSelector() }
-                addMarkupSection(R.string.editor_markup_stroke_width, false, showTitle = false) { addStrokeWidthSlider() }
-                val custom = annotationOverlayView.activeCustomBrush
-                if (custom == null || custom.colorMode != BrushColorMode.ORIGINAL) {
-                    addMarkupSection(R.string.markup_color_section, true) { addColorPalette() }
-                } else {
-                    addMarkupSection(R.string.markup_color_section, false) {
+            MarkupTool.DOODLE -> when (current) {
+                MarkupSubtool.BRUSH -> addMarkupSection(R.string.markup_brush_section, true, false) { addDoodleBrushTypeSelector() }
+                MarkupSubtool.WIDTH -> addMarkupSection(R.string.editor_markup_stroke_width, false, false) { addStrokeWidthSlider() }
+                MarkupSubtool.COLOR -> {
+                    val custom = annotationOverlayView.activeCustomBrush
+                    if (custom == null || custom.colorMode != BrushColorMode.ORIGINAL)
+                        addMarkupSection(R.string.markup_color_section, true, false) { addColorPalette() }
+                    else addMarkupSection(R.string.markup_color_section, false, false) {
                         markupOptionsContent.addView(TextView(this).apply {
                             text = getString(R.string.editor_brush_original_hint)
                             setTextColor(MaterialColors.getColor(this, com.google.android.material.R.attr.colorOnSurfaceVariant))
                         })
                     }
                 }
-                if (custom != null) {
-                    val toggle = MaterialButton(this).apply {
-                        text = getString(R.string.markup_advanced)
-                        setAllCaps(false)
-                        setOnClickListener { markupAdvancedExpanded = !markupAdvancedExpanded; showMarkupToolOptions(tool) }
-                    }
-                    markupOptionsContent.addView(toggle)
-                    if (markupAdvancedExpanded) addMarkupSection(R.string.markup_advanced, false, showTitle = false) { addCustomBrushControls(custom) }
+                MarkupSubtool.ADVANCED -> annotationOverlayView.activeCustomBrush?.let { brush ->
+                    addMarkupSection(R.string.markup_advanced, false, false) { addCustomBrushControls(brush) }
                 }
+                else -> Unit
             }
-            MarkupTool.SHAPES -> {
-                addMarkupSection(R.string.markup_shape_section, true, showTitle = false) { addShapeTypeSelector() }
-                addMarkupSection(R.string.markup_style_section, true) { addShapeStyleSelector() }
-                addMarkupSection(R.string.editor_markup_stroke_width, false, showTitle = false) { addStrokeWidthSlider() }
-                addMarkupSection(R.string.markup_color_section, true) {
-                    addColorPalette { c ->
-                        annotationOverlayView.editAnnotation { annotationOverlayView.activeShape?.color = c }
-                    }
+            MarkupTool.SHAPES -> when (current) {
+                MarkupSubtool.SHAPE -> addMarkupSection(R.string.markup_shape_section, true, false) { addShapeTypeSelector() }
+                MarkupSubtool.STYLE -> addMarkupSection(R.string.markup_style_section, true, false) { addShapeStyleSelector() }
+                MarkupSubtool.WIDTH -> addMarkupSection(R.string.editor_markup_stroke_width, false, false) { addStrokeWidthSlider() }
+                MarkupSubtool.COLOR -> addMarkupSection(R.string.markup_color_section, true, false) {
+                    addColorPalette { c -> annotationOverlayView.editAnnotation { annotationOverlayView.activeShape?.color = c } }
                 }
+                else -> Unit
             }
-            MarkupTool.TEXT -> {
-                addMarkupSection(R.string.markup_text_section, true) {
+            MarkupTool.TEXT -> when (current) {
+                MarkupSubtool.TEXT -> addMarkupSection(R.string.markup_text_section, true, false) {
                     markupOptionsContent.addView(MaterialButton(this).apply {
                         text = getString(R.string.markup_text_action)
+                        minHeight = (48 * density).toInt()
                         setAllCaps(false)
                         setOnClickListener {
                             if (annotationOverlayView.activeText == null) {
@@ -1425,37 +1500,38 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                         }
                     })
                 }
-                addMarkupSection(R.string.markup_style_section, true) {
+                MarkupSubtool.BACKGROUND -> addMarkupSection(R.string.editor_markup_text_bg, true, false) {
                     markupOptionsContent.addView(Chip(this).apply {
-                        minHeight = (48 * resources.displayMetrics.density).toInt()
+                        minHeight = (48 * density).toInt()
                         text = getString(R.string.editor_markup_text_bg)
                         isCheckable = true
                         isChecked = annotationOverlayView.activeText?.hasBackgroundPill
                             ?: annotationOverlayView.hasTextBackgroundPill
                         setOnCheckedChangeListener { _, checked ->
                             annotationOverlayView.hasTextBackgroundPill = checked
-                            annotationOverlayView.editAnnotation {
-                                annotationOverlayView.activeText?.hasBackgroundPill = checked
-                            }
+                            annotationOverlayView.editAnnotation { annotationOverlayView.activeText?.hasBackgroundPill = checked }
                         }
                     })
                 }
-                addMarkupSection(R.string.markup_color_section, true) {
+                MarkupSubtool.COLOR -> addMarkupSection(R.string.markup_color_section, true, false) {
                     addColorPalette { c -> annotationOverlayView.editAnnotation { annotationOverlayView.activeText?.color = c } }
                 }
+                else -> Unit
             }
-            MarkupTool.MOSAIC -> {
-                addMarkupSection(R.string.markup_effect_section, true) { addMosaicEffectSelector() }
-                addMarkupSection(R.string.editor_markup_mosaic_brush, false, showTitle = false) { addMosaicBrushSlider() }
+            MarkupTool.MOSAIC -> when (current) {
+                MarkupSubtool.EFFECT -> addMarkupSection(R.string.markup_effect_section, true, false) { addMosaicEffectSelector() }
+                MarkupSubtool.WIDTH -> addMarkupSection(R.string.editor_markup_mosaic_brush, false, false) { addMosaicBrushSlider() }
+                else -> Unit
             }
-            MarkupTool.STICKER -> {
-                addMarkupSection(R.string.markup_preset_stickers, true) { addStickerSelector(0) }
-                addMarkupSection(R.string.markup_custom_stickers, true) { addStickerSelector(1) }
-                addMarkupSection(R.string.markup_import_section, true) { addStickerSelector(2) }
+            MarkupTool.STICKER -> when (current) {
+                MarkupSubtool.STICKER_PRESET -> addMarkupSection(R.string.markup_preset_stickers, true, false) { addStickerSelector(0) }
+                MarkupSubtool.STICKER_CUSTOM -> addMarkupSection(R.string.markup_custom_stickers, true, false) { addStickerSelector(1) }
+                MarkupSubtool.STICKER_IMPORT -> addMarkupSection(R.string.markup_import_section, true, false) { addStickerSelector(2) }
+                else -> Unit
             }
             MarkupTool.NONE -> Unit
         }
-        if (activeCategory == EditorCategory.MARKUP) updateMarkupPanelHeight()
+        updateMarkupPanelHeight()
     }
 
     private fun addDoodleBrushTypeSelector() {
@@ -2079,8 +2155,11 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         }
 
         val cards = mutableListOf<Pair<Int, MaterialCardView>>()
-        val selectedColor = annotationOverlayView.activeShape?.color
-            ?: annotationOverlayView.activeText?.color ?: annotationOverlayView.activeColor
+        val selectedColor = when (annotationOverlayView.activeTool) {
+            MarkupTool.SHAPES -> annotationOverlayView.activeShape?.color
+            MarkupTool.TEXT -> annotationOverlayView.activeText?.color
+            else -> null
+        } ?: annotationOverlayView.activeColor
 
         colors.forEach { (c, label) ->
             val card = MaterialCardView(this).apply {

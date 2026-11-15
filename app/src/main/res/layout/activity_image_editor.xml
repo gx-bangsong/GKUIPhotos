@@ -481,6 +481,55 @@
             android:layout_height="0.5dp"
             android:background="#2A2A2A" />
 
+        <!-- Fixed Markup history controls, separate from the icon-only subtool row. -->
+        <LinearLayout
+            android:id="@+id/markupHistoryBar"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:gravity="center"
+            android:orientation="horizontal"
+            android:visibility="gone">
+                <ImageView
+                    android:id="@+id/subEditUndoButton"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:padding="12dp"
+                    android:src="@drawable/ic_undo"
+                    android:contentDescription="@string/editor_markup_undo"
+                    app:tint="@android:color/white" />
+
+                <ImageView
+                    android:id="@+id/subEditRedoButton"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:padding="12dp"
+                    android:scaleX="-1"
+                    android:src="@drawable/ic_undo"
+                    android:contentDescription="@string/editor_redo"
+                    android:visibility="gone"
+                    app:tint="@android:color/white" />
+
+                <ImageView
+                    android:id="@+id/subEditClearButton"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:padding="12dp"
+                    android:src="@drawable/ic_delete_sweep"
+                    android:contentDescription="@string/markup_clear_annotations"
+                    android:visibility="gone"
+                    app:tint="@android:color/white" />
+
+        </LinearLayout>
+
         <!-- Tier 3: Bottom Action Bar -->
         <FrameLayout
             android:id="@+id/actionBarContainer"
@@ -557,53 +606,33 @@
                     android:textSize="14sp" />
 
                 <View
+                    android:id="@+id/subEditSpacer"
                     android:layout_width="0dp"
                     android:layout_height="1dp"
                     android:layout_weight="1" />
 
-                <ImageView
-                    android:id="@+id/subEditUndoButton"
-                    android:layout_width="48dp"
-                    android:layout_height="48dp"
-                    android:background="?attr/selectableItemBackgroundBorderless"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:padding="12dp"
-                    android:src="@drawable/ic_undo"
-                    android:contentDescription="@string/editor_markup_undo"
-                    app:tint="@android:color/white" />
-
-                <ImageView
-                    android:id="@+id/subEditRedoButton"
-                    android:layout_width="48dp"
-                    android:layout_height="48dp"
-                    android:background="?attr/selectableItemBackgroundBorderless"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:padding="12dp"
-                    android:scaleX="-1"
-                    android:src="@drawable/ic_undo"
-                    android:contentDescription="@string/editor_redo"
-                    android:visibility="gone"
-                    app:tint="@android:color/white" />
-
-                <ImageView
-                    android:id="@+id/subEditClearButton"
-                    android:layout_width="48dp"
-                    android:layout_height="48dp"
-                    android:background="?attr/selectableItemBackgroundBorderless"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:padding="12dp"
-                    android:src="@drawable/ic_delete_sweep"
-                    android:contentDescription="@string/markup_clear_annotations"
-                    android:visibility="gone"
-                    app:tint="@android:color/white" />
-
-                <View
+                <!-- Fixed middle switcher; its content scrolls only on very narrow windows. -->
+                <HorizontalScrollView
+                    android:id="@+id/markupSubtoolsScroll"
                     android:layout_width="0dp"
-                    android:layout_height="1dp"
-                    android:layout_weight="1" />
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:fillViewport="true"
+                    android:scrollbars="none"
+                    android:visibility="gone">
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:gravity="center"
+                        android:orientation="horizontal">
+                        <LinearLayout
+                            android:id="@+id/markupSubtoolsRow"
+                            android:layout_width="wrap_content"
+                            android:layout_height="48dp"
+                            android:gravity="center"
+                            android:orientation="horizontal" />
+                    </LinearLayout>
+                </HorizontalScrollView>
 
                 <TextView
                     android:id="@+id/subEditDoneButton"
@@ -618,6 +647,7 @@
                     android:paddingHorizontal="8dp"
                     android:paddingVertical="10dp"
                     android:text="@string/editor_done"
+                    android:contentDescription="@string/editor_done"
                     android:textColor="#001D35"
                     android:textSize="14sp"
                     android:textStyle="bold" />
