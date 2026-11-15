@@ -44,7 +44,7 @@
         android:layout_height="match_parent"
         android:visibility="gone" />
 
-    <androidx.recyclerview.widget.RecyclerView
+    <org.lineageos.glimpse.ui.recyclerview.SelectionGestureRecyclerView
         android:id="@+id/recyclerView"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
@@ -99,7 +99,6 @@
         android:id="@+id/selectionSheet"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_gravity="bottom"
         android:visibility="gone"
         app:cardBackgroundColor="?attr/colorSurfaceContainer"
         app:cardCornerRadius="24dp"

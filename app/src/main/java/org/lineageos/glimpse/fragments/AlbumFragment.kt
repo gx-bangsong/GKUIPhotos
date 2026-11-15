@@ -76,6 +76,7 @@ import org.lineageos.glimpse.models.RequestStatus
 import org.lineageos.glimpse.ui.dialogs.ImageToolboxBottomSheet
 import org.lineageos.glimpse.ui.dialogs.PrivacyPinDialog
 import org.lineageos.glimpse.ui.recyclerview.ThumbnailAdapter
+import org.lineageos.glimpse.ui.recyclerview.SelectionGestureRecyclerView
 import org.lineageos.glimpse.ui.recyclerview.ThumbnailItemDetailsLookup
 import org.lineageos.glimpse.ui.recyclerview.ThumbnailLayoutManager
 import org.lineageos.glimpse.utils.MediaDialogsUtils
@@ -136,6 +137,7 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
         }
 
     private var selectionActive = false
+    private var pendingSelectionStart = false
     private var selectionNavigationBar: View? = null
     private var navigationBarWasVisible = false
     private var selectionParentAppBar: View? = null
@@ -521,6 +523,12 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
             requireContext(), thumbnailAdapter
         )
         recyclerView.adapter = thumbnailAdapter
+        (recyclerView as SelectionGestureRecyclerView).onGestureFinished = {
+            if (pendingSelectionStart) {
+                pendingSelectionStart = false
+                updateSelection()
+            }
+        }
 
         thumbnailAdapter.setOnItemSelected { media ->
             if (intentsViewModel.isPicking.value) {
@@ -596,6 +604,8 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
     }
 
     override fun onDestroyView() {
+        pendingSelectionStart = false
+        (recyclerView as SelectionGestureRecyclerView).onGestureFinished = null
         endSelectionMode()
 
         thumbnailAdapter.selectionTracker = null
@@ -719,6 +729,13 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
 
     private fun updateSelection() {
         val count = selectionTracker?.selection?.count() ?: 0
+        // Entering selection hides app chrome and resizes the grid. Do not move
+        // the cells underneath the finger that initiated the long press.
+        if (count > 0 && !selectionActive && (recyclerView as SelectionGestureRecyclerView).gestureInProgress) {
+            pendingSelectionStart = true
+            return
+        }
+        pendingSelectionStart = false
         viewModel.setInSelectionMode(count > 0)
         if (count == 0) {
             endSelectionMode()
@@ -796,11 +813,19 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
         }
         selectionMore.isVisible = items.size > 3
         selectionSheetHint.isVisible = items.size > 3
-        // The fallback is positive even before the first layout of a formerly GONE view.
+        // Give the formerly GONE sheet a nonzero initial peek, then recalculate
+        // after its newly populated children are measured. The behavior owns the
+        // vertical placement; layout_gravity must not add another bottom offset.
         sheetBehavior.peekHeight = (128 * density).toInt()
         selectionSheet.isVisible = true
-        sheetBehavior.state = BottomSheetBehavior.STATE_COLLAPSED
-        selectionSheet.doOnNextLayout { updateSelectionPeekHeight(); updateSelectionGridPadding() }
+        selectionPrimary.doOnNextLayout {
+            if (selectionActive && selectionSheet.isVisible) {
+                updateSelectionPeekHeight()
+                sheetBehavior.state = BottomSheetBehavior.STATE_COLLAPSED
+                updateSelectionGridPadding()
+            }
+        }
+        selectionSheet.requestLayout()
         refreshCollageAvailability()
     }
 

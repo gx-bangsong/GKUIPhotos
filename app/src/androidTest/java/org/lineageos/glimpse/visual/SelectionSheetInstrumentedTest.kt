@@ -136,6 +136,7 @@ class SelectionSheetInstrumentedTest {
         var target = ""
         var x = 0f
         var y = 0f
+        var hitBeforeUp = ""
         lateinit var observer: SelectionTracker.SelectionObserver<Media>
         fun snapshot(stage: String) {
             instrumentation.runOnMainSync {
@@ -144,6 +145,7 @@ class SelectionSheetInstrumentedTest {
                 val hit = grid.findChildViewUnder(x - gridPos[0], y - gridPos[1])
                 val holder = hit?.let { grid.getChildViewHolder(it) }
                 val hitKey = (holder as? ThumbnailAdapter.ThumbnailViewHolder)?.itemDetails?.selectionKey?.let(::fixtureKey) ?: "no-fixture"
+                if (stage == "long-press-before-up") hitBeforeUp = hitKey
                 line("$stage hitView=${hit?.javaClass?.simpleName} position=${holder?.bindingAdapterPosition} key=$hitKey gridPaddingTop=${grid.paddingTop} gridPaddingBottom=${grid.paddingBottom}")
                 val sheet = requiredView("selectionSheet")
                 val parent = sheet.parent as View
@@ -208,15 +210,97 @@ class SelectionSheetInstrumentedTest {
             requireNotNull(context.contentResolver.openOutputStream(uri)).use { it.write(trace.toString().toByteArray()) }
         }
         instrumentation.runOnMainSync {
+            assertEquals("Grid moved under the initiating finger", target, hitBeforeUp)
             assertEquals("Stationary long press must select only its fixture key", listOf(target), tracker.selection.map(::fixtureKey).sorted())
+            val sheet = requiredView("selectionSheet")
+            assertTrue("Sheet is not visible after initial layout", sheet.isShown && sheet.getGlobalVisibleRect(Rect()))
+            assertEquals(BottomSheetBehavior.STATE_COLLAPSED, BottomSheetBehavior.from(sheet).state)
+            assertTrue("Sheet peek is zero after layout", BottomSheetBehavior.from(sheet).peekHeight > 0)
+        }
+    }
+
+    @Test fun selectionSheetNavigationInsets() {
+        val overlays = device.executeShellCommand("cmd overlay list --user current")
+        val enabled = overlays.lineSequence().map { it.trim() }
+            .firstOrNull { it.startsWith("[x]") && it.contains("com.android.internal.systemui.navbar.") }
+            ?.substringAfter("[x]")?.trim()
+        assertNotNull("Cannot determine original navigation overlay", enabled)
+        val modes = listOf("gestural" to "com.android.internal.systemui.navbar.gestural",
+            "three-button" to "com.android.internal.systemui.navbar.threebutton")
+        try {
+            for ((mode, overlay) in modes) {
+                assertTrue("Navigation overlay missing: $mode", overlays.contains(overlay))
+                device.executeShellCommand("cmd overlay enable-exclusive --category --user current $overlay")
+                device.waitForIdle(); Thread.sleep(500)
+                val current = device.executeShellCommand("cmd overlay list --user current")
+                assertTrue("Navigation overlay not enabled: $mode", current.lineSequence().any { it.trim() == "[x] $overlay" })
+                val grid = requiredView("recyclerView") as RecyclerView
+                var x = 0f; var y = 0f
+                instrumentation.runOnMainSync {
+                    val holder = (0 until grid.childCount).mapNotNull { i ->
+                        grid.getChildViewHolder(grid.getChildAt(i)) as? ThumbnailAdapter.ThumbnailViewHolder
+                    }.first { images.contains(it.itemDetails.selectionKey?.uri) }
+                    val rect = Rect(); assertTrue(holder.itemView.getGlobalVisibleRect(rect))
+                    x = rect.exactCenterX(); y = rect.exactCenterY()
+                }
+                val down = SystemClock.uptimeMillis()
+                fun inject(action: Int) {
+                    val properties = arrayOf(MotionEvent.PointerProperties().apply { id = 0; toolType = MotionEvent.TOOL_TYPE_FINGER })
+                    val coords = arrayOf(MotionEvent.PointerCoords().apply { this.x = x; this.y = y; pressure = 1f; size = 1f })
+                    val event = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, 1, properties, coords,
+                        0, 0, 1f, 1f, 0, 0, android.view.InputDevice.SOURCE_TOUCHSCREEN, 0)
+                    try { assertTrue(instrumentation.uiAutomation.injectInputEvent(event, true)) } finally { event.recycle() }
+                }
+                inject(MotionEvent.ACTION_DOWN); Thread.sleep(ViewConfiguration.getLongPressTimeout().toLong() + 250L)
+                inject(MotionEvent.ACTION_UP); device.waitForIdle()
+                instrumentation.runOnMainSync {
+                    val sheet = requiredView("selectionSheet")
+                    val nav = requireNotNull(ViewCompat.getRootWindowInsets(sheet)).getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
+                    val rect = Rect()
+                    assertTrue("$mode sheet not visible", sheet.isShown && sheet.getGlobalVisibleRect(rect))
+                    assertEquals("$mode inset duplicated or missing", nav, (sheet.layoutParams as ViewGroup.MarginLayoutParams).bottomMargin)
+                    assertEquals("$mode content has extra inset", 0, requiredView("selectionSheetContent").paddingBottom)
+                    assertTrue("$mode sheet overlaps navigation", rect.bottom <= sheet.rootView.height - nav)
+                }
+                capture("selection-sheet-nav-$mode")
+                device.findObject(By.res(context.packageName, "selectionCancel"))!!.click(); device.waitForIdle()
+            }
+        } finally {
+            if (enabled != null) device.executeShellCommand("cmd overlay enable-exclusive --category --user current $enabled")
+            device.waitForIdle()
         }
     }
 
     @Test fun selectionSheetOpensUpdatesExpandsAndCloses() {
-        val thumbnails = device.findObjects(By.res(context.packageName, "thumbnailImageView"))
-        assertTrue("Need two visible photos", thumbnails.size >= 2)
-        thumbnails[0].longClick()
+        val grid = requiredView("recyclerView") as RecyclerView
+        lateinit var tracker: SelectionTracker<Media>
+        lateinit var firstKey: Media
+        var firstX = 0f; var firstY = 0f
+        instrumentation.runOnMainSync {
+            tracker = requireNotNull((grid.adapter as ThumbnailAdapter).selectionTracker)
+            val holder = (0 until grid.childCount).mapNotNull { i ->
+                grid.getChildViewHolder(grid.getChildAt(i)) as? ThumbnailAdapter.ThumbnailViewHolder
+            }.first { images.contains(it.itemDetails.selectionKey?.uri) }
+            firstKey = requireNotNull(holder.itemDetails.selectionKey)
+            val bounds = Rect()
+            assertTrue("Fixture must be fully visible", holder.itemView.getGlobalVisibleRect(bounds) &&
+                bounds.width() == holder.itemView.width && bounds.height() == holder.itemView.height)
+            firstX = bounds.exactCenterX(); firstY = bounds.exactCenterY()
+            assertEquals("Selection not initially empty", 0, tracker.selection.count())
+        }
+        val downTime = SystemClock.uptimeMillis()
+        fun finger(action: Int) {
+            val properties = arrayOf(MotionEvent.PointerProperties().apply { id = 0; toolType = MotionEvent.TOOL_TYPE_FINGER })
+            val coords = arrayOf(MotionEvent.PointerCoords().apply { x = firstX; y = firstY; pressure = 1f; size = 1f })
+            val event = MotionEvent.obtain(downTime, SystemClock.uptimeMillis(), action, 1, properties, coords,
+                0, 0, 1f, 1f, 0, 0, android.view.InputDevice.SOURCE_TOUCHSCREEN, 0)
+            try { assertTrue(instrumentation.uiAutomation.injectInputEvent(event, true)) } finally { event.recycle() }
+        }
+        finger(MotionEvent.ACTION_DOWN)
+        Thread.sleep(ViewConfiguration.getLongPressTimeout().toLong() + 250L)
+        finger(MotionEvent.ACTION_UP)
         assertTrue("Selection pill did not appear", device.wait(Until.hasObject(By.res(context.packageName, "selectionPill")), 10000))
+        instrumentation.runOnMainSync { assertEquals("Wrong first selection key", listOf(firstKey), tracker.selection.toList()) }
         device.waitForIdle()
         // Capture even when an assertion fails so the actual interaction can be diagnosed.
         capture("selection-sheet-initial")
@@ -273,11 +357,22 @@ class SelectionSheetInstrumentedTest {
         }
         screenshot.recycle()
         capture("selection-sheet-one")
-        val afterFirst = device.findObjects(By.res(context.packageName, "thumbnailImageView"))
-        assertTrue(afterFirst.size >= 2)
-        afterFirst[1].click()
+        lateinit var secondKey: Media
+        var secondX = 0; var secondY = 0
+        instrumentation.runOnMainSync {
+            val holder = (0 until grid.childCount).mapNotNull { i ->
+                grid.getChildViewHolder(grid.getChildAt(i)) as? ThumbnailAdapter.ThumbnailViewHolder
+            }.first { it.itemDetails.selectionKey?.let { key -> key != firstKey && images.contains(key.uri) } == true }
+            secondKey = requireNotNull(holder.itemDetails.selectionKey)
+            val bounds = Rect()
+            assertTrue("Second fixture must be fully visible", holder.itemView.getGlobalVisibleRect(bounds) &&
+                bounds.width() == holder.itemView.width && bounds.height() == holder.itemView.height)
+            secondX = bounds.centerX(); secondY = bounds.centerY()
+        }
+        assertTrue("Second fixture tap failed", device.click(secondX, secondY))
         device.waitForIdle()
         instrumentation.runOnMainSync {
+            assertEquals("Wrong two selection keys", setOf(firstKey, secondKey), tracker.selection.toSet())
             assertEquals(context.resources.getQuantityString(R.plurals.thumbnail_selection_count, 2, 2),
                 (requiredView("selectionCount") as TextView).text.toString())
             assertTrue("Sheet disappeared after another selection", requiredView("selectionSheet").isShown)
@@ -352,6 +447,7 @@ class SelectionSheetInstrumentedTest {
         instrumentation.runOnMainSync {
             assertTrue("Sheet still visible after cancel", !requiredView("selectionSheet").isShown)
             assertTrue("Selection toolbar still visible after cancel", !requiredView("selectionTopBar").isShown)
+            assertTrue("Ordinary navigation not restored", requiredView("navigationBarView").isShown)
         }
         capture("selection-sheet-closed")
     }
