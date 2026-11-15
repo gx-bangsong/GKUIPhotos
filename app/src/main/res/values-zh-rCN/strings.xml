@@ -544,4 +544,5 @@
     <string name="markup_align_right">右对齐</string>
     <string name="markup_font_import">导入字体</string>
     <string name="markup_font_import_failed">无法导入字体。请使用小于 8 MB 且包含基本拉丁字符的有效 TTF 或 OTF。</string>
+    <string name="markup_font_option">字体 %1$s</string>
 </resources>

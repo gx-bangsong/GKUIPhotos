@@ -1524,6 +1524,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                         val face = MarkupFonts.resolve(id)
                         row.addView(Chip(this).apply {
                             text = getString(R.string.markup_font_sample)
+                            contentDescription = getString(R.string.markup_font_option, id.take(12))
                             typeface = face
                             minHeight = (48 * density).toInt()
                             isCheckable = true

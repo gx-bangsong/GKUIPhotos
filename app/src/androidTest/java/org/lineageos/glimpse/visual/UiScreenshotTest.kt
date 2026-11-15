@@ -778,9 +778,52 @@ class UiScreenshotTest {
         val systemFont = File("/system/fonts/Roboto-Regular.ttf")
         assertTrue("Expected emulator TTF is missing", systemFont.isFile)
         val valid = File(cache, "misnamed.otf").apply { systemFont.copyTo(this, overwrite = true) }
-        val id = requireNotNull(importFile(valid)) { "System TTF rejected" }
-        assertTrue("ID is not stable", id.matches(Regex("[0-9a-f]{64}")))
-        assertEquals(id, importFile(valid))
+        val ttfId = requireNotNull(importFile(valid)) { "System TTF rejected" }
+        assertTrue("TTF ID is not stable", ttfId.matches(Regex("[0-9a-f]{64}")))
+        assertEquals(ttfId, importFile(valid))
+        val otf = File(context.getExternalFilesDir(null), "markup-test-source-sans.otf")
+        assertTrue("Pinned OFL OTF fixture is missing", otf.isFile)
+        assertTrue("OTF fixture does not have an OTTO signature", otf.inputStream().use {
+            val bytes = ByteArray(4); it.read(bytes) == 4 && String(bytes, Charsets.US_ASCII) == "OTTO"
+        })
+        // Return a real content URI through the existing OpenDocument contract;
+        // the monitor substitutes only the picker result, not the import path.
+        val otfValues = ContentValues().apply {
+            put(MediaStore.Downloads.DISPLAY_NAME, "markup-fixture.otf")
+            put(MediaStore.Downloads.MIME_TYPE, "font/otf")
+            put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/GlimpseUiTest")
+        }
+        val fontUri = requireNotNull(context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, otfValues))
+        try {
+            context.contentResolver.openOutputStream(fontUri)!!.use { otf.inputStream().use { input -> input.copyTo(it) } }
+            val fontPage = context.resources.getIdentifier("markup_font", "string", context.packageName)
+            val importLabel = context.resources.getIdentifier("markup_font_import", "string", context.packageName)
+            assertTrue(fontPage != 0 && importLabel != 0)
+            subtool(fontPage)
+            val importButton = device.wait(Until.findObject(By.text(context.getString(importLabel))), 5000)
+            assertNotNull("Import entry unavailable", importButton)
+            val filter = IntentFilter(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE); addDataType("*/*")
+            }
+            val cancelled = instrumentation.addMonitor(filter, Instrumentation.ActivityResult(Activity.RESULT_CANCELED, null), true)
+            val before = (fonts.getMethod("ids").invoke(instance) as List<*>).toSet()
+            importButton!!.click(); instrumentation.waitForIdleSync(); instrumentation.removeMonitor(cancelled)
+            assertEquals("Cancelled picker changed font library", before, (fonts.getMethod("ids").invoke(instance) as List<*>).toSet())
+            val accepted = instrumentation.addMonitor(filter, Instrumentation.ActivityResult(Activity.RESULT_OK, Intent().setData(fontUri)), true)
+            importButton.click(); instrumentation.waitForIdleSync(); instrumentation.removeMonitor(accepted)
+            val id = MessageDigest.getInstance("SHA-256").digest(otf.readBytes()).joinToString("") { "%02x".format(it) }
+            val deadline = System.currentTimeMillis() + 15000
+            while (id !in (fonts.getMethod("ids").invoke(instance) as List<*>) && System.currentTimeMillis() < deadline) Thread.sleep(100)
+            assertTrue("SAF OTF import did not persist", id in (fonts.getMethod("ids").invoke(instance) as List<*>))
+            assertTrue("Different fonts have the same ID", id != ttfId)
+            assertEquals("OTF ID is not stable", id, importFile(otf))
+            capture("markup-text-imported-fonts")
+        } finally {
+            context.contentResolver.delete(fontUri, null, null)
+        }
+        val id = MessageDigest.getInstance("SHA-256").digest(otf.readBytes()).joinToString("") { "%02x".format(it) }
+        val truncated = File(cache, "truncated.otf").apply { writeBytes(otf.readBytes().copyOf(100)) }
+        assertEquals("Truncated OTF accepted", null, importFile(truncated))
         val overlay = activity!!.findViewById<AnnotationOverlayView>(R.id.annotationOverlayView)
         val crop = activity!!.findViewById<CropImageView>(R.id.cropImageView)
         instrumentation.runOnMainSync {
@@ -793,6 +836,13 @@ class UiScreenshotTest {
             assertEquals("sans", field.get(item))
             assertTrue("Font redo failed", overlay.javaClass.getMethod("redo").invoke(overlay) as Boolean)
             assertEquals(id, field.get(item))
+            val editText = overlay.javaClass.getMethod("editText", item.javaClass, String::class.java)
+            editText.invoke(overlay, item, "Changed 中文\nsecond line")
+            assertEquals("Changed 中文\nsecond line", item.text)
+            assertTrue("Text undo failed", overlay.undo())
+            assertEquals("Font 中文", item.text)
+            assertTrue("Text redo failed", overlay.javaClass.getMethod("redo").invoke(overlay) as Boolean)
+            assertEquals("Changed 中文\nsecond line", item.text)
         }
         val monitor = instrumentation.addMonitor(ImageEditorActivity::class.java.name, null, false)
         instrumentation.runOnMainSync { activity!!.recreate() }
@@ -807,8 +857,135 @@ class UiScreenshotTest {
             val field = item.javaClass.getDeclaredField("fontId").apply { isAccessible = true }
             assertEquals("Font ID lost during recreation", id, field.get(item))
             assertTrue("Imported font file missing", File(context.filesDir, "markup-fonts/$id.font").isFile)
+            val ids = fonts.getMethod("ids").invoke(instance) as List<*>
+            assertTrue("Imported OTF is not selectable after recreation", ids.contains(id))
         }
+        // Re-enter the editor using window input and select the retained object.
+        val deadline = System.currentTimeMillis() + 20000
+        while (recreated.findViewById<CropImageView>(R.id.cropImageView).getDisplayBitmap() == null &&
+            System.currentTimeMillis() < deadline) Thread.sleep(200)
+        var markup = device.findObject(By.text(context.getString(R.string.editor_tab_markup)))
+        if (markup == null) {
+            val tabs = device.findObject(By.res(context.packageName, "categoryTabsScroll"))!!
+            val r = tabs.visibleBounds
+            device.swipe(r.right - 15, r.centerY(), r.left + 15, r.centerY(), 25)
+            markup = device.findObject(By.text(context.getString(R.string.editor_tab_markup)))
+        }
+        assertNotNull("Markup category missing after recreation", markup)
+        markup!!.click(); tool(R.string.editor_markup_text)
+        val point = FloatArray(2)
+        instrumentation.runOnMainSync {
+            val item = restored.annotations.filterIsInstance<org.lineageos.glimpse.ui.views.AnnotationItem.Text>().single()
+            point[0] = item.centerX; point[1] = item.centerY
+            @Suppress("UNCHECKED_CAST")
+            val provider = restored.javaClass.getMethod("getImageMatrixProvider").invoke(restored) as () -> android.graphics.Matrix
+            provider().mapPoints(point)
+            val screen = IntArray(2); restored.getLocationOnScreen(screen)
+            point[0] += screen[0]; point[1] += screen[1]
+        }
+        device.click(point[0].toInt(), point[1].toInt()); device.waitForIdle()
+        instrumentation.runOnMainSync { assertNotNull("Retained text could not be selected", restored.activeText) }
+        subtool(context.resources.getIdentifier("markup_font", "string", context.packageName))
+        val optionLabel = context.resources.getIdentifier("markup_font_option", "string", context.packageName)
+        val optionDescription = context.getString(optionLabel, id.take(12))
+        var chip = device.findObject(By.desc(optionDescription))
+        if (chip == null) {
+            val options = device.findObject(By.res(context.packageName, "markupOptionsScroll"))!!
+            val r = options.visibleBounds
+            device.swipe(r.right - 10, r.centerY(), r.left + 10, r.centerY(), 20)
+            chip = device.findObject(By.desc(optionDescription))
+        }
+        assertNotNull("Retained imported OTF is not visible in font choices", chip)
+        chip!!.click(); device.waitForIdle()
+        instrumentation.runOnMainSync {
+            val item = requireNotNull(restored.activeText)
+            val field = item.javaClass.getDeclaredField("fontId").apply { isAccessible = true }
+            assertEquals("Selected retained font changed", id, field.get(item))
+        }
+        capture("markup-text-imported-recreated")
         cache.deleteRecursively()
+    }
+
+    @Test fun markupImportedFontCropAndSavedOutput() {
+        assumeTrue("Text export scenario is candidate-only", isCandidate())
+        val collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+        fun outputs(): Set<Uri> {
+            val found = mutableSetOf<Uri>()
+            context.contentResolver.query(collection, arrayOf(MediaStore.Images.Media._ID),
+                "${MediaStore.Images.Media.RELATIVE_PATH} = ? AND ${MediaStore.Images.Media.DISPLAY_NAME} LIKE ?",
+                arrayOf("Pictures/Glimpse/", "Glimpse_Edit_%"), null)?.use { cursor ->
+                while (cursor.moveToNext()) found.add(ContentUris.withAppendedId(collection, cursor.getLong(0)))
+            }
+            return found
+        }
+        val before = outputs()
+        val preferences = androidx.preference.PreferenceManager.getDefaultSharedPreferences(context)
+        val previous = preferences.getString("edit_save_behavior", null)
+        preferences.edit().putString("edit_save_behavior", "always_save_as_new").commit()
+        try {
+            editor(); tool(R.string.editor_markup_text)
+            val crop = activity!!.findViewById<CropImageView>(R.id.cropImageView)
+            val overlay = activity!!.findViewById<AnnotationOverlayView>(R.id.annotationOverlayView)
+            val fixture = File(context.getExternalFilesDir(null), "markup-test-source-sans.otf")
+            assertTrue("OpenType fixture missing", fixture.isFile)
+            val fonts = Class.forName("org.lineageos.glimpse.models.MarkupFonts")
+            val fontId = requireNotNull(fonts.getMethod("importFont", android.content.Context::class.java, Uri::class.java)
+                .invoke(fonts.getField("INSTANCE").get(null), context, Uri.fromFile(fixture)) as? String)
+            instrumentation.runOnMainSync {
+                crop.javaClass.getMethod("applyPresetRatio", Float::class.javaPrimitiveType, Float::class.javaObjectType)
+                    .invoke(crop, 1f, 0f)
+                overlay.addTextItem("Custom font 中文\nMultiline crop preview", crop.width / 2f, crop.height / 2f)
+                val item = requireNotNull(overlay.activeText)
+                item.hasBackgroundPill = false; item.color = Color.WHITE
+                item.javaClass.getDeclaredField("fontId").apply { isAccessible = true }.set(item, fontId)
+                val alignment = item.javaClass.getDeclaredField("alignment").apply { isAccessible = true }
+                alignment.set(item, alignment.type.enumConstants.first { it.toString() == "RIGHT" })
+                overlay.invalidate()
+            }
+            device.findObject(By.res(context.packageName, "subEditDoneButton"))!!.click()
+            device.waitForIdle(); capture("markup-text-crop-preview")
+            var expected = byteArrayOf()
+            instrumentation.runOnMainSync {
+                val frameMethod = activity!!.javaClass.getDeclaredMethod("editorFrame").apply { isAccessible = true }
+                val frame = requireNotNull(frameMethod.invoke(activity))
+                val cropField = frame.javaClass.getDeclaredField("crop").apply { isAccessible = true }
+                val matrixField = frame.javaClass.getDeclaredField("baseToOutput").apply { isAccessible = true }
+                val snapshot = cropField.get(frame)
+                val bitmap = snapshot.javaClass.getMethod("getBitmap").invoke(snapshot) as Bitmap
+                val source = snapshot.javaClass.getMethod("getSource").invoke(snapshot) as Rect
+                assertTrue("Crop did not change image dimensions", source.width() < bitmap.width || source.height() < bitmap.height)
+                val result = Bitmap.createBitmap(source.width(), source.height(), Bitmap.Config.ARGB_8888)
+                val canvas = android.graphics.Canvas(result)
+                canvas.drawBitmap(bitmap, source, Rect(0, 0, result.width, result.height), null)
+                overlay.javaClass.getMethod("rasterize", android.graphics.Canvas::class.java, android.graphics.Matrix::class.java)
+                    .invoke(overlay, canvas, matrixField.get(frame))
+                val stream = java.io.ByteArrayOutputStream()
+                assertTrue(result.compress(Bitmap.CompressFormat.JPEG, 92, stream))
+                expected = stream.toByteArray(); result.recycle()
+            }
+            val save = device.findObject(By.res(context.packageName, "saveButton"))
+            assertNotNull("Editor save unavailable", save); save!!.click()
+            val deadline = System.currentTimeMillis() + 30000
+            while (outputs().subtract(before).isEmpty() && System.currentTimeMillis() < deadline) Thread.sleep(200)
+            val created = outputs().subtract(before)
+            assertEquals("Expected one saved edit", 1, created.size)
+            val saved = created.single()
+            val actual = context.contentResolver.openInputStream(saved)!!.use { it.readBytes() }
+            assertTrue("Saved crop differs from the text layout render", expected.contentEquals(actual))
+            activity = null
+            start(ImageEditorActivity.createIntent(context, saved, "image/jpeg"))
+            val loadDeadline = System.currentTimeMillis() + 20000
+            while (activity!!.findViewById<CropImageView>(R.id.cropImageView).getDisplayBitmap() == null &&
+                System.currentTimeMillis() < loadDeadline) Thread.sleep(200)
+            assertNotNull("Saved output could not be opened", activity!!.findViewById<CropImageView>(R.id.cropImageView).getDisplayBitmap())
+            capture("markup-text-export")
+        } finally {
+            activity?.finish(); activity = null
+            outputs().subtract(before).forEach { context.contentResolver.delete(it, null, null) }
+            val edit = preferences.edit()
+            if (previous == null) edit.remove("edit_save_behavior") else edit.putString("edit_save_behavior", previous)
+            edit.commit()
+        }
     }
 
     @Test fun markupTextControlsHaveSeparateTouchTargets() {

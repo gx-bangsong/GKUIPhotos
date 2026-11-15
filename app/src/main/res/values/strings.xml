@@ -599,4 +599,5 @@
     <string name="markup_align_right">Align right</string>
     <string name="markup_font_import">Import font</string>
     <string name="markup_font_import_failed">Unable to import this font. Use a valid TTF or OTF under 8 MB with basic Latin characters.</string>
+    <string name="markup_font_option">Font %1$s</string>
 </resources>
