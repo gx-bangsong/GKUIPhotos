@@ -276,16 +276,56 @@ class SelectionSheetInstrumentedTest {
                 }
                 inject(MotionEvent.ACTION_DOWN); Thread.sleep(ViewConfiguration.getLongPressTimeout().toLong() + 250L)
                 inject(MotionEvent.ACTION_UP); device.waitForIdle()
+                capture("selection-sheet-nav-$mode")
                 instrumentation.runOnMainSync {
                     val sheet = requiredView("selectionSheet")
                     val nav = requireNotNull(ViewCompat.getRootWindowInsets(sheet)).getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
                     val rect = Rect()
                     assertTrue("$mode sheet not visible", sheet.isShown && sheet.getGlobalVisibleRect(rect))
-                    assertEquals("$mode inset duplicated or missing", nav, (sheet.layoutParams as ViewGroup.MarginLayoutParams).bottomMargin)
-                    assertEquals("$mode content has extra inset", 0, requiredView("selectionSheetContent").paddingBottom)
-                    assertTrue("$mode sheet overlaps navigation", rect.bottom <= sheet.rootView.height - nav)
+                    assertEquals("$mode sheet margin duplicates inset", 0, (sheet.layoutParams as ViewGroup.MarginLayoutParams).bottomMargin)
+                    assertEquals("$mode content does not own inset", nav, requiredView("selectionSheetContent").paddingBottom)
+                    val behavior = BottomSheetBehavior.from(sheet)
+                    assertEquals(BottomSheetBehavior.STATE_COLLAPSED, behavior.state)
+                    assertTrue("$mode peek is zero", behavior.peekHeight > 0)
+                    val root = sheet.rootView; val rootPos = IntArray(2); root.getLocationOnScreen(rootPos)
+                    val safeBottom = rootPos[1] + root.height - nav
+                    val parent = sheet.parent as View; val parentPos = IntArray(2); parent.getLocationOnScreen(parentPos)
+                    val primary = requiredView("selectionSheetPrimary") as ViewGroup
+                    val children = (0 until primary.childCount).map { primary.getChildAt(it) }
+                    val diagnostics = StringBuilder("mode=$mode root=${rootPos.contentToString()} ${root.width}x${root.height} coordinator=${parentPos.contentToString()} ${parent.width}x${parent.height} sheet=$rect state=${behavior.state} peek=${behavior.peekHeight} inset=$nav safeBottom=$safeBottom margin=${(sheet.layoutParams as ViewGroup.MarginLayoutParams).bottomMargin} contentPadding=${requiredView("selectionSheetContent").paddingBottom}\n")
+                    children.forEachIndexed { i, child ->
+                        val pos = IntArray(2); child.getLocationOnScreen(pos); val visible = Rect()
+                        val shown = child.getGlobalVisibleRect(visible)
+                        diagnostics.append("action=$i origin=${pos.contentToString()} size=${child.width}x${child.height} shown=$shown visible=$visible\n")
+                    }
+                    val values = ContentValues().apply {
+                        put(MediaStore.Downloads.DISPLAY_NAME, "selection-trace-nav-$mode.txt")
+                        put(MediaStore.Downloads.MIME_TYPE, "text/plain")
+                        put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/GlimpseUiTest")
+                    }
+                    val uri = requireNotNull(context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values))
+                    requireNotNull(context.contentResolver.openOutputStream(uri)).use { it.write(diagnostics.toString().toByteArray()) }
+                    children.forEachIndexed { i, child ->
+                        val pos = IntArray(2); child.getLocationOnScreen(pos); val visible = Rect()
+                        assertTrue("$mode action $i not fully visible", child.getGlobalVisibleRect(visible) &&
+                            visible == Rect(pos[0], pos[1], pos[0] + child.width, pos[1] + child.height))
+                        assertTrue("$mode action $i overlaps navigation", visible.bottom <= safeBottom)
+                    }
                 }
-                capture("selection-sheet-nav-$mode")
+                device.findObject(By.res(context.packageName, "selectionSheetDragHint"))!!.click(); device.waitForIdle()
+                capture("selection-sheet-nav-$mode-expanded")
+                instrumentation.runOnMainSync {
+                    val sheet = requiredView("selectionSheet")
+                    assertEquals(BottomSheetBehavior.STATE_EXPANDED, BottomSheetBehavior.from(sheet).state)
+                    val root = sheet.rootView; val rootPos = IntArray(2); root.getLocationOnScreen(rootPos)
+                    val nav = requireNotNull(ViewCompat.getRootWindowInsets(sheet)).getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
+                    listOf("selectionSheetPrimary", "selectionSheetMore").map(::requiredView).filter { it.isShown }.forEach { row ->
+                        val bounds = Rect(); val pos = IntArray(2); row.getLocationOnScreen(pos)
+                        assertTrue("$mode expanded row not fully visible", row.getGlobalVisibleRect(bounds) && bounds == Rect(pos[0], pos[1], pos[0] + row.width, pos[1] + row.height))
+                        assertTrue("$mode expanded row overlaps navigation", bounds.bottom <= rootPos[1] + root.height - nav)
+                    }
+                }
+                device.findObject(By.res(context.packageName, "selectionSheetDragHint"))!!.click(); device.waitForIdle()
                 device.findObject(By.res(context.packageName, "selectionCancel"))!!.click(); device.waitForIdle()
             }
         } finally {
@@ -341,9 +381,9 @@ class SelectionSheetInstrumentedTest {
             assertEquals(BottomSheetBehavior.STATE_COLLAPSED, behavior.state)
             assertTrue("Sheet peek must be positive", behavior.peekHeight > 0)
             val navInset = ViewCompat.getRootWindowInsets(sheet)!!.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
-            assertEquals("Navigation inset should be applied once as the sheet margin", navInset,
+            assertEquals("Sheet margin must not duplicate the navigation inset", 0,
                 (sheet.layoutParams as ViewGroup.MarginLayoutParams).bottomMargin)
-            assertEquals("Sheet content must not duplicate the navigation inset", 0,
+            assertEquals("Sheet content owns the navigation inset", navInset,
                 requiredView("selectionSheetContent").paddingBottom)
             val topLocation = IntArray(2); top.getLocationOnScreen(topLocation)
             assertEquals("Selection background does not reach screen edge", 0, topLocation[1])
@@ -357,15 +397,26 @@ class SelectionSheetInstrumentedTest {
             assertEquals(context.getString(R.string.collage_title), (collage.getChildAt(1) as TextView).text.toString())
             val collageIcon = context.resources.getIdentifier("ic_collage", "drawable", context.packageName)
             assertTrue("Collage drawable resource missing", collageIcon != 0)
-            val expected = ContextCompat.getDrawable(context, collageIcon)!!.mutate()
-            val actual = (collage.getChildAt(0) as ImageView).drawable.mutate()
+            val iconView = collage.getChildAt(0) as ImageView
+            assertTrue("Collage icon is not visible", iconView.isShown && iconView.getGlobalVisibleRect(Rect()))
+            val menu = android.widget.PopupMenu(sheet.context, sheet).apply { inflate(R.menu.fragment_album_action_bar) }.menu
+            val menuItem = requireNotNull(menu.findItem(R.id.collage))
+            assertNotNull("Collage menu icon missing", menuItem.icon)
+            assertEquals(context.getString(R.string.collage_title), menuItem.title.toString())
+            val expected = ContextCompat.getDrawable(iconView.context, collageIcon)!!.mutate()
+            val actual = iconView.drawable.mutate()
             val tint = MaterialColors.getColor(sheet, com.google.android.material.R.attr.colorOnSurface)
+            assertEquals("Collage icon tint does not match theme", tint, iconView.imageTintList!!.defaultColor)
+            expected.state = actual.state
             expected.setTint(tint)
             fun pixels(drawable: android.graphics.drawable.Drawable): Bitmap {
                 val bitmap = Bitmap.createBitmap(24, 24, Bitmap.Config.ARGB_8888)
                 drawable.setBounds(0, 0, 24, 24); drawable.draw(Canvas(bitmap)); return bitmap
             }
             val expectedBitmap = pixels(expected); val actualBitmap = pixels(actual)
+            assertTrue("Collage drawable rendered empty", (0 until actualBitmap.width).any { x ->
+                (0 until actualBitmap.height).any { y -> Color.alpha(actualBitmap.getPixel(x, y)) > 0 }
+            })
             assertTrue("Collage action does not use the collage drawable", expectedBitmap.sameAs(actualBitmap))
             expectedBitmap.recycle(); actualBitmap.recycle()
         }

@@ -446,10 +446,12 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
                 leftMargin = insets.left
                 rightMargin = insets.right
             }
-            // The sheet is positioned above navigation; do not add a second spacer/padding.
+            // Content is the sole owner of the bottom inset. The sheet's
+            // background may extend under navigation; its actions must not.
             selectionSheet.updateLayoutParams<ViewGroup.MarginLayoutParams> {
-                bottomMargin = bottomInset
+                bottomMargin = 0
             }
+            view.findViewById<View>(R.id.selectionSheetContent).updatePadding(bottom = bottomInset)
             selectionTopBar.updatePadding(top = insets.top)
             updateSelectionGridPadding()
             updateSelectionPeekHeight()
@@ -852,14 +854,21 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
         if (!selectionActive || !selectionSheet.isVisible) return
         val height = (if (selectionSheetHint.isVisible) selectionSheetHint.height else 0) +
             selectionPrimary.height + (if (selectionSheetReason.isVisible) selectionSheetReason.height else 0)
-        if (height > 0 && sheetBehavior.peekHeight != height) sheetBehavior.peekHeight = height
+        // Behavior positions the collapsed sheet at parentHeight - peekHeight.
+        // Include the content's navigation padding in the visible collapsed area.
+        val peek = height + bottomInset
+        if (height > 0 && sheetBehavior.peekHeight != peek) sheetBehavior.peekHeight = peek
         updateSelectionGridPadding()
     }
 
     private fun updateSelectionGridPadding() {
         if (view == null) return
-        val covered = if (selectionActive && selectionSheet.isVisible && selectionSheet.isLaidOut)
-            (recyclerView.bottom - selectionSheet.top).coerceAtLeast(0) else 0
+        val covered = if (selectionActive && selectionSheet.isVisible && selectionSheet.isLaidOut) {
+            val gridBounds = android.graphics.Rect()
+            val sheetBounds = android.graphics.Rect()
+            if (recyclerView.getGlobalVisibleRect(gridBounds) && selectionSheet.getGlobalVisibleRect(sheetBounds))
+                (gridBounds.bottom - sheetBounds.top).coerceAtLeast(0) else 0
+        } else 0
         val top = if (selectionActive) selectionTopBar.height else 0
         recyclerView.updatePadding(top = top, bottom = maxOf(bottomInset, covered))
     }
