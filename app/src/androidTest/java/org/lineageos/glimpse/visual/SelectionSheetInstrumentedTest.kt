@@ -508,10 +508,20 @@ class SelectionSheetInstrumentedTest {
                 }
                 sample = "${grid.isLayoutRequested}:${grid.hasPendingAdapterUpdates()}:${grid.paddingTop}:${grid.paddingBottom}:$rows"
             }
+            if (sample != previous) tapTrace.append("stability=$sample\n")
             stableSamples = if (sample == previous && !sample.startsWith("true:") && !sample.startsWith("false:true:")) stableSamples + 1 else 0
             previous = sample
             if (stableSamples < 3) SystemClock.sleep(100)
         } while (stableSamples < 3 && SystemClock.uptimeMillis() < stableDeadline)
+        if (stableSamples < 3) {
+            val values = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, "selection-trace-stability.txt")
+                put(MediaStore.Downloads.MIME_TYPE, "text/plain")
+                put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/GlimpseUiTest")
+            }
+            val uri = requireNotNull(context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values))
+            requireNotNull(context.contentResolver.openOutputStream(uri)).use { it.write(tapTrace.toString().toByteArray()) }
+        }
         assertTrue("Fixture grid did not stabilize before second tap", stableSamples >= 3)
         traceStage("after-sheet-layout")
         lateinit var secondKey: Media
