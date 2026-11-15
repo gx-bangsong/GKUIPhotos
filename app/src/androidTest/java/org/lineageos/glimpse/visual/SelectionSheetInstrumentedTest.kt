@@ -369,6 +369,12 @@ class SelectionSheetInstrumentedTest {
                 device.findObject(By.res(context.packageName, "selectionSheetDragHint"))!!.click(); device.waitForIdle()
                 waitForSheetState(BottomSheetBehavior.STATE_COLLAPSED)
                 device.findObject(By.res(context.packageName, "selectionCancel"))!!.click(); device.waitForIdle()
+                instrumentation.runOnMainSync {
+                    assertTrue("$mode sheet remained visible after cancel", !requiredView("selectionSheet").isShown)
+                    assertTrue("$mode selection toolbar remained visible after cancel", !requiredView("selectionTopBar").isShown)
+                    assertTrue("$mode tracker remained selected after cancel", !(grid.adapter as ThumbnailAdapter).selectionTracker!!.hasSelection())
+                }
+                capture("selection-sheet-nav-$mode-closed")
             }
         } finally {
             if (enabled != null) device.executeShellCommand("cmd overlay enable-exclusive --category --user current $enabled")
