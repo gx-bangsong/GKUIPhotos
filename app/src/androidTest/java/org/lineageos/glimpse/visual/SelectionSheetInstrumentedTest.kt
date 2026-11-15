@@ -126,6 +126,17 @@ class SelectionSheetInstrumentedTest {
         }
     }
 
+    private fun waitForSheetState(expected: Int) {
+        val deadline = SystemClock.uptimeMillis() + 5000
+        var state = -1
+        do {
+            instrumentation.runOnMainSync { state = BottomSheetBehavior.from(requiredView("selectionSheet")).state }
+            if (state == expected) return
+            SystemClock.sleep(50)
+        } while (SystemClock.uptimeMillis() < deadline)
+        assertEquals("Sheet did not reach requested state", expected, state)
+    }
+
     /** Trace only synthetic keys; never write media names, URIs, or user media identifiers. */
     @Test fun selectionStationaryLongPressTrace() {
         val trace = StringBuffer()
@@ -257,7 +268,25 @@ class SelectionSheetInstrumentedTest {
                 device.waitForIdle(); Thread.sleep(500)
                 val current = device.executeShellCommand("cmd overlay list --user current")
                 assertTrue("Navigation overlay not enabled: $mode", current.lineSequence().any { it.trim() == "[x] $overlay" })
+                // Changing system navigation may recreate the activity and its grid.
+                // Start a fresh activity, then wait for the synthetic fixtures to bind.
+                activity?.finish()
+                activity = instrumentation.startActivitySync(Intent(context, MainActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
+                assertTrue("Grid did not appear after switching to $mode", device.wait(Until.hasObject(By.res(context.packageName, "thumbnailImageView")), 30000))
                 val grid = requiredView("recyclerView") as RecyclerView
+                val deadline = SystemClock.uptimeMillis() + 10000
+                var fixtureVisible = false
+                do {
+                    instrumentation.runOnMainSync {
+                        fixtureVisible = (0 until grid.childCount).any { i ->
+                            (grid.getChildViewHolder(grid.getChildAt(i)) as? ThumbnailAdapter.ThumbnailViewHolder)
+                                ?.itemDetails?.selectionKey?.uri in images
+                        }
+                    }
+                    if (!fixtureVisible) SystemClock.sleep(100)
+                } while (!fixtureVisible && SystemClock.uptimeMillis() < deadline)
+                assertTrue("Synthetic fixture did not bind after switching to $mode", fixtureVisible)
                 var x = 0f; var y = 0f
                 instrumentation.runOnMainSync {
                     val holder = (0 until grid.childCount).mapNotNull { i ->
@@ -313,6 +342,7 @@ class SelectionSheetInstrumentedTest {
                     }
                 }
                 device.findObject(By.res(context.packageName, "selectionSheetDragHint"))!!.click(); device.waitForIdle()
+                waitForSheetState(BottomSheetBehavior.STATE_EXPANDED)
                 capture("selection-sheet-nav-$mode-expanded")
                 instrumentation.runOnMainSync {
                     val sheet = requiredView("selectionSheet")
@@ -326,6 +356,7 @@ class SelectionSheetInstrumentedTest {
                     }
                 }
                 device.findObject(By.res(context.packageName, "selectionSheetDragHint"))!!.click(); device.waitForIdle()
+                waitForSheetState(BottomSheetBehavior.STATE_COLLAPSED)
                 device.findObject(By.res(context.packageName, "selectionCancel"))!!.click(); device.waitForIdle()
             }
         } finally {
@@ -467,6 +498,7 @@ class SelectionSheetInstrumentedTest {
         val hint = device.findObject(By.res(context.packageName, "selectionSheetDragHint"))
         assertNotNull("Sheet expand control missing", hint)
         hint!!.click(); device.waitForIdle()
+        waitForSheetState(BottomSheetBehavior.STATE_EXPANDED)
         val swipeArea = Rect()
         instrumentation.runOnMainSync {
             assertEquals(BottomSheetBehavior.STATE_EXPANDED, BottomSheetBehavior.from(requiredView("selectionSheet")).state)
@@ -500,6 +532,7 @@ class SelectionSheetInstrumentedTest {
         capture("selection-sheet-expanded")
         device.findObject(By.res(context.packageName, "selectionSheetDragHint"))!!.click()
         device.waitForIdle()
+        waitForSheetState(BottomSheetBehavior.STATE_COLLAPSED)
         instrumentation.runOnMainSync {
             assertEquals(BottomSheetBehavior.STATE_COLLAPSED, BottomSheetBehavior.from(requiredView("selectionSheet")).state)
             val grid = requiredView("recyclerView") as RecyclerView
