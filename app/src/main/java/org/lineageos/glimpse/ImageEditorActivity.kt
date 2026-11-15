@@ -1377,8 +1377,9 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             ?: resources.displayMetrics.heightPixels
         // Keep the viewport independent of the selected tool and expanded sections.
         // Otherwise the deck resizes the image and its annotation coordinate mapping.
-        // The contents remain scrollable when the window or font scale is small.
-        val height = minOf((160 * resources.displayMetrics.density).toInt(), (screenHeight * 0.22f).toInt())
+        // A compact fixed viewport avoids a large empty gap for single-row pages.
+        // Longer pages remain internally scrollable, including at larger font scales.
+        val height = minOf((96 * resources.displayMetrics.density).toInt(), (screenHeight * 0.16f).toInt())
         val params = markupOptionsScroll.layoutParams
         if (params.height != height) {
             params.height = height

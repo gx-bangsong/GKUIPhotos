@@ -467,15 +467,28 @@ class UiScreenshotTest {
         var originalMatrix = FloatArray(9)
         var originalWidth = 0
         var originalHeight = 0
+        var originalOptionsHeight = 0
         instrumentation.runOnMainSync {
             overlay.addTextItem("Dock test", crop.width / 2f, crop.height / 2f)
             originalText = overlay.activeText
             crop.getImageMatrix().getValues(originalMatrix)
             originalWidth = crop.width; originalHeight = crop.height
+            originalOptionsHeight = activity!!.findViewById<View>(R.id.markupOptionsScroll).height
+            assertTrue("Options viewport is not compact", originalOptionsHeight <= (96 * activity!!.resources.displayMetrics.density).toInt())
+        }
+        fun assertPageFrameStable() {
+            instrumentation.runOnMainSync {
+                val matrix = FloatArray(9)
+                crop.getImageMatrix().getValues(matrix)
+                assertEquals("Options height changed", originalOptionsHeight, activity!!.findViewById<View>(R.id.markupOptionsScroll).height)
+                assertEquals("Preview height changed", originalHeight, crop.height)
+                for (i in matrix.indices) assertEquals("Image matrix changed at $i", originalMatrix[i], matrix[i], .001f)
+                assertTrue("Selection lost on page switch", overlay.activeText === originalText)
+            }
         }
         capture("markup-dock-text-edit")
-        subtool(R.string.markup_color_section); capture("markup-dock-text-color")
-        subtool(R.string.editor_markup_text_bg); capture("markup-dock-text-background")
+        subtool(R.string.markup_color_section); assertPageFrameStable(); capture("markup-dock-text-color")
+        subtool(R.string.editor_markup_text_bg); assertPageFrameStable(); capture("markup-dock-text-background")
         val tools = listOf(
             R.string.editor_markup_doodle to "markup-dock-brush",
             R.string.editor_markup_shapes to "markup-dock-shapes",
@@ -491,6 +504,7 @@ class UiScreenshotTest {
                 crop.getImageMatrix().getValues(matrix)
                 assertEquals("Preview width changed", originalWidth, crop.width)
                 assertEquals("Preview height changed", originalHeight, crop.height)
+                assertEquals("Options height changed", originalOptionsHeight, activity!!.findViewById<View>(R.id.markupOptionsScroll).height)
                 for (i in matrix.indices) assertEquals("Image matrix changed at $i", originalMatrix[i], matrix[i], .001f)
                 assertTrue("Selected text was lost on tool switch", overlay.activeText === originalText)
                 assertTrue("Annotation lost", overlay.hasAnnotations())
