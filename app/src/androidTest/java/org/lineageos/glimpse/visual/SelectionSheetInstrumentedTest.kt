@@ -61,6 +61,7 @@ class SelectionSheetInstrumentedTest {
     private val images = mutableListOf<Uri>()
     private var activity: Activity? = null
     private var oldDialogPreference = false
+    private val pendingCaptures = mutableListOf<Pair<File, String>>()
 
     private fun id(name: String): Int = context.resources.getIdentifier(name, "id", context.packageName)
     private fun requiredView(name: String): View {
@@ -101,6 +102,8 @@ class SelectionSheetInstrumentedTest {
     @After fun tearDown() {
         device.unfreezeRotation()
         activity?.finish()
+        instrumentation.waitForIdleSync()
+        publishCaptures()
         images.forEach { context.contentResolver.delete(it, null, null) }
         if (activity != null) PreferenceManager.getDefaultSharedPreferences(context).manageMediaPermissionDialogDismissed = oldDialogPreference
     }
@@ -111,9 +114,15 @@ class SelectionSheetInstrumentedTest {
         assertTrue("Unable to capture $name", device.takeScreenshot(temp))
         val hierarchy = File(context.cacheDir, "$name.xml")
         device.dumpWindowHierarchy(hierarchy)
-        // Store screenshots as generic downloads so the gallery under test does
-        // not ingest its own evidence and reorder the active selection grid.
-        listOf(temp to "application/octet-stream", hierarchy to "application/xml").forEach { (file, mime) ->
+        // Publishing screenshots while the gallery is active makes MediaStore
+        // insert them into the grid asynchronously. Keep captures in private
+        // cache until the activity is closed, preserving their original state.
+        pendingCaptures.add(temp to "application/octet-stream")
+        pendingCaptures.add(hierarchy to "application/xml")
+    }
+
+    private fun publishCaptures() {
+        pendingCaptures.forEach { (file, mime) ->
             val values = ContentValues().apply {
                 put(MediaStore.Downloads.DISPLAY_NAME, file.name)
                 put(MediaStore.Downloads.MIME_TYPE, mime)
@@ -482,6 +491,28 @@ class SelectionSheetInstrumentedTest {
         }
         screenshot.recycle()
         capture("selection-sheet-one")
+        // Require a stable set of synthetic key/position/bounds samples, not
+        // merely an idle UI thread while MediaStore or RecyclerView is updating.
+        var previous = ""
+        var stableSamples = 0
+        val stableDeadline = SystemClock.uptimeMillis() + 10000
+        do {
+            var sample = ""
+            instrumentation.runOnMainSync {
+                val rows = (0 until grid.childCount).mapNotNull { i ->
+                    val holder = grid.getChildViewHolder(grid.getChildAt(i)) as? ThumbnailAdapter.ThumbnailViewHolder ?: return@mapNotNull null
+                    val key = holder.itemDetails.selectionKey ?: return@mapNotNull null
+                    if (!images.contains(key.uri)) return@mapNotNull null
+                    val r = Rect(); holder.itemView.getGlobalVisibleRect(r)
+                    "${fixture(key)}:${holder.bindingAdapterPosition}:$r"
+                }
+                sample = "${grid.isLayoutRequested}:${grid.hasPendingAdapterUpdates()}:${grid.paddingTop}:${grid.paddingBottom}:$rows"
+            }
+            stableSamples = if (sample == previous && !sample.startsWith("true:") && !sample.startsWith("false:true:")) stableSamples + 1 else 0
+            previous = sample
+            if (stableSamples < 3) SystemClock.sleep(100)
+        } while (stableSamples < 3 && SystemClock.uptimeMillis() < stableDeadline)
+        assertTrue("Fixture grid did not stabilize before second tap", stableSamples >= 3)
         traceStage("after-sheet-layout")
         lateinit var secondKey: Media
         var secondX = 0; var secondY = 0
@@ -503,14 +534,23 @@ class SelectionSheetInstrumentedTest {
                 bounds.width() == holder.itemView.width && bounds.height() == holder.itemView.height)
             secondX = bounds.centerX(); secondY = bounds.centerY()
         }
-        tapTrace.append("expected=${listOf(fixture(firstKey), fixture(secondKey)).sorted()} point=($secondX,$secondY)\n")
+        traceStage("before-second-click")
         instrumentation.runOnMainSync {
+            val target = (0 until grid.childCount).mapNotNull { i ->
+                grid.getChildViewHolder(grid.getChildAt(i)) as? ThumbnailAdapter.ThumbnailViewHolder
+            }.first { it.itemDetails.selectionKey == secondKey }
+            val bounds = Rect(); val top = Rect(); val sheet = Rect()
+            assertTrue("Second fixture no longer visible", target.itemView.getGlobalVisibleRect(bounds) &&
+                bounds.width() == target.itemView.width && bounds.height() == target.itemView.height)
+            requiredView("selectionTopBar").getGlobalVisibleRect(top); requiredView("selectionSheet").getGlobalVisibleRect(sheet)
+            assertTrue("Second fixture covered by selection chrome", bounds.top >= top.bottom && bounds.bottom <= sheet.top)
+            secondX = bounds.centerX(); secondY = bounds.centerY()
             val origin = IntArray(2); grid.getLocationOnScreen(origin)
             val hit = grid.findChildViewUnder((secondX - origin[0]).toFloat(), (secondY - origin[1]).toFloat())
             val holder = hit?.let { grid.getChildViewHolder(it) } as? ThumbnailAdapter.ThumbnailViewHolder
-            tapTrace.append("hit position=${holder?.bindingAdapterPosition} key=${holder?.itemDetails?.selectionKey?.let(::fixture)} view=${hit?.javaClass?.simpleName}\n")
+            tapTrace.append("expected=${listOf(fixture(firstKey), fixture(secondKey)).sorted()} point=($secondX,$secondY) targetPosition=${target.bindingAdapterPosition} targetBounds=$bounds hitPosition=${holder?.bindingAdapterPosition} hitKey=${holder?.itemDetails?.selectionKey?.let(::fixture)}\n")
+            assertEquals("Second fixture hit test mismatch", secondKey, holder?.itemDetails?.selectionKey)
         }
-        traceStage("before-second-click")
         assertTrue("Second fixture tap failed", device.click(secondX, secondY))
         device.waitForIdle()
         traceStage("after-second-click")

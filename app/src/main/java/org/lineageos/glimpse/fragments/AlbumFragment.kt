@@ -881,7 +881,12 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
                 (gridBounds.bottom - sheetBounds.top).coerceAtLeast(0) else 0
         } else 0
         val top = if (selectionActive) selectionTopBar.height else 0
-        recyclerView.updatePadding(top = top, bottom = maxOf(bottomInset, covered))
+        val bottom = maxOf(bottomInset, covered)
+        // RecyclerView requests layout on setPadding even when values are the
+        // same; avoid an endless pre-draw/layout loop while selection is active.
+        if (recyclerView.paddingTop != top || recyclerView.paddingBottom != bottom) {
+            recyclerView.updatePadding(top = top, bottom = bottom)
+        }
     }
 
     private fun endSelectionMode() {
