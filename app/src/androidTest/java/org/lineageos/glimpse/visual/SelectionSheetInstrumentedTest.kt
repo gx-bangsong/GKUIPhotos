@@ -467,12 +467,16 @@ class SelectionSheetInstrumentedTest {
         lateinit var secondKey: Media
         var secondX = 0; var secondY = 0
         instrumentation.runOnMainSync {
+            val topBounds = Rect(); val sheetBounds = Rect()
+            assertTrue(requiredView("selectionTopBar").getGlobalVisibleRect(topBounds))
+            assertTrue(requiredView("selectionSheet").getGlobalVisibleRect(sheetBounds))
             val holder = (0 until grid.childCount).mapNotNull { i ->
                 grid.getChildViewHolder(grid.getChildAt(i)) as? ThumbnailAdapter.ThumbnailViewHolder
             }.first {
                 val bounds = Rect()
                 it.itemDetails.selectionKey?.let { key -> key != firstKey && images.contains(key.uri) } == true &&
-                    it.itemView.getGlobalVisibleRect(bounds) && bounds.width() == it.itemView.width && bounds.height() == it.itemView.height
+                    it.itemView.getGlobalVisibleRect(bounds) && bounds.width() == it.itemView.width && bounds.height() == it.itemView.height &&
+                    bounds.top >= topBounds.bottom && bounds.bottom <= sheetBounds.top
             }
             secondKey = requireNotNull(holder.itemDetails.selectionKey)
             val bounds = Rect()

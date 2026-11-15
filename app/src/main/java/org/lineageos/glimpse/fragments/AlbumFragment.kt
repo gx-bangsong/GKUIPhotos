@@ -143,6 +143,7 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
     private var selectionParentAppBar: View? = null
     private var parentAppBarWasVisible = false
     private var bottomInset = 0
+    private var selectionPreDrawListener: android.view.ViewTreeObserver.OnPreDrawListener? = null
     private var selectionBackCallback: OnBackPressedCallback? = null
     private val selectionTopBar by getViewProperty<View>(R.id.selectionTopBar)
     private val selectionCount by getViewProperty<TextView>(R.id.selectionCount)
@@ -460,6 +461,10 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
         }
 
         appBarLayout.isVisible = !hideToolbar
+        selectionPreDrawListener = android.view.ViewTreeObserver.OnPreDrawListener {
+            if (selectionActive) updateSelectionGridPadding()
+            true
+        }.also { view.viewTreeObserver.addOnPreDrawListener(it) }
         sheetBehavior.addBottomSheetCallback(object : BottomSheetBehavior.BottomSheetCallback() {
             override fun onSlide(bottomSheet: View, slideOffset: Float) = updateSelectionGridPadding()
             override fun onStateChanged(bottomSheet: View, newState: Int) {
@@ -613,6 +618,8 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
     }
 
     override fun onDestroyView() {
+        selectionPreDrawListener?.let { view?.viewTreeObserver?.removeOnPreDrawListener(it) }
+        selectionPreDrawListener = null
         pendingSelectionStart = false
         (recyclerView as SelectionGestureRecyclerView).onGestureFinished = null
         endSelectionMode()
