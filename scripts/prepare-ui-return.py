@@ -32,7 +32,7 @@ candidate_dock = ('markup-text-imported-fonts', 'markup-text-imported-recreated'
                   'markup-dock-non-markup', 'markup-dock-categories', 'markup-dock-undo', 'markup-dock-redo',
                   'markup-dock-close', 'markup-dock-done', 'markup-dock-narrow-large-font',
                   'collage-preview-2', 'collage-preview-3', 'collage-preview-4', 'collage-preview-5',
-                  'collage-preview-6', 'collage-preview-landscape', 'collage-preview-no-filmstrip')
+                  'collage-preview-6', 'collage-preview-landscape', 'collage-preview-no-filmstrip', 'collage-preview-split')
 
 def expected_for(name):
     return expected + candidate_dock if name.startswith('ui-candidate-') else expected

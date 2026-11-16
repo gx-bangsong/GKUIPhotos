@@ -1290,6 +1290,45 @@ class UiScreenshotTest {
         }
     }
 
+    @Test fun collageSplitGestureChangesGeometry() {
+        assumeTrue("Custom split is candidate-only", isCandidate())
+        collage(4)
+        val view = activity!!.findViewById<CollageView>(R.id.collagePreview)
+        val splitId = context.resources.getIdentifier("collageSplit", "id", context.packageName)
+        val layoutId = context.resources.getIdentifier("collageModeLayout", "id", context.packageName)
+        instrumentation.runOnMainSync { activity!!.findViewById<View>(layoutId).performClick() }
+        device.waitForIdle()
+        val bounds = Rect()
+        val before = FloatArray(1)
+        instrumentation.runOnMainSync {
+            val slider = activity!!.findViewById<Slider>(splitId)
+            var parent = slider.parent
+            while (parent != null && parent !is ScrollView) parent = parent.parent
+            val scroll = requireNotNull(parent as? ScrollView)
+            scroll.scrollTo(0, scroll.getChildAt(0).height)
+            before[0] = slider.value
+        }
+        device.waitForIdle()
+        instrumentation.runOnMainSync {
+            val slider = activity!!.findViewById<Slider>(splitId)
+            assertTrue("Split slider not visible", slider.getGlobalVisibleRect(bounds))
+            assertTrue("Split slider clipped", bounds.height() >= slider.height)
+        }
+        assertTrue(device.swipe(bounds.centerX(), bounds.centerY(), bounds.left + bounds.width() / 4, bounds.centerY(), 25))
+        device.waitForIdle()
+        instrumentation.runOnMainSync {
+            val splitField = CollageView::class.java.getDeclaredField("split").apply { isAccessible = true }
+            val after = splitField.getFloat(view)
+            assertTrue("Split slider did not change proportion", after < before[0] - .02f)
+            val geometry = Class.forName("org.lineageos.glimpse.collage.CollageLayoutKt")
+                .getDeclaredMethod("collageCells", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType, Float::class.javaPrimitiveType)
+                .apply { isAccessible = true }
+            assertTrue("Split did not change preview geometry", geometry.invoke(null, 4, view.layout, before[0]) != geometry.invoke(null, 4, view.layout, after))
+            assertEquals(images.take(4), view.photos.map { it.uri })
+        }
+        capture("collage-preview-split")
+    }
+
     @Test fun collagePreviewForAllPhotoCounts() {
         assumeTrue("Preview-only controls are candidate-only", isCandidate())
         for (count in 2..6) {
