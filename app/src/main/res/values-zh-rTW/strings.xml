@@ -481,7 +481,7 @@
     <string name="collage_title">拼貼</string>
     <string name="collage_count_error">請選擇 2 至 6 張照片製作拼貼。</string>
     <string name="collage_video_error">拼貼僅支援照片，請取消選取影片或其他不支援的媒體。</string>
-    <string name="collage_preview_hint">點按選取，拖曳調整構圖，雙指縮放，長按拖曳交換照片。</string>
+    <string name="collage_preview_hint">點按照片顯示操作；拖曳調整構圖，雙指縮放，長按拖曳交換照片，拖曳分隔線調整版面。</string>
     <string name="collage_layout_split">分隔比例 · 切換版面時保留</string>
     <string name="collage_layout_side_by_side">左右</string>
     <string name="collage_layout_stacked">上下</string>

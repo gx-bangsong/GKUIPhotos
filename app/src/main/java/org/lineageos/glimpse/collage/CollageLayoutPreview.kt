@@ -21,6 +21,8 @@ internal class CollageLayoutPreview(context: Context, private val count: Int, pr
         val y = (height - side) / 2f
         val gap = resources.displayMetrics.density
         paint.color = MaterialColors.getColor(this, com.google.android.material.R.attr.colorOnSurfaceVariant)
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 2 * resources.displayMetrics.density
         collageCells(count, layout).forEach { cell ->
             canvas.drawRect(x + cell.left * side + gap, y + cell.top * side + gap,
                 x + cell.right * side - gap, y + cell.bottom * side - gap, paint)

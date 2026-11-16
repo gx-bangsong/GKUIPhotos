@@ -16,11 +16,9 @@ import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
 import android.view.View
-import android.view.ViewGroup
 import android.view.Gravity
 import android.widget.LinearLayout
 import android.widget.Toast
-import android.widget.TextView
 import androidx.activity.addCallback
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -35,9 +33,7 @@ import androidx.lifecycle.lifecycleScope
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.button.MaterialButton
-import com.google.android.material.button.MaterialButtonToggleGroup
 import com.google.android.material.progressindicator.LinearProgressIndicator
-import com.google.android.material.slider.Slider
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -46,19 +42,18 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.coroutineContext
 import org.lineageos.glimpse.R
+import org.lineageos.glimpse.ImageEditorActivity
 
 class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
     private lateinit var preview: CollageView
     private lateinit var progress: LinearProgressIndicator
-    private lateinit var zoom: Slider
-    private lateinit var split: Slider
     private lateinit var save: MaterialButton
-    private lateinit var replace: MaterialButton
+    private lateinit var replace: View
     private lateinit var layoutCards: LinearLayout
-    private lateinit var modes: MaterialButtonToggleGroup
     private var job: Job? = null
     private var loading = true
-    private var syncingZoom = false
+    private var photoMode = false
+    private var pendingEdit = false
     private var uris = arrayListOf<Uri>()
     private var replacementIndex = -1
     private var pendingReplacement: Uri? = null
@@ -83,6 +78,18 @@ class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
         }
     }
 
+    private val editPhoto = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val uri = result.data?.data
+        if (result.resultCode == Activity.RESULT_OK && uri != null && replacementIndex in uris.indices) {
+            pendingEdit = true
+            pendingReplacement = uri
+            if (!loading) applyPendingReplacement()
+        } else {
+            replacementIndex = -1
+            pendingEdit = false
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
@@ -98,56 +105,42 @@ class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
             view.updatePadding(left = bars.left, top = bars.top, right = bars.right, bottom = bars.bottom)
             insets
         }
-        // Limit the tools on short portrait windows; their inner area remains scrollable.
-        findViewById<View>(R.id.collagePanelHost)?.let { panel ->
-            root.addOnLayoutChangeListener { _, _, top, _, bottom, _, _, _, _ ->
-                val maxPanel = minOf((192 * resources.displayMetrics.density).toInt(), ((bottom - top) * 0.36f).toInt())
-                if (maxPanel > 0 && panel.layoutParams.height != maxPanel) {
-                    panel.layoutParams = panel.layoutParams.apply { height = maxPanel }
-                }
-            }
-        }
         preview = findViewById(R.id.collagePreview)
         progress = findViewById(R.id.collageProgress)
-        zoom = findViewById(R.id.collageZoom)
-        split = findViewById(R.id.collageSplit)
         save = findViewById(R.id.collageSave)
         replace = findViewById(R.id.collageReplace)
         replacementIndex = savedInstanceState?.getInt(KEY_REPLACEMENT_INDEX, -1) ?: -1
         pendingReplacement = savedInstanceState?.getParcelable(KEY_PENDING_REPLACEMENT)
         layoutCards = findViewById(R.id.collageLayoutCards)
-        modes = findViewById(R.id.collageModes)
-        modes.addOnButtonCheckedListener { _, checkedId, checked ->
-            if (checked) showMode(checkedId == R.id.collageModeLayout)
-        }
-        val showLayouts = savedInstanceState?.getBoolean(KEY_LAYOUT_MODE, false) ?: false
-        modes.check(if (showLayouts) R.id.collageModeLayout else R.id.collageModePhoto)
-        showMode(showLayouts)
+        pendingEdit = savedInstanceState?.getBoolean(KEY_PENDING_EDIT, false) ?: false
+        showPhotoMode(savedInstanceState?.getBoolean(KEY_PHOTO_MODE, false) ?: false)
         uris = savedInstanceState?.getParcelableArrayList(KEY_URIS)
             ?: intent.getParcelableArrayListExtra(KEY_URIS) ?: arrayListOf()
         if (uris.size !in 2..6) { finish(); return }
         preview.layout = savedInstanceState?.getInt(KEY_LAYOUT, 0) ?: 0
         preview.split = (savedInstanceState?.getFloat(KEY_SPLIT, 0.5f) ?: 0.5f).coerceIn(0.2f, 0.8f)
-        split.value = preview.split
-        split.addOnChangeListener { _, value, fromUser ->
-            if (fromUser) { preview.split = value; preview.invalidate() }
-        }
         preview.selected = (savedInstanceState?.getInt(KEY_SELECTED, 0) ?: 0).coerceIn(0, uris.lastIndex)
         preview.onSelectionChanged = { updateControls() }
+        preview.onPhotoTap = { showPhotoMode(true) }
         preview.onReorder = { from, to -> movePhoto(from, to) }
         buildLayoutCards()
-        zoom.addOnChangeListener { _, value, fromUser ->
-            if (fromUser && !syncingZoom) {
-                preview.photos.getOrNull(preview.selected)?.zoom = value
-                preview.invalidate()
+        findViewById<View>(R.id.collageCancel).setOnClickListener { if (photoMode && job == null) showPhotoMode(false) else cancel() }
+        findViewById<View>(R.id.collageCancelBottom).setOnClickListener { cancel() }
+        findViewById<View>(R.id.collageDone).setOnClickListener { showPhotoMode(false) }
+        onBackPressedDispatcher.addCallback(this) { if (photoMode && job == null) showPhotoMode(false) else cancel() }
+        save.setOnClickListener { saveCollage() }
+        findViewById<View>(R.id.collageEdit).setOnClickListener {
+            val photo = preview.photos.getOrNull(preview.selected)
+            if (job == null && photo != null) {
+                replacementIndex = preview.selected
+                try { editPhoto.launch(ImageEditorActivity.createIntent(this, photo.uri, contentResolver.getType(photo.uri))) }
+                catch (e: Exception) { replacementIndex = -1; Toast.makeText(this, R.string.collage_replace_failed, Toast.LENGTH_LONG).show() }
             }
         }
-        findViewById<View>(R.id.collageCancel).setOnClickListener { cancel() }
-        onBackPressedDispatcher.addCallback(this) { cancel() }
-        save.setOnClickListener { saveCollage() }
         replace.setOnClickListener {
             if (job == null && preview.selected in preview.photos.indices) {
                 replacementIndex = preview.selected
+                pendingEdit = false
                 val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                     addCategory(Intent.CATEGORY_OPENABLE)
                     type = "image/*"
@@ -202,8 +195,10 @@ class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
         job = lifecycleScope.launch {
             try {
                 val bitmap = withContext(Dispatchers.IO) { decodeCollageImage(contentResolver, uri, 768) }
-                preview.photos[index] = CollagePhoto(uri, bitmap)
+                val previous = preview.photos[index]
+                preview.photos[index] = if (pendingEdit) previous.copy(uri = uri, preview = bitmap) else CollagePhoto(uri, bitmap)
                 uris[index] = uri
+                pendingEdit = false
                 pendingReplacement = null
                 replacementIndex = -1
                 preview.selected = index
@@ -212,6 +207,7 @@ class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
                 throw e
             } catch (e: Exception) {
                 pendingReplacement = null
+                pendingEdit = false
                 replacementIndex = -1
                 Toast.makeText(this@CollageActivity, R.string.collage_replace_failed, Toast.LENGTH_LONG).show()
             } finally {
@@ -221,24 +217,17 @@ class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
         }
     }
 
-    private fun showMode(layoutMode: Boolean) {
-        findViewById<View>(R.id.collagePhotoPanel).isVisible = !layoutMode
-        findViewById<View>(R.id.collageLayoutPanel).isVisible = layoutMode
+    private fun showPhotoMode(active: Boolean) {
+        photoMode = active
+        findViewById<View>(R.id.collageLayouts).isVisible = !active
+        findViewById<View>(R.id.collageMainActions).isVisible = !active
+        findViewById<View>(R.id.collageActions).isVisible = active
+        findViewById<View>(R.id.collageDone).isVisible = active
+        preview.showSelection = active
+        preview.invalidate()
     }
 
-    private fun updateControls() {
-        val photo = preview.photos.getOrNull(preview.selected)
-        syncingZoom = true
-        zoom.value = photo?.zoom?.coerceIn(1f, 4f) ?: 1f
-        syncingZoom = false
-        findViewById<TextView>(R.id.collageHint).text = if (photo == null) {
-            getString(R.string.collage_preview_hint)
-        } else {
-            getString(R.string.collage_selected_photo, preview.selected + 1, preview.photos.size)
-        }
-        findViewById<TextView>(R.id.collageZoomLabel).text = getString(R.string.collage_zoom)
-        updateLayoutSelection()
-    }
+    private fun updateControls() { updateLayoutSelection() }
 
     private fun buildLayoutCards() {
         layoutCards.removeAllViews()
@@ -252,8 +241,8 @@ class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
             val card = MaterialCardView(this).apply {
                 layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginEnd = (8 * density).toInt() }
-                minimumWidth = (116 * density).toInt()
-                minimumHeight = (96 * density).toInt()
+                minimumWidth = (64 * density).toInt()
+                minimumHeight = (64 * density).toInt()
                 radius = 16 * density
                 cardElevation = 0f
                 isClickable = true
@@ -269,7 +258,7 @@ class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
                 setPadding((8 * density).toInt(), (4 * density).toInt(), (8 * density).toInt(), (4 * density).toInt())
             }
             content.addView(CollageLayoutPreview(this, uris.size, index),
-                LinearLayout.LayoutParams((68 * density).toInt(), (68 * density).toInt()))
+                LinearLayout.LayoutParams((56 * density).toInt(), (56 * density).toInt()))
             card.addView(content)
             layoutCards.addView(card)
         }
@@ -302,10 +291,9 @@ class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
         save.isEnabled = !busy
         replace.isEnabled = !busy
         preview.isEnabled = !busy
-        zoom.isEnabled = !busy
-        split.isEnabled = !busy
-        findViewById<View>(R.id.collageModePhoto).isEnabled = !busy
-        findViewById<View>(R.id.collageModeLayout).isEnabled = !busy
+        findViewById<View>(R.id.collageEdit).isEnabled = !busy
+        findViewById<View>(R.id.collageDone).isEnabled = !busy
+        findViewById<View>(R.id.collageCancelBottom).isEnabled = !busy
         for (i in 0 until layoutCards.childCount) layoutCards.getChildAt(i).isEnabled = !busy
         if (!busy) updateControls()
     }
@@ -394,7 +382,8 @@ class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
         outState.putParcelableArrayList(KEY_URIS, uris)
         outState.putInt(KEY_REPLACEMENT_INDEX, replacementIndex)
         outState.putParcelable(KEY_PENDING_REPLACEMENT, pendingReplacement)
-        outState.putBoolean(KEY_LAYOUT_MODE, modes.checkedButtonId == R.id.collageModeLayout)
+        outState.putBoolean(KEY_PHOTO_MODE, photoMode)
+        outState.putBoolean(KEY_PENDING_EDIT, pendingEdit)
         outState.putInt(KEY_LAYOUT, preview.layout)
         outState.putFloat(KEY_SPLIT, preview.split)
         outState.putInt(KEY_SELECTED, preview.selected)
@@ -407,7 +396,8 @@ class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
         private const val KEY_PENDING_REPLACEMENT = "collage_pending_replacement"
         private const val KEY_REPLACEMENT_INDEX = "collage_replacement_index"
         private const val KEY_URIS = "collage_uris"
-        private const val KEY_LAYOUT_MODE = "collage_layout_mode"
+        private const val KEY_PHOTO_MODE = "collage_photo_mode"
+        private const val KEY_PENDING_EDIT = "collage_pending_edit"
         private const val KEY_LAYOUT = "collage_layout"
         private const val KEY_SPLIT = "collage_split"
         private const val KEY_SELECTED = "collage_selected"

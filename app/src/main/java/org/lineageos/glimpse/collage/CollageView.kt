@@ -41,8 +41,12 @@ class CollageView @JvmOverloads constructor(context: Context, attrs: AttributeSe
     internal var split = 0.5f
     internal var selected = 0
     internal var onSelectionChanged: (() -> Unit)? = null
+    internal var onPhotoTap: (() -> Unit)? = null
+    internal var showSelection = false
     internal var onReorder: ((Int, Int) -> Unit)? = null
     private var previousSelection = 0
+    private var dividerGesture = false
+    private var originalSplit = .5f
     private var originalZoom = 1f
     private var originalX = 0f
     private var originalY = 0f
@@ -100,7 +104,7 @@ class CollageView @JvmOverloads constructor(context: Context, attrs: AttributeSe
             val dest = rect(cell, bounds)
             drawCollagePhoto(canvas, photo.preview, dest, photo.zoom, photo.offsetX, photo.offsetY)
             canvas.drawRect(dest, divider)
-            if (i == selected) {
+            if (showSelection && i == selected) {
                 val inset = border.strokeWidth / 2f
                 dest.inset(inset, inset)
                 canvas.drawRect(dest, border)
@@ -125,6 +129,27 @@ class CollageView @JvmOverloads constructor(context: Context, attrs: AttributeSe
         rect(it, square()).contains(x, y)
     }
 
+    private fun horizontalDivider() = layout == 1 && photos.size != 4
+
+    private fun touchesDivider(x: Float, y: Float): Boolean {
+        val bounds = square()
+        val vertical = !horizontalDivider()
+        val line = if (vertical) bounds.left + bounds.width() * split else bounds.top + bounds.height() * split
+        if (kotlin.math.abs((if (vertical) x else y) - line) > 10 * resources.displayMetrics.density) return false
+        val cells = collageCells(photos.size, layout, split)
+        val across = if (vertical) (y - bounds.top) / bounds.height() else (x - bounds.left) / bounds.width()
+        if (across !in 0f..1f) return false
+        val before = cells.any { c ->
+            if (vertical) kotlin.math.abs(c.right - split) < .001f && across >= c.top && across < c.bottom
+            else kotlin.math.abs(c.bottom - split) < .001f && across >= c.left && across < c.right
+        }
+        val after = cells.any { c ->
+            if (vertical) kotlin.math.abs(c.left - split) < .001f && across >= c.top && across < c.bottom
+            else kotlin.math.abs(c.top - split) < .001f && across >= c.left && across < c.right
+        }
+        return before && after
+    }
+
     private fun restoreGesture() {
         photos.getOrNull(gestureIndex)?.let {
             it.zoom = originalZoom; it.offsetX = originalX; it.offsetY = originalY
@@ -140,18 +165,43 @@ class CollageView @JvmOverloads constructor(context: Context, attrs: AttributeSe
             if (gestureIndex < 0) return false
             parent?.requestDisallowInterceptTouchEvent(true)
             previousSelection = selected
+            originalSplit = split
+            dividerGesture = touchesDivider(event.x, event.y)
             val photo = photos[gestureIndex]
             originalZoom = photo.zoom; originalX = photo.offsetX; originalY = photo.offsetY
-            selected = gestureIndex
+            if (!dividerGesture) selected = gestureIndex
             hadMultiplePointers = false; rejectScale = false; moved = false; reordering = false
             targetIndex = -1
             downX = event.x; downY = event.y; lastX = event.x; lastY = event.y
             dragX = event.x; dragY = event.y
-            postDelayed(longPress, ViewConfiguration.getLongPressTimeout().toLong())
+            if (!dividerGesture) postDelayed(longPress, ViewConfiguration.getLongPressTimeout().toLong())
             onSelectionChanged?.invoke()
             invalidate()
         }
         if (gestureIndex !in photos.indices) return false
+        if (dividerGesture) {
+            when (event.actionMasked) {
+                MotionEvent.ACTION_MOVE -> {
+                    if (hypot(event.x - downX, event.y - downY) > slop) moved = true
+                    if (moved) {
+                        val bounds = square()
+                        split = (if (horizontalDivider()) (event.y - bounds.top) / bounds.height()
+                            else (event.x - bounds.left) / bounds.width()).coerceIn(.2f, .8f)
+                        invalidate()
+                    }
+                    return true
+                }
+                MotionEvent.ACTION_POINTER_DOWN -> { split = originalSplit; dividerGesture = false; invalidate() }
+                MotionEvent.ACTION_CANCEL, MotionEvent.ACTION_UP -> {
+                    if (event.actionMasked == MotionEvent.ACTION_CANCEL) { split = originalSplit; restoreGesture() }
+                    else if (!moved) { selected = gestureIndex; onSelectionChanged?.invoke(); onPhotoTap?.invoke(); performClick() }
+                    gestureIndex = -1; dividerGesture = false
+                    parent?.requestDisallowInterceptTouchEvent(false)
+                    invalidate()
+                    return true
+                }
+            }
+        }
         if (event.actionMasked == MotionEvent.ACTION_POINTER_DOWN) {
             removeCallbacks(longPress)
             // A gesture that becomes a pinch must not also commit a pan.
@@ -213,6 +263,7 @@ class CollageView @JvmOverloads constructor(context: Context, attrs: AttributeSe
                 } else if (reordering) {
                     onReorder?.invoke(gestureIndex, targetIndex)
                 } else if (!moved && !hadMultiplePointers) {
+                    onPhotoTap?.invoke()
                     performClick()
                 }
                 gestureIndex = -1; reordering = false; targetIndex = -1

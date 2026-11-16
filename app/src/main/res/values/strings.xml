@@ -546,7 +546,7 @@
     <string name="collage_title">Collage</string>
     <string name="collage_count_error">Choose 2 to 6 photos to create a collage.</string>
     <string name="collage_video_error">Only photos can be included. Deselect videos and other unsupported media.</string>
-    <string name="collage_preview_hint">Tap to select; drag to reposition, pinch to zoom, or hold and drag to swap photos.</string>
+    <string name="collage_preview_hint">Tap a photo for actions; drag within it to reposition, pinch to zoom, hold and drag to swap, or drag a divider to change the layout.</string>
     <string name="collage_layout_side_by_side">Side by side</string>
     <string name="collage_layout_stacked">Stacked</string>
     <string name="collage_layout_split">Divider ratio · kept when changing layouts</string>

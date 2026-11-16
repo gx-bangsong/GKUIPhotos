@@ -2606,7 +2606,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                 }.getOrDefault(false)
             }
             if (written) {
-                finishWithSaved()
+                finishWithSaved(uri)
             } else {
                 pendingOverwrite = bytes
                 try {
@@ -2622,10 +2622,10 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
 
     private fun saveAsNew(bytes: ByteArray) {
         lifecycleScope.launch {
-            val ok = withContext(Dispatchers.IO) {
-                runCatching { writeToMediaStore(bytes) }.isSuccess
+            val savedUri = withContext(Dispatchers.IO) {
+                runCatching { writeToMediaStore(bytes) }.getOrNull()
             }
-            if (ok) finishWithSaved() else showFailed()
+            if (savedUri != null) finishWithSaved(savedUri) else showFailed()
         }
     }
 
@@ -2659,10 +2659,10 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         hideSaving()
         Toast.makeText(this, R.string.editor_save_failed, Toast.LENGTH_LONG).show()
     }
-    private fun finishWithSaved() {
+    private fun finishWithSaved(savedUri: Uri? = sourceUri) {
         hideSaving()
         Toast.makeText(this, R.string.editor_saved, Toast.LENGTH_SHORT).show()
-        setResult(Activity.RESULT_OK)
+        setResult(Activity.RESULT_OK, Intent().setData(savedUri))
         finish()
     }
 

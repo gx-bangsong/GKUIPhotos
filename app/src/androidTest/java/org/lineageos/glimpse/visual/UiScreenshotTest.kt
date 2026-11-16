@@ -40,6 +40,7 @@ import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
 import org.junit.After
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertEquals
 import org.junit.Assume.assumeTrue
 import org.junit.Assert.assertTrue
@@ -169,7 +170,7 @@ class UiScreenshotTest {
         assertTrue("Collage loading did not complete", device.wait(Until.hasObject(By.res(context.packageName, "collageSave").enabled(true)), 30000))
         // The old baseline uses a deliberately dark-only viewer theme. Assert the
         // actual resolved surface, not merely the emulator's night-mode setting.
-        if (context.resources.getIdentifier("collageModePhoto", "id", context.packageName) != 0) {
+        if (isCandidate() || context.resources.getIdentifier("collageModePhoto", "id", context.packageName) != 0) {
             val expected = InstrumentationRegistry.getArguments().getString("expectedTheme")
             if (expected != null) instrumentation.runOnMainSync {
                 val root = activity!!.findViewById<View>(R.id.collageRoot)
@@ -674,7 +675,10 @@ class UiScreenshotTest {
             }
             activity?.finish(); activity = null
             collage(4); capture("collage-four-zh")
-            instrumentation.runOnMainSync { activity!!.findViewById<View>(R.id.collageModeLayout).performClick() }
+            instrumentation.runOnMainSync {
+                val toggle = context.resources.getIdentifier("collageModeLayout", "id", context.packageName)
+                if (toggle != 0) activity!!.findViewById<View>(toggle)?.performClick()
+            }
             device.waitForIdle(); capture("collage-four-layouts-zh")
         } finally {
             activity?.finish(); activity = null
@@ -684,7 +688,10 @@ class UiScreenshotTest {
     }
     private fun collageLayouts(count: Int, name: String) {
         collage(count)
-        instrumentation.runOnMainSync { activity!!.findViewById<View>(R.id.collageModeLayout).performClick() }
+        instrumentation.runOnMainSync {
+                val toggle = context.resources.getIdentifier("collageModeLayout", "id", context.packageName)
+                if (toggle != 0) activity!!.findViewById<View>(toggle)?.performClick()
+            }
         device.waitForIdle(); capture(name)
     }
     @Test fun collageTwoLayouts() { collageLayouts(2, "collage-two-layouts") }
@@ -1202,11 +1209,32 @@ class UiScreenshotTest {
         collage(2)
         val preview = device.findObject(By.res(context.packageName, "collagePreview"))
         assertNotNull("Collage preview missing", preview)
+        if (isCandidate()) {
+            assertNotNull("Layout icons should be visible initially", device.findObject(By.res(context.packageName, "collageLayouts")))
+            assertNull("Photo actions should initially be hidden", device.findObject(By.res(context.packageName, "collageActions")))
+            for (name in listOf("collageModePhoto", "collageModeLayout", "collageZoom", "collageHint")) {
+                assertEquals("Old controls must be removed: $name", 0, context.resources.getIdentifier(name, "id", context.packageName))
+            }
+        }
         val r = preview!!.visibleBounds
         device.click(r.right - r.width() / 4, r.centerY())
-        assertTrue("Second collage photo was not selected", device.wait(
-            Until.hasObject(By.textContains("Photo 2 of 2 selected")), 10000))
+        if (isCandidate()) {
+            assertTrue("Photo actions missing", device.wait(Until.hasObject(By.res(context.packageName, "collageEdit")), 10000))
+            assertNotNull(device.findObject(By.res(context.packageName, "collageReplace")))
+            assertNotNull(device.findObject(By.res(context.packageName, "collageDone")))
+            assertNull("Layout choices must hide when a photo is selected", device.findObject(By.res(context.packageName, "collageLayouts")))
+            assertNull("Save must hide when a photo is selected", device.findObject(By.res(context.packageName, "collageSave")))
+        } else {
+            assertTrue("Second collage photo was not selected", device.wait(
+                Until.hasObject(By.textContains("Photo 2 of 2 selected")), 10000))
+        }
         capture("collage-selected")
+        if (isCandidate()) {
+            device.findObject(By.res(context.packageName, "collageDone"))!!.click()
+            assertNotNull("Layout choices did not return", device.wait(Until.findObject(By.res(context.packageName, "collageLayouts")), 5000))
+            assertNotNull(device.findObject(By.res(context.packageName, "collageSave")))
+            assertNull(device.findObject(By.res(context.packageName, "collageActions")))
+        }
     }
     @Test fun collageFour() { collage(4); capture("collage-four") }
     @Test fun collageFourLayouts() {
@@ -1260,70 +1288,43 @@ class UiScreenshotTest {
         }
         touch(MotionEvent.ACTION_UP, positions[2].toFloat(), positions[3].toFloat())
         device.waitForIdle()
-        val bounds = Rect()
         instrumentation.runOnMainSync {
             assertEquals(listOf(images[1], images[0], images[2]), view.photos.map { it.uri })
             assertEquals(1, view.selected)
             assertEquals(2f, view.photos[1].zoom, 0f)
             assertEquals(.3f, view.photos[1].offsetX, 0f)
             assertEquals(1.4f, view.photos[0].zoom, 0f)
-            val layoutMode = context.resources.getIdentifier("collageModeLayout", "id", context.packageName)
-            activity!!.findViewById<View>(layoutMode).performClick()
             activity!!.findViewById<LinearLayout>(R.id.collageLayoutCards).getChildAt(1).performClick()
             assertEquals(1, view.layout)
             assertEquals(listOf(images[1], images[0], images[2]), view.photos.map { it.uri })
             assertEquals(2f, view.photos[1].zoom, 0f)
-            activity!!.findViewById<View>(context.resources.getIdentifier("collageModePhoto", "id", context.packageName)).performClick()
-            val slider = activity!!.findViewById<Slider>(R.id.collageZoom)
-            var parent = slider.parent
-            while (parent != null && parent !is ScrollView) parent = parent.parent
-            val scroll = requireNotNull(parent as? ScrollView)
-            scroll.scrollTo(0, scroll.getChildAt(0).height)
-            assertTrue("Zoom slider not visible", slider.getGlobalVisibleRect(bounds))
-            assertTrue("Zoom slider partially clipped", bounds.height() >= slider.height)
-        }
-        device.waitForIdle()
-        device.swipe(bounds.left + bounds.width() / 3, bounds.centerY(), bounds.right - 24, bounds.centerY(), 30)
-        instrumentation.runOnMainSync {
-            assertTrue("Slider gesture did not zoom selected photo", view.photos[1].zoom > 2f)
-            assertEquals(1.4f, view.photos[0].zoom, 0.001f)
         }
     }
 
     @Test fun collageSplitGestureChangesGeometry() {
-        assumeTrue("Custom split is candidate-only", isCandidate())
+        assumeTrue("Direct divider is candidate-only", isCandidate())
         collage(4)
         val view = activity!!.findViewById<CollageView>(R.id.collagePreview)
-        val splitId = context.resources.getIdentifier("collageSplit", "id", context.packageName)
-        val layoutId = context.resources.getIdentifier("collageModeLayout", "id", context.packageName)
-        instrumentation.runOnMainSync { activity!!.findViewById<View>(layoutId).performClick() }
-        device.waitForIdle()
-        val bounds = Rect()
-        val before = FloatArray(1)
+        val points = IntArray(4)
+        var before = 0f
         instrumentation.runOnMainSync {
-            val slider = activity!!.findViewById<Slider>(splitId)
-            var parent = slider.parent
-            while (parent != null && parent !is ScrollView) parent = parent.parent
-            val scroll = requireNotNull(parent as? ScrollView)
-            scroll.scrollTo(0, scroll.getChildAt(0).height)
-            before[0] = slider.value
+            val loc = IntArray(2); view.getLocationOnScreen(loc)
+            val edge = minOf(view.width, view.height)
+            val left = loc[0] + (view.width - edge) / 2
+            val top = loc[1] + (view.height - edge) / 2
+            points[0] = left + edge / 2; points[1] = top + edge / 4
+            points[2] = left + edge / 3; points[3] = points[1]
+            before = CollageView::class.java.getDeclaredField("split").apply { isAccessible = true }.getFloat(view)
         }
+        assertTrue(device.swipe(points[0], points[1], points[2], points[3], 25))
         device.waitForIdle()
         instrumentation.runOnMainSync {
-            val slider = activity!!.findViewById<Slider>(splitId)
-            assertTrue("Split slider not visible", slider.getGlobalVisibleRect(bounds))
-            assertTrue("Split slider clipped", bounds.height() >= slider.height)
-        }
-        assertTrue(device.swipe(bounds.centerX(), bounds.centerY(), bounds.left + bounds.width() / 4, bounds.centerY(), 25))
-        device.waitForIdle()
-        instrumentation.runOnMainSync {
-            val splitField = CollageView::class.java.getDeclaredField("split").apply { isAccessible = true }
-            val after = splitField.getFloat(view)
-            assertTrue("Split slider did not change proportion", after < before[0] - .02f)
+            val after = CollageView::class.java.getDeclaredField("split").apply { isAccessible = true }.getFloat(view)
+            assertTrue("Divider gesture did not change proportion", after < before - .05f)
             val geometry = Class.forName("org.lineageos.glimpse.collage.CollageLayoutKt")
                 .getDeclaredMethod("collageCells", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType, Float::class.javaPrimitiveType)
                 .apply { isAccessible = true }
-            assertTrue("Split did not change preview geometry", geometry.invoke(null, 4, view.layout, before[0]) != geometry.invoke(null, 4, view.layout, after))
+            assertTrue("Divider did not change geometry", geometry.invoke(null, 4, view.layout, before) != geometry.invoke(null, 4, view.layout, after))
             assertEquals(images.take(4), view.photos.map { it.uri })
         }
         capture("collage-preview-split")
@@ -1447,8 +1448,6 @@ class UiScreenshotTest {
             }
         }
         instrumentation.runOnMainSync {
-            val mode = context.resources.getIdentifier("collageModeLayout", "id", context.packageName)
-            activity!!.findViewById<View>(mode).performClick()
             val cards = activity!!.findViewById<LinearLayout>(R.id.collageLayoutCards)
             cards.getChildAt(1).performClick()
             assertEquals(1, view.layout)
@@ -1463,6 +1462,11 @@ class UiScreenshotTest {
         assumeTrue("Replacement unavailable in baseline", id != 0)
         collage(2)
         val view = activity!!.findViewById<CollageView>(R.id.collagePreview)
+        if (isCandidate()) {
+            val r = device.findObject(By.res(context.packageName, "collagePreview"))!!.visibleBounds
+            device.click(r.left + r.width() / 4, r.centerY())
+            assertNotNull(device.wait(Until.findObject(By.res(context.packageName, "collageReplace")), 5000))
+        }
         fun deliver(result: Instrumentation.ActivityResult) {
             val filter = IntentFilter(Intent.ACTION_OPEN_DOCUMENT).apply {
                 addCategory(Intent.CATEGORY_OPENABLE)
@@ -1486,6 +1490,55 @@ class UiScreenshotTest {
         instrumentation.runOnMainSync {
             assertEquals(listOf(images[2], images[1]), view.photos.map { it.uri })
             assertEquals(0, view.layout)
+        }
+    }
+
+    @Test fun collageEditReturnsPhotoAndPreservesComposition() {
+        assumeTrue("Photo action mode is candidate-only", isCandidate())
+        collage(2)
+        val view = activity!!.findViewById<CollageView>(R.id.collagePreview)
+        val r = device.findObject(By.res(context.packageName, "collagePreview"))!!.visibleBounds
+        device.click(r.left + r.width() / 4, r.centerY())
+        assertNotNull(device.wait(Until.findObject(By.res(context.packageName, "collageEdit")), 5000))
+        instrumentation.runOnMainSync { view.photos[0].zoom = 2f; view.photos[0].offsetX = .2f }
+        val monitor = instrumentation.addMonitor(ImageEditorActivity::class.java.name,
+            Instrumentation.ActivityResult(Activity.RESULT_OK, Intent().setData(images[2])), true)
+        device.findObject(By.res(context.packageName, "collageEdit"))!!.click()
+        instrumentation.waitForIdleSync()
+        instrumentation.removeMonitor(monitor)
+        val deadline = System.currentTimeMillis() + 30000
+        while (System.currentTimeMillis() < deadline) {
+            var done = false
+            instrumentation.runOnMainSync { done = view.photos.firstOrNull()?.uri == images[2] }
+            if (done) break
+            Thread.sleep(100)
+        }
+        instrumentation.runOnMainSync {
+            assertEquals(listOf(images[2], images[1]), view.photos.map { it.uri })
+            assertEquals(2f, view.photos[0].zoom, 0f)
+            assertEquals(.2f, view.photos[0].offsetX, 0f)
+        }
+        assertNotNull(device.findObject(By.res(context.packageName, "collageDone")))
+    }
+
+    @Test fun collagePanThroughWindow() {
+        assumeTrue("Preview gestures are candidate-only", isCandidate())
+        collage(2)
+        val view = activity!!.findViewById<CollageView>(R.id.collagePreview)
+        val points = IntArray(4)
+        instrumentation.runOnMainSync {
+            val loc = IntArray(2); view.getLocationOnScreen(loc)
+            val edge = minOf(view.width, view.height)
+            val x = loc[0] + (view.width - edge) / 2 + edge / 4
+            val y = loc[1] + (view.height - edge) / 2 + edge / 2
+            points[0] = x; points[1] = y; points[2] = x + edge / 12; points[3] = y + edge / 12
+            view.photos[0].zoom = 2f
+        }
+        assertTrue(device.swipe(points[0], points[1], points[2], points[3], 25))
+        instrumentation.runOnMainSync {
+            assertTrue("Window drag did not pan", view.photos[0].offsetX != 0f || view.photos[0].offsetY != 0f)
+            assertEquals(1f, view.photos[1].zoom, 0f)
+            assertEquals(images.take(2), view.photos.map { it.uri })
         }
     }
 
@@ -1532,9 +1585,10 @@ class UiScreenshotTest {
             collage(2)
             if (isCandidate()) instrumentation.runOnMainSync {
                 val root = activity!!.findViewById<View>(R.id.collageRoot)
-                val panelId = context.resources.getIdentifier("collagePanelHost", "id", context.packageName)
-                val panel = activity!!.findViewById<View>(panelId)
-                assertTrue("Tool panel takes too much of a short window", panel.height <= root.height * 0.38f + 1)
+                val save = activity!!.findViewById<View>(R.id.collageSave)
+                val saveLoc = IntArray(2); val rootLoc = IntArray(2)
+                save.getLocationOnScreen(saveLoc); root.getLocationOnScreen(rootLoc)
+                assertTrue("Save outside short window", saveLoc[1] + save.height <= rootLoc[1] + root.height)
                 assertTrue("Preview has no usable space", activity!!.findViewById<View>(R.id.collagePreview).height > 0)
             }
             capture("collage-small")

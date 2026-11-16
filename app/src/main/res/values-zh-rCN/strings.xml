@@ -491,7 +491,7 @@
     <string name="collage_title">拼图</string>
     <string name="collage_count_error">请选择 2 至 6 张照片制作拼图。</string>
     <string name="collage_video_error">拼图仅支持照片，请取消选择视频或其他不支持的媒体。</string>
-    <string name="collage_preview_hint">点按选中，拖动调整构图，双指缩放，长按拖动交换照片。</string>
+    <string name="collage_preview_hint">点按照片显示操作；拖动调整构图，双指缩放，长按拖动交换照片，拖动分隔线调整布局。</string>
     <string name="collage_layout_side_by_side">左右</string>
     <string name="collage_layout_stacked">上下</string>
     <string name="collage_layout_split">分隔比例 · 切换布局时保留</string>
