@@ -481,7 +481,7 @@
     <string name="collage_title">拼貼</string>
     <string name="collage_count_error">請選擇 2 至 6 張照片製作拼貼。</string>
     <string name="collage_video_error">拼貼僅支援照片，請取消選取影片或其他不支援的媒體。</string>
-    <string name="collage_preview_hint">點按照片選取；拖曳調整位置，雙指或使用縮放滑桿調整大小。</string>
+    <string name="collage_preview_hint">點按選取，拖曳調整構圖，雙指縮放，長按拖曳交換照片。</string>
     <string name="collage_layout_split">分隔比例 · 切換版面時保留</string>
     <string name="collage_layout_side_by_side">左右</string>
     <string name="collage_layout_stacked">上下</string>
@@ -491,8 +491,6 @@
     <string name="collage_layout_columns">依欄排列</string>
     <string name="collage_layout_one">版面 1</string>
     <string name="collage_layout_two">版面 2</string>
-    <string name="collage_move_before">往前移動</string>
-    <string name="collage_move_after">往後移動</string>
     <string name="collage_zoom">縮放</string>
     <string name="collage_load_failed">無法載入照片</string>
     <string name="collage_saving">正在儲存拼貼</string>
@@ -501,10 +499,8 @@
     <string name="collage_cancelled">已取消儲存拼貼</string>
     <string name="collage_select_next">選取下一張照片</string>
     <string name="collage_selected_photo">已選取第 %1$d 張，共 %2$d 張</string>
-    <string name="collage_photos_heading">長按照片拖曳換序</string>
     <string name="collage_layout_heading">版面</string>
     <string name="collage_zoom_selected">縮放 · 第 %1$d 張</string>
-    <string name="collage_photo_description">第 %1$d 張，共 %2$d 張</string>
     <string name="collage_layout_description">%1$s，%2$d 張照片</string>
     <string name="markup_brush_section">筆刷</string>
     <string name="markup_shape_section">圖形</string>

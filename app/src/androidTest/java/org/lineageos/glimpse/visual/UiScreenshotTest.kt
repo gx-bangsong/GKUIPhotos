@@ -28,7 +28,6 @@ import android.view.MotionEvent
 import android.view.ViewConfiguration
 import android.os.SystemClock
 import android.widget.ScrollView
-import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.slider.Slider
 import androidx.exifinterface.media.ExifInterface
 import androidx.core.graphics.ColorUtils
@@ -1227,21 +1226,24 @@ class UiScreenshotTest {
     }
     @Test fun collageSix() { collage(6); capture("collage-six") }
     @Test fun collageDragAndZoom() {
+        assumeTrue("Preview reorder is candidate-only", isCandidate())
         collage(3)
         val view = activity!!.findViewById<CollageView>(R.id.collagePreview)
-        val strip = activity!!.findViewById<RecyclerView>(R.id.collageFilmstrip)
         device.waitForIdle()
         val positions = IntArray(4)
         instrumentation.runOnMainSync {
-            val first = requireNotNull(strip.layoutManager!!.findViewByPosition(0))
-            val second = requireNotNull(strip.layoutManager!!.findViewByPosition(1))
-            val a = IntArray(2); val b = IntArray(2)
-            first.getLocationOnScreen(a); second.getLocationOnScreen(b)
-            positions[0] = a[0] + first.width / 2; positions[1] = a[1] + first.height / 2
-            positions[2] = b[0] + second.width * 3 / 4; positions[3] = b[1] + second.height / 2
+            val loc = IntArray(2)
+            view.getLocationOnScreen(loc)
+            val edge = minOf(view.width, view.height)
+            val left = loc[0] + (view.width - edge) / 2
+            val top = loc[1] + (view.height - edge) / 2
+            positions[0] = left + edge / 4; positions[1] = top + edge / 4
+            positions[2] = left + edge * 3 / 4; positions[3] = top + edge / 4
+            view.photos[0].zoom = 2f
+            view.photos[0].offsetX = .3f
+            view.photos[1].zoom = 1.4f
         }
-        // Inject an explicit long press: a swipe-like drag may not wait for the
-        // ItemTouchHelper long-press timeout on every UiAutomator version.
+        // Inject a real window-level long press followed by a drag.
         val down = SystemClock.uptimeMillis()
         fun touch(action: Int, x: Float, y: Float) {
             val event = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, x, y, 0)
@@ -1262,6 +1264,16 @@ class UiScreenshotTest {
         instrumentation.runOnMainSync {
             assertEquals(listOf(images[1], images[0], images[2]), view.photos.map { it.uri })
             assertEquals(1, view.selected)
+            assertEquals(2f, view.photos[1].zoom, 0f)
+            assertEquals(.3f, view.photos[1].offsetX, 0f)
+            assertEquals(1.4f, view.photos[0].zoom, 0f)
+            val layoutMode = context.resources.getIdentifier("collageModeLayout", "id", context.packageName)
+            activity!!.findViewById<View>(layoutMode).performClick()
+            activity!!.findViewById<LinearLayout>(R.id.collageLayoutCards).getChildAt(1).performClick()
+            assertEquals(1, view.layout)
+            assertEquals(listOf(images[1], images[0], images[2]), view.photos.map { it.uri })
+            assertEquals(2f, view.photos[1].zoom, 0f)
+            activity!!.findViewById<View>(context.resources.getIdentifier("collageModePhoto", "id", context.packageName)).performClick()
             val slider = activity!!.findViewById<Slider>(R.id.collageZoom)
             var parent = slider.parent
             while (parent != null && parent !is ScrollView) parent = parent.parent
@@ -1273,9 +1285,137 @@ class UiScreenshotTest {
         device.waitForIdle()
         device.swipe(bounds.left + bounds.width() / 3, bounds.centerY(), bounds.right - 24, bounds.centerY(), 30)
         instrumentation.runOnMainSync {
-            assertTrue("Slider gesture did not zoom selected photo", view.photos[1].zoom > 1f)
-            assertEquals(1f, view.photos[0].zoom, 0.001f)
+            assertTrue("Slider gesture did not zoom selected photo", view.photos[1].zoom > 2f)
+            assertEquals(1.4f, view.photos[0].zoom, 0.001f)
         }
+    }
+
+    @Test fun collagePreviewForAllPhotoCounts() {
+        assumeTrue("Preview-only controls are candidate-only", isCandidate())
+        for (count in 2..6) {
+            collage(count)
+            val view = activity!!.findViewById<CollageView>(R.id.collagePreview)
+            instrumentation.runOnMainSync {
+                assertEquals(count, view.photos.size)
+                assertEquals(images.take(count), view.photos.map { it.uri })
+                assertEquals(0, context.resources.getIdentifier("collageFilmstrip", "id", context.packageName))
+            }
+            capture("collage-preview-$count")
+            instrumentation.runOnMainSync { activity?.finish() }
+            device.waitForIdle()
+        }
+    }
+
+    @Test fun collageLandscapeBottomSave() {
+        assumeTrue("Preview-only controls are candidate-only", isCandidate())
+        try {
+            device.setOrientationLeft()
+            collage(4)
+            val save = device.wait(Until.findObject(By.res(context.packageName, "collageSave")), 10000)
+            val root = device.findObject(By.res(context.packageName, "collageRoot"))
+            assertNotNull(save); assertNotNull(root)
+            val r = root!!.visibleBounds; val b = save!!.visibleBounds
+            assertTrue("Save clipped in landscape", b.height() >= (48 * context.resources.displayMetrics.density).toInt())
+            assertTrue("Save is outside safe area", b.bottom <= r.bottom)
+            assertTrue("Save is not near the bottom", b.bottom > r.top + r.height() * .85f)
+            capture("collage-preview-landscape")
+        } finally {
+            device.setOrientationNatural()
+            device.unfreezeRotation()
+        }
+    }
+
+    @Test fun collagePinchThroughWindow() {
+        assumeTrue("Preview gestures are candidate-only", isCandidate())
+        collage(2)
+        val view = activity!!.findViewById<CollageView>(R.id.collagePreview)
+        var x = 0f; var y = 0f; var edge = 0f
+        instrumentation.runOnMainSync {
+            val loc = IntArray(2); view.getLocationOnScreen(loc)
+            edge = minOf(view.width, view.height).toFloat()
+            x = loc[0] + (view.width - edge) / 2 + edge * .25f
+            y = loc[1] + (view.height - edge) / 2 + edge * .5f
+        }
+        val down = SystemClock.uptimeMillis()
+        fun send(action: Int, points: List<Pair<Float, Float>>) {
+            val props = points.indices.map { i -> MotionEvent.PointerProperties().apply {
+                id = i; toolType = MotionEvent.TOOL_TYPE_FINGER
+            } }.toTypedArray()
+            val coords = points.map { (px, py) -> MotionEvent.PointerCoords().apply {
+                this.x = px; this.y = py; pressure = 1f; size = 1f
+            } }.toTypedArray()
+            val e = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, points.size, props, coords,
+                0, 0, 1f, 1f, 0, 0, android.view.InputDevice.SOURCE_TOUCHSCREEN, 0)
+            try { assertTrue(instrumentation.uiAutomation.injectInputEvent(e, true)) } finally { e.recycle() }
+            Thread.sleep(35)
+        }
+        val initial = listOf((x - edge * .05f) to y, (x + edge * .05f) to y)
+        send(MotionEvent.ACTION_DOWN, listOf(initial[0]))
+        send(MotionEvent.ACTION_POINTER_DOWN or (1 shl MotionEvent.ACTION_POINTER_INDEX_SHIFT), initial)
+        for (n in 1..6) {
+            val distance = edge * (.05f + .015f * n)
+            send(MotionEvent.ACTION_MOVE, listOf((x - distance) to y, (x + distance) to y))
+        }
+        val last = listOf((x - edge * .14f) to y, (x + edge * .14f) to y)
+        send(MotionEvent.ACTION_POINTER_UP or (1 shl MotionEvent.ACTION_POINTER_INDEX_SHIFT), last)
+        send(MotionEvent.ACTION_UP, listOf(last[0]))
+        device.waitForIdle()
+        instrumentation.runOnMainSync {
+            assertTrue("Window pinch did not zoom the starting cell", view.photos[0].zoom > 1f)
+            assertEquals(1f, view.photos[1].zoom, 0f)
+            assertEquals(images.take(2), view.photos.map { it.uri })
+        }
+    }
+
+    @Test fun collagePreviewCancelAndTemplateIndependence() {
+        assumeTrue("Preview reorder is candidate-only", isCandidate())
+        collage(4)
+        val view = activity!!.findViewById<CollageView>(R.id.collagePreview)
+        val point = IntArray(2)
+        instrumentation.runOnMainSync {
+            assertEquals("Filmstrip resource must be removed", 0,
+                context.resources.getIdentifier("collageFilmstrip", "id", context.packageName))
+            val loc = IntArray(2); view.getLocationOnScreen(loc)
+            val edge = minOf(view.width, view.height)
+            point[0] = loc[0] + (view.width - edge) / 2 + edge / 4
+            point[1] = loc[1] + (view.height - edge) / 2 + edge / 4
+            view.selected = 1
+            view.photos[0].zoom = 2f
+            view.photos[0].offsetX = .2f
+            view.photos[0].offsetY = -.3f
+        }
+        fun gesture(cancel: Boolean) {
+            val down = SystemClock.uptimeMillis()
+            fun send(action: Int, x: Float, y: Float) {
+                val event = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, x, y, 0)
+                try { assertTrue(instrumentation.uiAutomation.injectInputEvent(event, true)) }
+                finally { event.recycle() }
+            }
+            send(MotionEvent.ACTION_DOWN, point[0].toFloat(), point[1].toFloat())
+            Thread.sleep(ViewConfiguration.getLongPressTimeout().toLong() + 200)
+            send(MotionEvent.ACTION_MOVE, 1f, 1f)
+            send(if (cancel) MotionEvent.ACTION_CANCEL else MotionEvent.ACTION_UP, 1f, 1f)
+            device.waitForIdle()
+        }
+        for (cancel in listOf(false, true)) {
+            gesture(cancel)
+            instrumentation.runOnMainSync {
+                assertEquals(images.take(4), view.photos.map { it.uri })
+                assertEquals(1, view.selected)
+                assertEquals(2f, view.photos[0].zoom, 0f)
+                assertEquals(.2f, view.photos[0].offsetX, 0f)
+                assertEquals(-.3f, view.photos[0].offsetY, 0f)
+            }
+        }
+        instrumentation.runOnMainSync {
+            val mode = context.resources.getIdentifier("collageModeLayout", "id", context.packageName)
+            activity!!.findViewById<View>(mode).performClick()
+            val cards = activity!!.findViewById<LinearLayout>(R.id.collageLayoutCards)
+            cards.getChildAt(1).performClick()
+            assertEquals(1, view.layout)
+            assertEquals(images.take(4), view.photos.map { it.uri })
+        }
+        capture("collage-preview-no-filmstrip")
     }
 
     @Test fun collageReplaceAndCancel() {

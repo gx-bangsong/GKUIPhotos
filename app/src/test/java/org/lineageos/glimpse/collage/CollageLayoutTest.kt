@@ -29,8 +29,6 @@ class CollageLayoutTest {
         assertTrue(grid != featured)
         assertEquals(1f, featured.first().bottom, 0f)
         assertEquals(0.3f, collageCells(4, 1, 0.3f).first().right, 0.0001f)
-        val photos = mutableListOf("a", "b", "c", "d")
-        moveCollageItem(photos, 0, 0, 3)
         assertEquals(featured, collageCells(4, 1))
     }
     @Test fun panAndZoomAlwaysCoverTheCell() {
@@ -43,13 +41,16 @@ class CollageLayoutTest {
         val left = collageDestination(cell, 400, 200, 1f, 1f, 0f)
         assertEquals(cell.left, left.left, 0.0001f)
     }
-    @Test fun movingPhotosPreservesSelectedPhoto() {
-        val items = mutableListOf("a", "b", "c", "d")
-        val selected = moveCollageItem(items, 2, 0, 3)
-        assertEquals(listOf("b", "c", "d", "a"), items)
-        assertEquals(1, selected)
-        assertEquals(0, moveCollageItem(items, selected, 1, 0))
-        assertEquals(listOf("c", "b", "d", "a"), items)
+    @Test fun allTemplatesDifferInGeometryAndHaveMinimumCellSize() {
+        for (count in 2..6) for (split in listOf(.2f, .5f, .8f)) {
+            val first = collageCells(count, 0, split)
+            val second = collageCells(count, 1, split)
+            assertTrue("Templates must differ geometrically for $count", first.toSet() != second.toSet())
+            (first + second).forEach {
+                assertTrue(it.right - it.left >= .1999f && it.bottom - it.top >= .1999f)
+            }
+            assertTrue("Split must affect geometry", collageCells(count, 0, .2f) != collageCells(count, 0, .8f))
+        }
     }
     @Test(expected = IllegalArgumentException::class) fun rejectsOnePhoto() { collageCells(1, 0) }
     @Test(expected = IllegalArgumentException::class) fun rejectsSevenPhotos() { collageCells(7, 0) }

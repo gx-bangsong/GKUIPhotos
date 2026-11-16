@@ -14,6 +14,8 @@ import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
+import android.view.ViewConfiguration
+import kotlin.math.hypot
 import com.google.android.material.color.MaterialColors
 import kotlin.math.max
 import kotlin.math.min
@@ -40,6 +42,31 @@ class CollageView @JvmOverloads constructor(context: Context, attrs: AttributeSe
     internal var split = 0.5f
     internal var selected = 0
     internal var onSelectionChanged: (() -> Unit)? = null
+    internal var onReorder: ((Int, Int) -> Unit)? = null
+    private var previousSelection = 0
+    private var originalZoom = 1f
+    private var originalX = 0f
+    private var originalY = 0f
+    private var downX = 0f
+    private var downY = 0f
+    private var moved = false
+    private var reordering = false
+    private var targetIndex = -1
+    private var dragX = 0f
+    private var dragY = 0f
+    private val slop = ViewConfiguration.get(context).scaledTouchSlop
+    private val longPress = Runnable {
+        if (gestureIndex in photos.indices && !moved && !hadMultiplePointers) {
+            reordering = true
+            targetIndex = gestureIndex
+            performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+            invalidate()
+        }
+    }
+    private val targetBorder = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = MaterialColors.getColor(this@CollageView, androidx.appcompat.R.attr.colorPrimary)
+        style = Paint.Style.STROKE; strokeWidth = 5 * resources.displayMetrics.density
+    }
     private var gestureIndex = -1
     private var hadMultiplePointers = false
     private var rejectScale = false
@@ -88,57 +115,103 @@ class CollageView @JvmOverloads constructor(context: Context, attrs: AttributeSe
                 canvas.drawRect(dest, border)
             }
         }
+        if (reordering && gestureIndex in photos.indices) {
+            val cells = collageCells(photos.size, layout, split)
+            if (targetIndex in cells.indices) {
+                val target = rect(cells[targetIndex], bounds)
+                target.inset(targetBorder.strokeWidth / 2f, targetBorder.strokeWidth / 2f)
+                canvas.drawRect(target, targetBorder)
+            }
+            val size = min(bounds.width(), bounds.height()) * .20f
+            val floating = RectF(dragX - size / 2, dragY - size / 2, dragX + size / 2, dragY + size / 2)
+            val photo = photos[gestureIndex]
+            drawCollagePhoto(canvas, photo.preview, floating, photo.zoom, photo.offsetX, photo.offsetY)
+            canvas.drawRect(floating, border)
+        }
+    }
+
+    private fun cellAt(x: Float, y: Float): Int = collageCells(photos.size, layout, split).indexOfFirst {
+        rect(it, square()).contains(x, y)
+    }
+
+    private fun restoreGesture() {
+        photos.getOrNull(gestureIndex)?.let {
+            it.zoom = originalZoom; it.offsetX = originalX; it.offsetY = originalY
+        }
+        selected = previousSelection
+        onSelectionChanged?.invoke()
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (!isEnabled || photos.size !in 2..6) return false
         if (event.actionMasked == MotionEvent.ACTION_DOWN) {
-            val bounds = square()
-            gestureIndex = collageCells(photos.size, layout, split).indexOfFirst {
-                rect(it, bounds).contains(event.x, event.y)
-            }
+            gestureIndex = cellAt(event.x, event.y)
             if (gestureIndex < 0) return false
+            parent?.requestDisallowInterceptTouchEvent(true)
+            previousSelection = selected
+            val photo = photos[gestureIndex]
+            originalZoom = photo.zoom; originalX = photo.offsetX; originalY = photo.offsetY
             selected = gestureIndex
-            hadMultiplePointers = false
-            rejectScale = false
-            lastX = event.x
-            lastY = event.y
+            hadMultiplePointers = false; rejectScale = false; moved = false; reordering = false
+            targetIndex = -1
+            downX = event.x; downY = event.y; lastX = event.x; lastY = event.y
+            dragX = event.x; dragY = event.y
+            postDelayed(longPress, ViewConfiguration.getLongPressTimeout().toLong())
             onSelectionChanged?.invoke()
             invalidate()
         }
         if (gestureIndex !in photos.indices) return false
         if (event.actionMasked == MotionEvent.ACTION_POINTER_DOWN) {
+            removeCallbacks(longPress)
             hadMultiplePointers = true
             val cell = rect(collageCells(photos.size, layout, split)[gestureIndex], square())
-            // Never turn a two-cell touch into a pinch on the wrong photo.
-            if ((0 until event.pointerCount).any { !cell.contains(event.getX(it), event.getY(it)) }) {
+            if (reordering || (0 until event.pointerCount).any { !cell.contains(event.getX(it), event.getY(it)) }) {
                 rejectScale = true
+                if (reordering) { restoreGesture(); reordering = false }
                 val cancel = MotionEvent.obtain(event).apply { action = MotionEvent.ACTION_CANCEL }
-                detector.onTouchEvent(cancel)
-                cancel.recycle()
+                detector.onTouchEvent(cancel); cancel.recycle()
             }
         }
-        if (!rejectScale) detector.onTouchEvent(event)
+        if (!rejectScale && !reordering) detector.onTouchEvent(event)
         when (event.actionMasked) {
             MotionEvent.ACTION_MOVE -> {
-                if (!hadMultiplePointers && event.pointerCount == 1) {
-                    val photo = photos[gestureIndex]
-                    val cell = rect(collageCells(photos.size, layout, split)[gestureIndex], square())
-                    val scale = max(cell.width() / photo.preview.width, cell.height() / photo.preview.height) * photo.zoom
-                    val dx = (photo.preview.width * scale - cell.width()) / 2f
-                    val dy = (photo.preview.height * scale - cell.height()) / 2f
-                    if (dx > 0f) photo.offsetX = (photo.offsetX + (event.x - lastX) / dx).coerceIn(-1f, 1f)
-                    if (dy > 0f) photo.offsetY = (photo.offsetY + (event.y - lastY) / dy).coerceIn(-1f, 1f)
+                if (reordering) {
+                    dragX = event.x; dragY = event.y
+                    targetIndex = cellAt(event.x, event.y)
                     invalidate()
+                } else if (!hadMultiplePointers && event.pointerCount == 1) {
+                    if (!moved && hypot(event.x - downX, event.y - downY) > slop) {
+                        moved = true
+                        removeCallbacks(longPress)
+                    }
+                    if (moved) {
+                        val photo = photos[gestureIndex]
+                        val cell = rect(collageCells(photos.size, layout, split)[gestureIndex], square())
+                        val scale = max(cell.width() / photo.preview.width, cell.height() / photo.preview.height) * photo.zoom
+                        val dx = (photo.preview.width * scale - cell.width()) / 2f
+                        val dy = (photo.preview.height * scale - cell.height()) / 2f
+                        if (dx > 0f) photo.offsetX = (photo.offsetX + (event.x - lastX) / dx).coerceIn(-1f, 1f)
+                        if (dy > 0f) photo.offsetY = (photo.offsetY + (event.y - lastY) / dy).coerceIn(-1f, 1f)
+                        invalidate()
+                    }
                 }
-                lastX = event.x
-                lastY = event.y
+                lastX = event.x; lastY = event.y
             }
-            MotionEvent.ACTION_UP -> {
-                gestureIndex = -1
-                performClick()
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                removeCallbacks(longPress)
+                if (reordering && event.actionMasked == MotionEvent.ACTION_UP) targetIndex = cellAt(event.x, event.y)
+                if (event.actionMasked == MotionEvent.ACTION_CANCEL ||
+                    (reordering && (targetIndex !in photos.indices || targetIndex == gestureIndex))) {
+                    restoreGesture()
+                } else if (reordering) {
+                    onReorder?.invoke(gestureIndex, targetIndex)
+                } else if (!moved && !hadMultiplePointers) {
+                    performClick()
+                }
+                gestureIndex = -1; reordering = false; targetIndex = -1
+                parent?.requestDisallowInterceptTouchEvent(false)
+                invalidate()
             }
-            MotionEvent.ACTION_CANCEL -> gestureIndex = -1
         }
         return true
     }

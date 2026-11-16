@@ -29,14 +29,6 @@
                 android:orientation="vertical">
                 <LinearLayout android:id="@+id/collagePhotoPanel" android:layout_width="match_parent"
                     android:layout_height="wrap_content" android:orientation="vertical">
-                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-                        android:paddingHorizontal="20dp" android:paddingTop="4dp" android:paddingBottom="6dp"
-                        android:text="@string/collage_photos_heading" android:textAppearance="?attr/textAppearanceBodySmall"
-                        android:textColor="?attr/colorOnSurfaceVariant" />
-                    <androidx.recyclerview.widget.RecyclerView android:id="@+id/collageFilmstrip"
-                        android:layout_width="match_parent" android:layout_height="68dp"
-                        android:clipToPadding="false" android:paddingHorizontal="20dp"
-                        android:scrollbars="horizontal" android:fadeScrollbars="false" />
                     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
                         android:gravity="center_vertical" android:paddingHorizontal="20dp"
                         android:orientation="horizontal">
