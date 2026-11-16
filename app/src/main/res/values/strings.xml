@@ -583,6 +583,7 @@
     <string name="markup_color_yellow">Yellow</string>
     <string name="markup_color_blue">Blue</string>
     <string name="markup_color_green">Green</string>
+    <string name="collage_replace_action">Replace</string>
     <string name="collage_replace_photo">Replace photo</string>
     <string name="collage_replace_failed">Could not replace photo. Choose a readable image.</string>
     <string name="collage_mode_photos">Photos</string>

@@ -38,7 +38,7 @@
                     android:src="@drawable/ic_image" android:contentDescription="@null" app:tint="?attr/colorOnSurfaceVariant" />
             </com.google.android.material.card.MaterialCardView>
             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                android:layout_marginTop="4dp" android:text="@string/id_license_replace" android:importantForAccessibility="no" />
+                android:layout_marginTop="4dp" android:text="@string/collage_replace_action" android:importantForAccessibility="no" />
         </LinearLayout>
     </LinearLayout>
     <LinearLayout android:id="@+id/collageMainActions" android:layout_width="match_parent"

@@ -528,6 +528,7 @@
     <string name="markup_color_yellow">黄色</string>
     <string name="markup_color_blue">蓝色</string>
     <string name="markup_color_green">绿色</string>
+    <string name="collage_replace_action">替换</string>
     <string name="collage_replace_photo">替换照片</string>
     <string name="collage_replace_failed">无法替换照片，请选择可读取的图片。</string>
     <string name="collage_mode_photos">照片</string>
