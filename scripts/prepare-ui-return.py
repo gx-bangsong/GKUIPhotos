@@ -30,7 +30,9 @@ candidate_dock = ('markup-text-imported-fonts', 'markup-text-imported-recreated'
                   'markup-dock-brush', 'markup-dock-shapes', 'markup-dock-mosaic-effect',
                   'markup-dock-mosaic-width', 'markup-dock-sticker', 'markup-dock-text-restored',
                   'markup-dock-non-markup', 'markup-dock-categories', 'markup-dock-undo', 'markup-dock-redo',
-                  'markup-dock-close', 'markup-dock-done', 'markup-dock-narrow-large-font')
+                  'markup-dock-close', 'markup-dock-done', 'markup-dock-narrow-large-font',
+                  'collage-preview-2', 'collage-preview-3', 'collage-preview-4', 'collage-preview-5',
+                  'collage-preview-6', 'collage-preview-landscape', 'collage-preview-no-filmstrip')
 
 def expected_for(name):
     return expected + candidate_dock if name.startswith('ui-candidate-') else expected
@@ -186,6 +188,24 @@ with zipfile.ZipFile(out / 'ui-evidence.zip', 'w', compression=zipfile.ZIP_DEFLA
                 continue
         if len(markup_suite):
             archive.writestr(f'{name}/markup-junit.xml', ET.tostring(markup_suite, encoding='utf-8', xml_declaration=True))
+        # Preserve explicit collage JUnit outcomes, including failures and assumptions.
+        collage_suite = ET.Element('testsuite', name='CollageUiScreenshotTest')
+        for report in sorted((folder / 'test-results').rglob('*.xml')):
+            try:
+                for case in ET.parse(report).getroot().iter('testcase'):
+                    if case.get('classname') != 'org.lineageos.glimpse.visual.UiScreenshotTest' or not case.get('name', '').startswith('collage'):
+                        continue
+                    entry = ET.SubElement(collage_suite, 'testcase', {
+                        key: case.get(key, '') for key in ('classname', 'name', 'time')
+                    })
+                    for result in case:
+                        if result.tag in ('failure', 'error', 'skipped'):
+                            item = ET.SubElement(entry, result.tag, message=clean(result.get('message', '')))
+                            item.text = clean(result.text or '')
+            except ET.ParseError:
+                continue
+        if len(collage_suite):
+            archive.writestr(f'{name}/collage-junit.xml', ET.tostring(collage_suite, encoding='utf-8', xml_declaration=True))
         for filename in ('wm-size.txt', 'wm-density.txt', 'font-scale.txt', 'night-mode.txt', 'failure-tail.txt',
                          'google-photos-status.txt', 'google-photos-error.txt', 'google-photos-start.png', 'google-photos-start.xml',
                          'google-photos-after-back.png', 'google-photos-after-back.xml',

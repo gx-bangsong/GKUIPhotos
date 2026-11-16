@@ -12,7 +12,6 @@ import android.graphics.RectF
 import android.net.Uri
 import android.util.AttributeSet
 import android.view.MotionEvent
-import android.view.ScaleGestureDetector
 import android.view.View
 import android.view.ViewConfiguration
 import kotlin.math.hypot
@@ -70,6 +69,7 @@ class CollageView @JvmOverloads constructor(context: Context, attrs: AttributeSe
     private var gestureIndex = -1
     private var hadMultiplePointers = false
     private var rejectScale = false
+    private var lastSpan = 0f
     private var lastX = 0f
     private var lastY = 0f
     private val border = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -80,15 +80,6 @@ class CollageView @JvmOverloads constructor(context: Context, attrs: AttributeSe
         color = MaterialColors.getColor(this@CollageView, com.google.android.material.R.attr.colorSurface)
         style = Paint.Style.STROKE; strokeWidth = resources.displayMetrics.density
     }
-    private val detector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
-        override fun onScale(detector: ScaleGestureDetector): Boolean {
-            val photo = photos.getOrNull(gestureIndex) ?: return false
-            photo.zoom = (photo.zoom * detector.scaleFactor).coerceIn(1f, 4f)
-            onSelectionChanged?.invoke()
-            invalidate()
-            return true
-        }
-    })
 
     private fun square(): RectF {
         val edge = min(width, height).toFloat().coerceAtLeast(0f)
@@ -163,22 +154,38 @@ class CollageView @JvmOverloads constructor(context: Context, attrs: AttributeSe
         if (gestureIndex !in photos.indices) return false
         if (event.actionMasked == MotionEvent.ACTION_POINTER_DOWN) {
             removeCallbacks(longPress)
+            // A gesture that becomes a pinch must not also commit a pan.
+            if (moved) {
+                photos[gestureIndex].offsetX = originalX
+                photos[gestureIndex].offsetY = originalY
+                invalidate()
+            }
             hadMultiplePointers = true
             val cell = rect(collageCells(photos.size, layout, split)[gestureIndex], square())
             if (reordering || (0 until event.pointerCount).any { !cell.contains(event.getX(it), event.getY(it)) }) {
                 rejectScale = true
                 if (reordering) { restoreGesture(); reordering = false }
-                val cancel = MotionEvent.obtain(event).apply { action = MotionEvent.ACTION_CANCEL }
-                detector.onTouchEvent(cancel); cancel.recycle()
+            } else if (event.pointerCount == 2) {
+                lastSpan = hypot(event.getX(1) - event.getX(0), event.getY(1) - event.getY(0))
+            } else {
+                rejectScale = true
             }
         }
-        if (!rejectScale && !reordering) detector.onTouchEvent(event)
         when (event.actionMasked) {
             MotionEvent.ACTION_MOVE -> {
                 if (reordering) {
                     dragX = event.x; dragY = event.y
                     targetIndex = cellAt(event.x, event.y)
                     invalidate()
+                } else if (hadMultiplePointers && !rejectScale && event.pointerCount == 2) {
+                    val span = hypot(event.getX(1) - event.getX(0), event.getY(1) - event.getY(0))
+                    if (lastSpan > 1f && span > 1f) {
+                        val photo = photos[gestureIndex]
+                        photo.zoom = (photo.zoom * span / lastSpan).coerceIn(1f, 4f)
+                        onSelectionChanged?.invoke()
+                        invalidate()
+                    }
+                    lastSpan = span
                 } else if (!hadMultiplePointers && event.pointerCount == 1) {
                     if (!moved && hypot(event.x - downX, event.y - downY) > slop) {
                         moved = true
