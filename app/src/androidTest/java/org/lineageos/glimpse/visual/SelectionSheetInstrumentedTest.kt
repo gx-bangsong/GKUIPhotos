@@ -679,9 +679,20 @@ class SelectionSheetInstrumentedTest {
             swipeArea.set(grid.left, maxOf(grid.top, top.bottom), grid.right, minOf(grid.bottom, sheet.top))
             assertTrue("Grid has no interactive area above the sheet", swipeArea.height() > 80)
         }
-        repeat(8) {
-            device.swipe(swipeArea.centerX(), swipeArea.bottom - 20, swipeArea.centerX(), swipeArea.top + 20, 25)
-            device.waitForIdle()
+        // Keep using window-level swipes until the grid really reaches its end.
+        // A fixed swipe count is insufficient when the emulator has more fixtures.
+        for (attempt in 0 until 40) {
+            var canScroll = false
+            instrumentation.runOnMainSync {
+                canScroll = (requiredView("recyclerView") as RecyclerView).canScrollVertically(1)
+            }
+            if (!canScroll) break
+            assertTrue("Grid swipe failed", device.swipe(swipeArea.centerX(), swipeArea.bottom - 20,
+                swipeArea.centerX(), swipeArea.top + 20, 15))
+            instrumentation.waitForIdleSync()
+        }
+        instrumentation.runOnMainSync {
+            assertTrue("Grid did not reach its last row", !(requiredView("recyclerView") as RecyclerView).canScrollVertically(1))
         }
         capture("selection-sheet-expanded-scroll")
         instrumentation.runOnMainSync {
