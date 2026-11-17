@@ -138,6 +138,7 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
 
     private var selectionActive = false
     private var pendingSelectionStart = false
+    private var restoringGestureSelection = false
     private var selectionNavigationBar: View? = null
     private var navigationBarWasVisible = false
     private var selectionParentAppBar: View? = null
@@ -537,6 +538,21 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
         (recyclerView as SelectionGestureRecyclerView).onGestureFinished = {
             if (pendingSelectionStart) {
                 pendingSelectionStart = false
+                // AndroidX Selection can miss ACTION_UP after a stationary long
+                // press and leave gesture selection consuming later scrolls.
+                // Clearing selection resets its gesture machinery; restore the
+                // exact selected keys before showing the selection chrome.
+                val tracker = selectionTracker
+                val selected = tracker?.selection?.toList().orEmpty()
+                if (tracker != null && selected.isNotEmpty()) {
+                    restoringGestureSelection = true
+                    try {
+                        tracker.clearSelection()
+                        selected.forEach { tracker.select(it) }
+                    } finally {
+                        restoringGestureSelection = false
+                    }
+                }
                 updateSelection()
             }
         }
@@ -744,6 +760,7 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
     }
 
     private fun updateSelection() {
+        if (restoringGestureSelection) return
         val count = selectionTracker?.selection?.count() ?: 0
         // Entering selection hides app chrome and resizes the grid. Do not move
         // the cells underneath the finger that initiated the long press.
