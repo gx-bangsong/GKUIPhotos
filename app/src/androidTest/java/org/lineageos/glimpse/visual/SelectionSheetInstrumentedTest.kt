@@ -387,6 +387,9 @@ class SelectionSheetInstrumentedTest {
         assertNotNull("Viewer delete action missing", delete)
         assertEquals(context.getString(R.string.delete), delete!!.text)
         assertEquals(context.getString(R.string.file_action_move_to_trash), delete.contentDescription)
+        val favorite = requireNotNull(device.findObject(By.res(context.packageName, "favoriteButton")))
+        assertEquals(context.getString(R.string.favorite_add_short), favorite.text)
+        assertEquals(context.getString(R.string.file_action_add_to_favorites), favorite.contentDescription)
         capture("selection-sheet-viewer-delete")
         device.pressBack()
     }
@@ -402,6 +405,17 @@ class SelectionSheetInstrumentedTest {
             assertNotNull("Photo missing on short screen", thumbnail)
             thumbnail!!.longClick()
             assertTrue(device.wait(Until.hasObject(By.res(context.packageName, "selectionSheetScroll")), 10000))
+            val dateCheck = requireNotNull(device.findObject(By.res(context.packageName, "dateCheckImageView")))
+            val checkBounds = dateCheck.visibleBounds
+            var before = 0
+            instrumentation.runOnMainSync { before = (requiredView("recyclerView") as RecyclerView).computeVerticalScrollOffset() }
+            assertTrue("Date checkbox drag injection failed", device.swipe(checkBounds.centerX(), checkBounds.centerY(),
+                checkBounds.centerX(), checkBounds.centerY() - 60, 20))
+            device.waitForIdle(1000)
+            instrumentation.runOnMainSync {
+                val grid = requiredView("recyclerView") as RecyclerView
+                assertTrue("Drag starting on date checkbox did not scroll to older photos", grid.computeVerticalScrollOffset() > before)
+            }
             val scroll = requireNotNull(device.findObject(By.res(context.packageName, "selectionSheetScroll")))
             val bounds = scroll.visibleBounds
             device.swipe(bounds.right - 15, bounds.centerY(), bounds.left + 15, bounds.centerY(), 30)
@@ -681,7 +695,7 @@ class SelectionSheetInstrumentedTest {
         }
         // Keep using window-level swipes until the grid really reaches its end.
         // A fixed swipe count is insufficient when the emulator has more fixtures.
-        for (attempt in 0 until 40) {
+        for (attempt in 0 until 20) {
             var canScroll = false
             instrumentation.runOnMainSync {
                 canScroll = (requiredView("recyclerView") as RecyclerView).canScrollVertically(1)
@@ -689,7 +703,7 @@ class SelectionSheetInstrumentedTest {
             if (!canScroll) break
             assertTrue("Grid swipe failed", device.swipe(swipeArea.centerX(), swipeArea.bottom - 20,
                 swipeArea.centerX(), swipeArea.top + 20, 15))
-            instrumentation.waitForIdleSync()
+            device.waitForIdle(1000)
         }
         instrumentation.runOnMainSync {
             assertTrue("Grid did not reach its last row", !(requiredView("recyclerView") as RecyclerView).canScrollVertically(1))

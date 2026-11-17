@@ -90,6 +90,8 @@
     <string name="intent_wallpaper_cannot_be_changed">Wallpaper can\'t be changed</string>
 
     <!-- File actions -->
+    <string name="favorite_add_short">Favorite</string>
+    <string name="favorite_remove_short">Unfavorite</string>
     <string name="file_action_add_to_favorites">Add to favorites</string>
     <string name="file_action_delete_forever">Delete forever</string>
     <string name="file_action_edit">Edit</string>

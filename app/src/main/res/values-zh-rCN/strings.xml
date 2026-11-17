@@ -58,6 +58,8 @@
     <string name="intent_media_type_not_supported">媒体类型不被支持</string>
     <string name="intent_no_system_wallpaper_cropper_available">没有中可用的系统修剪器</string>
     <string name="intent_wallpaper_cannot_be_changed">无法修改壁纸</string>
+    <string name="favorite_add_short">收藏</string>
+    <string name="favorite_remove_short">取消收藏</string>
     <string name="file_action_add_to_favorites">添加到收藏夹</string>
     <string name="file_action_delete_forever">永久删除</string>
     <string name="file_action_edit">编辑</string>

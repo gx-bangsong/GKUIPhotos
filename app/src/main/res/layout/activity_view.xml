@@ -55,7 +55,7 @@
             style="@style/Theme.Glimpse.MediaViewer.BottomSheet.Button"
             android:contentDescription="@string/file_action_add_to_favorites"
             android:drawableTop="@drawable/ic_star_toggle"
-            android:text="@string/file_action_add_to_favorites" />
+            android:text="@string/favorite_add_short" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/shareButton"

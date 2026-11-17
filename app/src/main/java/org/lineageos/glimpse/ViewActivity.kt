@@ -568,12 +568,9 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
                     // Update favorite button
                     val isFavorite = displayedMedia?.isFavorite ?: false
                     favoriteButton.isSelected = isFavorite
-                    favoriteButton.setText(
-                        when (isFavorite) {
-                            true -> R.string.file_action_remove_from_favorites
-                            false -> R.string.file_action_add_to_favorites
-                        }
-                    )
+                    favoriteButton.setText(if (isFavorite) R.string.favorite_remove_short else R.string.favorite_add_short)
+                    favoriteButton.contentDescription = getString(if (isFavorite)
+                        R.string.file_action_remove_from_favorites else R.string.file_action_add_to_favorites)
 
                     // Update info button
                     infoButton.isVisible = displayedMedia != null

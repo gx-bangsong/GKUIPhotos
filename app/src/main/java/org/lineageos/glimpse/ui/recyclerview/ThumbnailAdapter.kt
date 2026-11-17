@@ -10,7 +10,6 @@ import android.os.Handler
 import android.os.Looper
 import android.text.format.DateUtils
 import android.view.LayoutInflater
-import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
@@ -307,12 +306,8 @@ class ThumbnailAdapter : ListAdapter<AlbumViewModel.AlbumContent, RecyclerView.V
         }
 
         init {
-            checkImageView.setOnTouchListener { v, event ->
-                if (event.actionMasked == MotionEvent.ACTION_DOWN) {
-                    v.parent?.requestDisallowInterceptTouchEvent(true)
-                }
-                false
-            }
+            // Do not block the RecyclerView from intercepting a drag begun on the
+            // date checkbox. A tap still invokes the click listener below.
             itemView.setOnClickListener {
                 if (isQuickSelectEnabled) {
                     checkImageView.performClick()
