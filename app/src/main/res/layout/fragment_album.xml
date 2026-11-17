@@ -117,6 +117,7 @@
 
             <TextView
                 android:id="@+id/selectionSheetDragHint"
+                android:visibility="gone"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:minHeight="48dp"
@@ -128,11 +129,17 @@
                 android:textAppearance="?attr/textAppearanceBodySmall"
                 android:textColor="?attr/colorOnSurfaceVariant" />
 
-            <LinearLayout
-                android:id="@+id/selectionSheetPrimary"
+            <HorizontalScrollView
+                android:id="@+id/selectionSheetScroll"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal" />
+                android:scrollbars="none" android:fillViewport="false">
+                <LinearLayout
+                    android:id="@+id/selectionSheetPrimary"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal" />
+            </HorizontalScrollView>
 
             <TextView
                 android:id="@+id/selectionSheetReason"
@@ -147,6 +154,7 @@
 
             <LinearLayout
                 android:id="@+id/selectionSheetMore"
+                android:visibility="gone"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal" />

@@ -5,10 +5,7 @@
 
 package org.lineageos.glimpse.ui.recyclerview
 
-import android.graphics.RenderEffect
-import android.graphics.Shader
 import android.net.Uri
-import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.text.format.DateUtils
@@ -18,7 +15,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.TextView
-import androidx.annotation.RequiresApi
 import androidx.core.view.isVisible
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.Observer
@@ -274,16 +270,20 @@ class ThumbnailAdapter : ListAdapter<AlbumViewModel.AlbumContent, RecyclerView.V
 
             videoOverlayImageView.isVisible = media.mediaType == MediaType.VIDEO
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                thumbnailImageView.setRenderEffect(
-                    when (isSelected) {
-                        true -> createBlurRenderEffect()
-                        false -> null
-                    }
-                )
-            } else {
-                selectionScrimView.isVisible = isSelected
+            // Keep the photo recognizable: a tinted tile and an inset rounded image
+            // communicate selection without obscuring or blurring the thumbnail.
+            itemView.setBackgroundColor(if (isSelected) com.google.android.material.color.MaterialColors.getColor(
+                itemView, com.google.android.material.R.attr.colorSecondaryContainer) else android.graphics.Color.TRANSPARENT)
+            thumbnailImageView.scaleX = if (isSelected) .88f else 1f
+            thumbnailImageView.scaleY = if (isSelected) .88f else 1f
+            thumbnailImageView.outlineProvider = object : android.view.ViewOutlineProvider() {
+                override fun getOutline(view: View, outline: android.graphics.Outline) {
+                    outline.setRoundRect(0, 0, view.width, view.height,
+                        (if (isSelected) 12f else 4f) * view.resources.displayMetrics.density)
+                }
             }
+            thumbnailImageView.clipToOutline = true
+            selectionScrimView.isVisible = false
 
             selectionCheckedImageView.setImageResource(
                 when (isSelected) {
@@ -365,7 +365,6 @@ class ThumbnailAdapter : ListAdapter<AlbumViewModel.AlbumContent, RecyclerView.V
     }
 
     companion object {
-        private const val BLUR_RADIUS = 15f
         const val PAYLOAD_DATE_CHECK = "payload_date_check"
 
         val DATE_HEADER_KEY = Media(
@@ -385,17 +384,6 @@ class ThumbnailAdapter : ListAdapter<AlbumViewModel.AlbumContent, RecyclerView.V
             sizeBytes = 0,
         )
 
-        // Exposed as a function (not an eager companion val) so the RenderEffect
-        // class is only referenced when this is actually called, which happens
-        // solely on API 31+ behind the SDK_INT >= S guard in bind(). An eager
-        // initializer would run at <clinit> time and throw NoClassDefFoundError
-        // on the API 30 minSdk. Method bodies are lazily verified by ART, so
-        // referencing RenderEffect here is safe on API 30 as long as this is
-        // never invoked there.
-        @RequiresApi(Build.VERSION_CODES.S)
-        private fun createBlurRenderEffect() = RenderEffect.createBlurEffect(
-            BLUR_RADIUS, BLUR_RADIUS,
-            Shader.TileMode.MIRROR
-        )
+
     }
 }

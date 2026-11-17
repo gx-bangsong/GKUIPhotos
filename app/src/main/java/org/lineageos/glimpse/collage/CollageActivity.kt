@@ -124,7 +124,6 @@ class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
         preview.onPhotoTap = { showPhotoMode(true) }
         preview.onReorder = { from, to -> movePhoto(from, to) }
         buildLayoutCards()
-        findViewById<View>(R.id.collageCancel).setOnClickListener { if (photoMode && job == null) showPhotoMode(false) else cancel() }
         findViewById<View>(R.id.collageCancelBottom).setOnClickListener { cancel() }
         findViewById<View>(R.id.collageDone).setOnClickListener { showPhotoMode(false) }
         onBackPressedDispatcher.addCallback(this) { if (photoMode && job == null) showPhotoMode(false) else cancel() }

@@ -637,6 +637,50 @@ class UiScreenshotTest {
         }
     }
 
+    @Test fun markupEditorToolStyleAndMaterialSaveDialog() {
+        assumeTrue("Editor style evidence is candidate-only", isCandidate())
+        editor()
+        val markup = activity!!.findViewById<LinearLayout>(R.id.markupToolsRow)
+        var markupColor = 0; var markupTint = 0; var markupLabelColor = 0
+        instrumentation.runOnMainSync {
+            val item = markup.getChildAt(0) as LinearLayout
+            val circle = item.getChildAt(0) as FrameLayout
+            markupColor = (circle.background as android.graphics.drawable.GradientDrawable).color!!.defaultColor
+            markupTint = (circle.getChildAt(0) as ImageView).imageTintList!!.defaultColor
+            markupLabelColor = (item.getChildAt(1) as TextView).currentTextColor
+        }
+        capture("editor-markup-style")
+        var adjust = device.findObject(By.text(context.getString(R.string.editor_tab_adjust)))
+        if (adjust == null) {
+            val tabs = device.findObject(By.res(context.packageName, "categoryTabsScroll"))!!
+            val r = tabs.visibleBounds
+            device.swipe(r.left + 15, r.centerY(), r.right - 15, r.centerY(), 25)
+            adjust = device.wait(Until.findObject(By.text(context.getString(R.string.editor_tab_adjust))), 5000)
+        }
+        assertNotNull("Adjust category missing", adjust)
+        adjust!!.click(); device.waitForIdle()
+        instrumentation.runOnMainSync {
+            val items = activity!!.findViewById<LinearLayout>(R.id.adjustToolItemsLayout)
+            val item = items.getChildAt(0) as LinearLayout
+            val circle = item.getChildAt(0) as FrameLayout
+            assertEquals("Tool circle colors differ", markupColor,
+                (circle.background as android.graphics.drawable.GradientDrawable).color!!.defaultColor)
+            assertEquals("Tool icon tints differ", markupTint, (circle.getChildAt(0) as ImageView).imageTintList!!.defaultColor)
+            assertEquals("Tool captions differ", markupLabelColor, (item.getChildAt(1) as TextView).currentTextColor)
+        }
+        capture("editor-adjust-style")
+        instrumentation.runOnMainSync {
+            val method = ImageEditorActivity::class.java.getDeclaredMethod("askAndSave", ByteArray::class.java)
+            method.isAccessible = true
+            method.invoke(activity, ByteArray(0))
+        }
+        assertNotNull(device.wait(Until.findObject(By.text(context.getString(R.string.editor_save_dialog_title))), 5000))
+        assertNotNull(device.findObject(By.text(context.getString(R.string.editor_save_new))))
+        assertNotNull(device.findObject(By.text(context.getString(R.string.editor_save_overwrite))))
+        capture("editor-save-dialog-md3")
+        device.pressBack()
+    }
+
     @Test fun markupMosaicChoices() {
         assumeTrue("Flat effect selector only applies to the candidate", isCandidate())
         editor(); tool(R.string.editor_markup_mosaic)

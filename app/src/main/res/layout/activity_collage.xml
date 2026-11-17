@@ -5,7 +5,6 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/collageRoot" android:layout_width="match_parent" android:layout_height="match_parent"
     android:orientation="vertical" android:background="?attr/colorSurface">
-    <include layout="@layout/collage_toolbar" />
     <FrameLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"
         android:paddingHorizontal="20dp" android:paddingVertical="12dp">
         <org.lineageos.glimpse.collage.CollageView android:id="@+id/collagePreview"

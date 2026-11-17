@@ -345,29 +345,26 @@ class SelectionSheetInstrumentedTest {
                     }
                     val uri = requireNotNull(context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values))
                     requireNotNull(context.contentResolver.openOutputStream(uri)).use { it.write(diagnostics.toString().toByteArray()) }
+                    val scroll = requiredView("selectionSheetScroll") as android.widget.HorizontalScrollView
                     children.forEachIndexed { i, child ->
+                        scroll.scrollTo(child.left, 0)
                         val pos = IntArray(2); child.getLocationOnScreen(pos); val visible = Rect()
-                        assertTrue("$mode action $i not fully visible", child.getGlobalVisibleRect(visible) &&
+                        assertTrue("$mode action $i not visible after horizontal scroll", child.getGlobalVisibleRect(visible) &&
                             visible == Rect(pos[0], pos[1], pos[0] + child.width, pos[1] + child.height))
                         assertTrue("$mode action $i overlaps navigation", visible.bottom <= safeBottom)
                     }
+                    scroll.scrollTo(0, 0)
                 }
-                device.findObject(By.res(context.packageName, "selectionSheetDragHint"))!!.click(); device.waitForIdle()
-                waitForSheetState(BottomSheetBehavior.STATE_EXPANDED)
-                capture("selection-sheet-nav-$mode-expanded")
+                val actions = device.findObject(By.res(context.packageName, "selectionSheetScroll"))!!
+                val actionBounds = actions.visibleBounds
+                assertTrue(device.swipe(actionBounds.right - 20, actionBounds.centerY(), actionBounds.left + 20, actionBounds.centerY(), 25))
+                device.waitForIdle()
                 instrumentation.runOnMainSync {
-                    val sheet = requiredView("selectionSheet")
-                    assertEquals(BottomSheetBehavior.STATE_EXPANDED, BottomSheetBehavior.from(sheet).state)
-                    val root = sheet.rootView; val rootPos = IntArray(2); root.getLocationOnScreen(rootPos)
-                    val nav = requireNotNull(ViewCompat.getRootWindowInsets(sheet)).getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
-                    listOf("selectionSheetPrimary", "selectionSheetMore").map(::requiredView).filter { it.isShown }.forEach { row ->
-                        val bounds = Rect(); val pos = IntArray(2); row.getLocationOnScreen(pos)
-                        assertTrue("$mode expanded row not fully visible", row.getGlobalVisibleRect(bounds) && bounds == Rect(pos[0], pos[1], pos[0] + row.width, pos[1] + row.height))
-                        assertTrue("$mode expanded row overlaps navigation", bounds.bottom <= rootPos[1] + root.height - nav)
-                    }
+                    val scroll = requiredView("selectionSheetScroll") as android.widget.HorizontalScrollView
+                    val row = requiredView("selectionSheetPrimary") as ViewGroup
+                    if (row.width > scroll.width) assertTrue("$mode horizontal action scroll did not move", scroll.scrollX > 0)
                 }
-                device.findObject(By.res(context.packageName, "selectionSheetDragHint"))!!.click(); device.waitForIdle()
-                waitForSheetState(BottomSheetBehavior.STATE_COLLAPSED)
+                capture("selection-sheet-nav-$mode-horizontal")
                 device.findObject(By.res(context.packageName, "selectionCancel"))!!.click(); device.waitForIdle()
                 instrumentation.runOnMainSync {
                     assertTrue("$mode sheet remained visible after cancel", !requiredView("selectionSheet").isShown)
@@ -378,6 +375,48 @@ class SelectionSheetInstrumentedTest {
             }
         } finally {
             if (enabled != null) device.executeShellCommand("cmd overlay enable-exclusive --category --user current $enabled")
+            device.waitForIdle()
+        }
+    }
+
+    @Test fun selectionViewerDeleteLabelIsShortAndAccessible() {
+        val thumbnail = device.wait(Until.findObject(By.res(context.packageName, "thumbnailImageView")), 30000)
+        assertNotNull(thumbnail)
+        thumbnail!!.click()
+        val delete = device.wait(Until.findObject(By.res(context.packageName, "deleteButton")), 10000)
+        assertNotNull("Viewer delete action missing", delete)
+        assertEquals(context.getString(R.string.delete), delete!!.text)
+        assertEquals(context.getString(R.string.file_action_move_to_trash), delete.contentDescription)
+        capture("selection-sheet-viewer-delete")
+        device.pressBack()
+    }
+
+    @Test fun selectionActionsScrollHorizontallyOnShortScreen() {
+        try {
+            device.executeShellCommand("wm size 360x720")
+            device.waitForIdle()
+            activity?.finish()
+            activity = instrumentation.startActivitySync(Intent(context, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
+            val thumbnail = device.wait(Until.findObject(By.res(context.packageName, "thumbnailImageView")), 30000)
+            assertNotNull("Photo missing on short screen", thumbnail)
+            thumbnail!!.longClick()
+            assertTrue(device.wait(Until.hasObject(By.res(context.packageName, "selectionSheetScroll")), 10000))
+            val scroll = requireNotNull(device.findObject(By.res(context.packageName, "selectionSheetScroll")))
+            val bounds = scroll.visibleBounds
+            device.swipe(bounds.right - 15, bounds.centerY(), bounds.left + 15, bounds.centerY(), 30)
+            device.waitForIdle()
+            instrumentation.runOnMainSync {
+                val view = requiredView("selectionSheetScroll") as android.widget.HorizontalScrollView
+                assertTrue("Action row did not scroll on short screen", view.scrollX > 0)
+                assertEquals(java.text.NumberFormat.getIntegerInstance().format(1),
+                    (requiredView("selectionCount") as TextView).text.toString())
+            }
+            capture("selection-sheet-short-horizontal")
+            device.findObject(By.res(context.packageName, "selectionCancel"))!!.click()
+        } finally {
+            activity?.finish()
+            device.executeShellCommand("wm size 720x1520")
             device.waitForIdle()
         }
     }
@@ -440,7 +479,15 @@ class SelectionSheetInstrumentedTest {
             val top = requiredView("selectionTopBar")
             val sheet = requiredView("selectionSheet")
             assertTrue("Cancel and count must share the pill", close.parent === pill && count.parent === pill)
-            assertEquals(context.resources.getQuantityString(R.plurals.thumbnail_selection_count, 1, 1), count.text.toString())
+            assertEquals(java.text.NumberFormat.getIntegerInstance().format(1), count.text.toString())
+            assertEquals(context.resources.getQuantityString(R.plurals.thumbnail_selection_count, 1, 1), count.contentDescription.toString())
+            val selectedHolder = (0 until grid.childCount).mapNotNull { i ->
+                grid.getChildViewHolder(grid.getChildAt(i)) as? ThumbnailAdapter.ThumbnailViewHolder
+            }.first { it.itemDetails.selectionKey == firstKey }
+            val thumbnail = selectedHolder.itemView.findViewById<ImageView>(R.id.thumbnailImageView)
+            assertEquals("Selected thumbnail must remain visible and inset", .88f, thumbnail.scaleX, .001f)
+            assertTrue("Selected thumbnail must use rounded clipping", thumbnail.clipToOutline)
+            assertTrue("Selected thumbnail drawable missing", thumbnail.drawable != null)
             assertTrue("Sheet is not a CoordinatorLayout child", sheet.parent is CoordinatorLayout)
             assertTrue("Sheet is not visible", sheet.isShown && sheet.getGlobalVisibleRect(Rect()))
             val behavior = BottomSheetBehavior.from(sheet)
@@ -458,6 +505,9 @@ class SelectionSheetInstrumentedTest {
             assertTrue("Pill overlaps status icons", pillLocation[1] >= inset)
             val primary = requiredView("selectionSheetPrimary") as LinearLayout
             val collage = primary.findViewWithTag<ViewGroup>(R.id.collage)
+            val delete = requireNotNull(primary.findViewWithTag<ViewGroup>(R.id.moveToTrash))
+            assertEquals(context.getString(R.string.delete), (delete.getChildAt(1) as TextView).text.toString())
+            assertEquals(context.getString(R.string.file_action_move_to_trash), delete.contentDescription.toString())
             assertNotNull("Collage action missing", collage)
             assertTrue("Collage icon missing", (collage!!.getChildAt(0) as ImageView).drawable != null)
             assertEquals(context.getString(R.string.collage_title), (collage.getChildAt(1) as TextView).text.toString())
@@ -582,7 +632,7 @@ class SelectionSheetInstrumentedTest {
         requireNotNull(context.contentResolver.openOutputStream(traceUri)).use { it.write(tapTrace.toString().toByteArray()) }
         instrumentation.runOnMainSync {
             assertEquals("Wrong two selection keys", setOf(firstKey, secondKey), tracker.selection.toSet())
-            assertEquals(context.resources.getQuantityString(R.plurals.thumbnail_selection_count, 2, 2),
+            assertEquals(java.text.NumberFormat.getIntegerInstance().format(2),
                 (requiredView("selectionCount") as TextView).text.toString())
             assertTrue("Sheet disappeared after another selection", requiredView("selectionSheet").isShown)
         }
@@ -591,7 +641,7 @@ class SelectionSheetInstrumentedTest {
             device.setOrientationLeft(); device.waitForIdle()
             instrumentation.runOnMainSync {
                 assertTrue("Sheet disappeared on rotation", requiredView("selectionSheet").isShown)
-                assertEquals(context.resources.getQuantityString(R.plurals.thumbnail_selection_count, 2, 2),
+                assertEquals(java.text.NumberFormat.getIntegerInstance().format(2),
                     (requiredView("selectionCount") as TextView).text.toString())
                 assertTrue("Rotated peek must remain positive", BottomSheetBehavior.from(requiredView("selectionSheet")).peekHeight > 0)
             }
@@ -599,13 +649,19 @@ class SelectionSheetInstrumentedTest {
         } finally {
             device.setOrientationNatural(); device.waitForIdle()
         }
-        val hint = device.findObject(By.res(context.packageName, "selectionSheetDragHint"))
-        assertNotNull("Sheet expand control missing", hint)
-        hint!!.click(); device.waitForIdle()
-        waitForSheetState(BottomSheetBehavior.STATE_EXPANDED)
+        val actions = requireNotNull(device.findObject(By.res(context.packageName, "selectionSheetScroll")))
+        val actionBounds = actions.visibleBounds
+        assertTrue(device.swipe(actionBounds.right - 20, actionBounds.centerY(), actionBounds.left + 20, actionBounds.centerY(), 25))
+        device.waitForIdle()
+        instrumentation.runOnMainSync {
+            val scroll = requiredView("selectionSheetScroll") as android.widget.HorizontalScrollView
+            val row = requiredView("selectionSheetPrimary") as ViewGroup
+            if (row.width > scroll.width) assertTrue("Actions did not scroll horizontally", scroll.scrollX > 0)
+            assertEquals(BottomSheetBehavior.STATE_COLLAPSED, BottomSheetBehavior.from(requiredView("selectionSheet")).state)
+        }
         val swipeArea = Rect()
         instrumentation.runOnMainSync {
-            assertEquals(BottomSheetBehavior.STATE_EXPANDED, BottomSheetBehavior.from(requiredView("selectionSheet")).state)
+            assertEquals(BottomSheetBehavior.STATE_COLLAPSED, BottomSheetBehavior.from(requiredView("selectionSheet")).state)
             val grid = Rect(); val sheet = Rect(); val top = Rect()
             requiredView("recyclerView").getGlobalVisibleRect(grid)
             requiredView("selectionSheet").getGlobalVisibleRect(sheet)
@@ -649,14 +705,11 @@ class SelectionSheetInstrumentedTest {
         }
         device.click(lastLocation[0], lastLocation[1]); device.waitForIdle()
         instrumentation.runOnMainSync {
-            assertEquals(context.resources.getQuantityString(R.plurals.thumbnail_selection_count, 3, 3),
+            assertEquals(java.text.NumberFormat.getIntegerInstance().format(3),
                 (requiredView("selectionCount") as TextView).text.toString())
-            assertEquals(BottomSheetBehavior.STATE_EXPANDED, BottomSheetBehavior.from(requiredView("selectionSheet")).state)
+            assertEquals(BottomSheetBehavior.STATE_COLLAPSED, BottomSheetBehavior.from(requiredView("selectionSheet")).state)
         }
         capture("selection-sheet-expanded")
-        device.findObject(By.res(context.packageName, "selectionSheetDragHint"))!!.click()
-        device.waitForIdle()
-        waitForSheetState(BottomSheetBehavior.STATE_COLLAPSED)
         instrumentation.runOnMainSync {
             assertEquals(BottomSheetBehavior.STATE_COLLAPSED, BottomSheetBehavior.from(requiredView("selectionSheet")).state)
             val grid = requiredView("recyclerView") as RecyclerView
@@ -669,7 +722,7 @@ class SelectionSheetInstrumentedTest {
         }
         device.click(lastLocation[0], lastLocation[1]); device.waitForIdle()
         instrumentation.runOnMainSync {
-            assertEquals(context.resources.getQuantityString(R.plurals.thumbnail_selection_count, 2, 2),
+            assertEquals(java.text.NumberFormat.getIntegerInstance().format(2),
                 (requiredView("selectionCount") as TextView).text.toString())
             assertTrue("Sheet disappeared after deselection", requiredView("selectionSheet").isShown)
         }

@@ -32,7 +32,6 @@ import android.widget.Toast
 import androidx.activity.addCallback
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -977,9 +976,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                 layoutParams = LinearLayout.LayoutParams(size, size).apply {
                     gravity = Gravity.CENTER_HORIZONTAL
                 }
-                setBackgroundResource(
-                    if (selectedParam) R.drawable.bg_circle_tool_selected else R.drawable.bg_circle_tool
-                )
+                background = markupBackground(selectedParam, circle = true)
 
                 val iv = ImageView(this@ImageEditorActivity).apply {
                     val iconSize = resources.getDimensionPixelSize(R.dimen.editor_tool_icon_size)
@@ -989,7 +986,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                     setImageResource(param.iconRes)
                     scaleType = ImageView.ScaleType.FIT_CENTER
                     imageTintList = ColorStateList.valueOf(
-                        if (selectedParam) Color.parseColor("#001D35") else Color.WHITE
+                        Color.WHITE
                     )
                 }
                 addView(iv)
@@ -1009,7 +1006,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             }
 
             val label = editorToolCaption(param.labelRes,
-                if (isApplied || selectedParam) Color.parseColor("#A8C7FA") else Color.parseColor("#B0B0B0")).apply {
+                if (isApplied || selectedParam) Color.WHITE else Color.parseColor("#B0B0B0")).apply {
                 // A fixed measured column and text gravity align every translated
                 // caption with the independently centered 48dp icon target.
                 layoutParams = LinearLayout.LayoutParams(itemWidth, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
@@ -1244,7 +1241,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                     }
                     setImageResource(iconRes)
                     imageTintList = ColorStateList.valueOf(
-                        if (selected) Color.WHITE else Color.parseColor("#B0B0B0")
+                        if (compact && !selected) Color.parseColor("#B0B0B0") else Color.WHITE
                     )
                 }
                 addView(iv)
@@ -1258,7 +1255,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                 importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
                 textSize = if (compact) 14f else 11f
                 setTypeface(null, if (selected) Typeface.BOLD else Typeface.NORMAL)
-                setTextColor(if (selected) Color.WHITE else Color.parseColor("#A0A0A0"))
+                setTextColor(if (selected) Color.WHITE else Color.parseColor(if (compact) "#A0A0A0" else "#B0B0B0"))
                 setPadding(0, if (compact) 0 else (4 * density).toInt(), 0, 0)
             }
 
@@ -2584,7 +2581,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
 
     private fun askAndSave(bytes: ByteArray) {
         hideSaving()
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle(R.string.editor_save_dialog_title)
             .setMessage(null)
             .setPositiveButton(R.string.editor_save_overwrite) { _, _ ->

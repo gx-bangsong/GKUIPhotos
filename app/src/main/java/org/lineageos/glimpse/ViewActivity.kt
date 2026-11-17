@@ -587,8 +587,9 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
                     val isTrashed = displayedMedia?.isTrashed ?: false
                     deleteButton.text = when (isTrashed) {
                         true -> getString(R.string.file_action_restore_from_trash)
-                        false -> getString(R.string.file_action_move_to_trash)
+                        false -> getString(R.string.delete)
                     }
+                    deleteButton.contentDescription = getString(if (isTrashed) R.string.file_action_restore_from_trash else R.string.file_action_move_to_trash)
                     deleteButton.setCompoundDrawablesWithIntrinsicBounds(
                         0,
                         when (isTrashed) {

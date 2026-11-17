@@ -758,7 +758,8 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
             return
         }
         if (!selectionActive) startSelectionMode()
-        selectionCount.text = resources.getQuantityString(R.plurals.thumbnail_selection_count, count, count)
+        selectionCount.text = java.text.NumberFormat.getIntegerInstance().format(count)
+        selectionCount.contentDescription = resources.getQuantityString(R.plurals.thumbnail_selection_count, count, count)
         refreshCollageAvailability()
     }
 
@@ -798,7 +799,7 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
         val density = resources.displayMetrics.density
         val foreground = com.google.android.material.color.MaterialColors.getColor(
             selectionSheet, com.google.android.material.R.attr.colorOnSurface)
-        items.forEachIndexed { index, item ->
+        items.forEach { item ->
             val cell = LinearLayout(requireContext()).apply {
                 tag = item.itemId
                 orientation = LinearLayout.VERTICAL
@@ -817,18 +818,19 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
                 importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
             }, LinearLayout.LayoutParams((24 * density).toInt(), (24 * density).toInt()))
             cell.addView(TextView(requireContext()).apply {
-                text = item.title
+                text = if (item.itemId == R.id.moveToTrash) getString(R.string.delete) else item.title
                 gravity = Gravity.CENTER
                 maxLines = 2
                 setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_LabelMedium)
             }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
                 topMargin = (6 * density).toInt()
             })
-            (if (index < 3) selectionPrimary else selectionMore).addView(cell,
-                LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            selectionPrimary.addView(cell,
+                LinearLayout.LayoutParams((88 * density).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT))
         }
-        selectionMore.isVisible = items.size > 3
-        selectionSheetHint.isVisible = items.size > 3
+        selectionMore.isVisible = false
+        selectionSheetHint.isVisible = false
+        sheetBehavior.isDraggable = false
         // Give the formerly GONE sheet a nonzero initial peek, then recalculate
         // after its newly populated children are measured. The behavior owns the
         // vertical placement; layout_gravity must not add another bottom offset.
