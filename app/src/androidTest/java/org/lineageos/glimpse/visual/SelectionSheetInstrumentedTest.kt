@@ -411,6 +411,49 @@ class SelectionSheetInstrumentedTest {
         device.pressBack()
     }
 
+    @Test fun selectionScrollWindowDiagnostics() {
+        val trace = StringBuilder()
+        fun sample(label: String) {
+            instrumentation.runOnMainSync {
+                val grid = requiredView("recyclerView") as RecyclerView
+                val lm = grid.layoutManager as androidx.recyclerview.widget.GridLayoutManager
+                val first = lm.findFirstVisibleItemPosition()
+                val last = lm.findLastVisibleItemPosition()
+                val child = lm.findViewByPosition(first)
+                val tracker = (grid.adapter as ThumbnailAdapter).selectionTracker!!
+                val sheet = Rect(); requiredView("selectionSheet").getGlobalVisibleRect(sheet)
+                trace.append("$label first=$first last=$last firstTop=${child?.top} offset=${grid.computeVerticalScrollOffset()} canDown=${grid.canScrollVertically(1)} canUp=${grid.canScrollVertically(-1)} selected=${tracker.selection.count()} padding=${grid.paddingTop},${grid.paddingBottom} sheet=$sheet\n")
+            }
+        }
+        try {
+            device.executeShellCommand("wm size 360x720"); device.waitForIdle()
+            activity?.finish()
+            activity = instrumentation.startActivitySync(Intent(context, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
+            val thumb = device.wait(Until.findObject(By.res(context.packageName, "thumbnailImageView")), 30000)
+            assertNotNull("Diagnostic fixture missing", thumb)
+            sample("before-selection")
+            thumb!!.longClick()
+            assertTrue(device.wait(Until.hasObject(By.res(context.packageName, "selectionSheet")), 10000))
+            device.waitForIdle(1000); sample("after-long-press")
+            val top = device.findObject(By.res(context.packageName, "selectionTopBar"))!!.visibleBounds
+            val sheet = device.findObject(By.res(context.packageName, "selectionSheet"))!!.visibleBounds
+            val x = 180; val start = sheet.top - 35; val end = top.bottom + 35
+            trace.append("swipe x=$x from=$start to=$end top=$top sheet=$sheet\n")
+            repeat(4) { index ->
+                val ok = device.swipe(x, start, x, end, 20)
+                trace.append("swipe-$index injected=$ok\n")
+                device.waitForIdle(1000); sample("after-swipe-$index")
+            }
+            capture("selection-sheet-scroll-diagnostics")
+        } finally {
+            val file = File(context.cacheDir, "selection-trace-window-scroll.txt")
+            file.writeText(trace.toString())
+            pendingCaptures.add(file to "text/plain")
+            activity?.finish(); device.executeShellCommand("wm size 720x1520"); device.waitForIdle(1000)
+        }
+    }
+
     @Test fun selectionActionsScrollHorizontallyOnShortScreen() {
         try {
             device.executeShellCommand("wm size 360x720")

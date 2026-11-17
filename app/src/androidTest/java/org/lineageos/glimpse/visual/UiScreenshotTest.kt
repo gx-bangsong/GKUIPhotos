@@ -761,9 +761,13 @@ class UiScreenshotTest {
             try {
                 var button = device.findObject(By.text(context.getString(R.string.editor_shape_import)))
                 if (button == null) {
-                    val row = requireNotNull(device.findObject(By.res(context.packageName, "markupOptionsScroll")))
+                    val outer = requireNotNull(device.findObject(By.res(context.packageName, "markupOptionsScroll")))
+                    val row = requireNotNull(outer.findObject(By.clazz("android.widget.HorizontalScrollView")))
                     val r = row.visibleBounds
-                    repeat(3) { device.swipe(r.right - 10, r.centerY(), r.left + 10, r.centerY(), 20) }
+                    capture("markup-shape-import-before-scroll")
+                    repeat(3) { assertTrue("Shape options swipe injection failed", device.swipe(r.right - 10, r.centerY(), r.left + 10, r.centerY(), 20)) }
+                    device.waitForIdle()
+                    capture("markup-shape-import-after-scroll")
                     button = device.findObject(By.text(context.getString(R.string.editor_shape_import)))
                 }
                 assertNotNull("Custom shape import action missing", button)
