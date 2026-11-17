@@ -129,7 +129,8 @@ with zipfile.ZipFile(out / 'ui-evidence.zip', 'w', compression=zipfile.ZIP_DEFLA
                     archive.write(file, f'{name}/{file.name}')
         # Shape-import diagnostics are synthetic and captured even when the test fails.
         if name.startswith('ui-candidate-'):
-            for file in sorted(folder.glob('markup-shape-import-*.png')) + sorted(folder.glob('markup-shape-import-*.xml')):
+            for file in (sorted(folder.glob('markup-shape-import-*.png')) + sorted(folder.glob('markup-shape-import-*.xml')) +
+                         sorted(folder.glob('markup-custom-shape.png')) + sorted(folder.glob('markup-custom-shape.xml'))):
                 if file.is_file():
                     archive.write(file, f'{name}/{file.name}')
         # Include only synthetic multitouch evidence and sanitized JUnit cases for this suite.

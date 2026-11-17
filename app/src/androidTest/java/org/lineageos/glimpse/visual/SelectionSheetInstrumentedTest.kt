@@ -422,7 +422,9 @@ class SelectionSheetInstrumentedTest {
                 val child = lm.findViewByPosition(first)
                 val tracker = (grid.adapter as ThumbnailAdapter).selectionTracker!!
                 val sheet = Rect(); requiredView("selectionSheet").getGlobalVisibleRect(sheet)
-                trace.append("$label first=$first last=$last firstTop=${child?.top} offset=${grid.computeVerticalScrollOffset()} canDown=${grid.canScrollVertically(1)} canUp=${grid.canScrollVertically(-1)} selected=${tracker.selection.count()} padding=${grid.paddingTop},${grid.paddingBottom} sheet=$sheet\n")
+                val lastChild = lm.findViewByPosition(last)
+                val location = IntArray(2); grid.getLocationOnScreen(location)
+                trace.append("$label first=$first last=$last firstTop=${child?.top} lastBottom=${lastChild?.bottom} itemCount=${lm.itemCount} gridSize=${grid.width}x${grid.height} gridLocation=${location.toList()} clip=${grid.clipToPadding} suppressed=${grid.isLayoutSuppressed} lmCanScroll=${lm.canScrollVertically()} state=${grid.scrollState} extent=${grid.computeVerticalScrollExtent()} range=${grid.computeVerticalScrollRange()} offset=${grid.computeVerticalScrollOffset()} canDown=${grid.canScrollVertically(1)} canUp=${grid.canScrollVertically(-1)} selected=${tracker.selection.count()} padding=${grid.paddingTop},${grid.paddingBottom} sheet=$sheet\n")
             }
         }
         try {
@@ -446,8 +448,11 @@ class SelectionSheetInstrumentedTest {
                     trace.append("grid-disallow=$disallowIntercept\n")
                 }
             }
-            instrumentation.runOnMainSync { grid.addOnItemTouchListener(touchProbe) }
-            thumb!!.longClick()
+            instrumentation.runOnMainSync { grid.addOnItemTouchListener(touchProbe); grid.scrollBy(0, 200) }
+            device.waitForIdle(1000); sample("before-selection-programmatic-scroll")
+            instrumentation.runOnMainSync { grid.scrollToPosition(0) }
+            device.waitForIdle(1000); sample("before-selection-reset")
+            requireNotNull(device.findObject(By.res(context.packageName, "thumbnailImageView"))).longClick()
             assertTrue(device.wait(Until.hasObject(By.res(context.packageName, "selectionSheet")), 10000))
             device.waitForIdle(1000); sample("after-long-press")
             instrumentation.runOnMainSync { grid.scrollBy(0, 200) }

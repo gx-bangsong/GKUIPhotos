@@ -756,29 +756,40 @@ class UiScreenshotTest {
                 it.write("<svg xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M 0 0 L 100 0 L 50 100 Z\"/></svg>".toByteArray())
             }
             editor(); tool(R.string.editor_markup_shapes); subtool(R.string.markup_shape_section)
-            val filter = IntentFilter(Intent.ACTION_GET_CONTENT)
-            val monitor = instrumentation.addMonitor(filter, Instrumentation.ActivityResult(Activity.RESULT_OK, Intent().setData(uri)), true)
-            try {
-                var button = device.findObject(By.text(context.getString(R.string.editor_shape_import)))
-                if (button == null) {
-                    val outer = requireNotNull(device.findObject(By.res(context.packageName, "markupOptionsScroll")))
-                    val row = requireNotNull(outer.findObject(By.clazz("android.widget.HorizontalScrollView")))
-                    val r = row.visibleBounds
-                    capture("markup-shape-import-before-scroll")
-                    repeat(3) { assertTrue("Shape options swipe injection failed", device.swipe(r.right - 10, r.centerY(), r.left + 10, r.centerY(), 20)) }
-                    device.waitForIdle()
-                    capture("markup-shape-import-after-scroll")
-                    button = device.findObject(By.text(context.getString(R.string.editor_shape_import)))
+            var button = device.findObject(By.text(context.getString(R.string.editor_shape_import)))
+            if (button == null) {
+                val outer = requireNotNull(device.findObject(By.res(context.packageName, "markupOptionsScroll")))
+                val row = requireNotNull(outer.findObject(By.clazz("android.widget.HorizontalScrollView")))
+                val r = row.visibleBounds
+                capture("markup-shape-import-before-scroll")
+                repeat(3) { assertTrue("Shape options swipe injection failed", device.swipe(r.right - 10, r.centerY(), r.left + 10, r.centerY(), 20)) }
+                device.waitForIdle()
+                capture("markup-shape-import-after-scroll")
+                button = device.findObject(By.text(context.getString(R.string.editor_shape_import)))
+            }
+            assertNotNull("Custom shape import action missing", button)
+            button!!.click()
+            val file = device.wait(Until.findObject(By.text("arena_custom_shape.svg")), 10000)
+            if (file == null) capture("markup-shape-import-picker-missing")
+            assertNotNull("Synthetic SVG missing from system file picker", file)
+            file!!.click()
+            assertTrue("Editor did not resume after file selection", device.wait(
+                Until.hasObject(By.res(context.packageName, "markupOptionsScroll")), 10000))
+            var shown = device.wait(Until.hasObject(By.text("arena_custom_shape")), 3000)
+            if (!shown) {
+                val outer = requireNotNull(device.findObject(By.res(context.packageName, "markupOptionsScroll")))
+                val row = requireNotNull(outer.findObject(By.clazz("android.widget.HorizontalScrollView")))
+                val bounds = row.visibleBounds
+                repeat(3) {
+                    if (!shown) {
+                        assertTrue("Shape options swipe injection failed", device.swipe(bounds.right - 10, bounds.centerY(), bounds.left + 10, bounds.centerY(), 20))
+                        shown = device.wait(Until.hasObject(By.text("arena_custom_shape")), 1000)
+                    }
                 }
-                assertNotNull("Custom shape import action missing", button)
-                button!!.click()
-                val shown = device.wait(Until.hasObject(By.text("arena_custom_shape")), 10000)
-                if (!shown) capture("markup-shape-import-result")
-                val parsed = org.lineageos.glimpse.models.CustomShapeParser.parse(
-                    "<svg xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M 0 0 L 100 0 L 50 100 Z\"/></svg>", "arena_custom_shape")
-                val stored = manager.getCustomShapes(context).map { it.name }
-                assertTrue("Imported shape not shown; monitorHits=${monitor.hits}, parser=${parsed.javaClass.simpleName}, stored=$stored", shown)
-            } finally { instrumentation.removeMonitor(monitor) }
+            }
+            if (!shown) capture("markup-shape-import-result")
+            val stored = manager.getCustomShapes(context).map { it.name }
+            assertTrue("Imported shape not shown; stored=$stored", shown)
             val overlay = activity!!.findViewById<AnnotationOverlayView>(R.id.annotationOverlayView)
             instrumentation.runOnMainSync { assertEquals("arena_custom_shape", overlay.activeCustomShape?.name) }
             val frame = device.findObject(By.res(context.packageName, "cropImageView"))!!.visibleBounds
