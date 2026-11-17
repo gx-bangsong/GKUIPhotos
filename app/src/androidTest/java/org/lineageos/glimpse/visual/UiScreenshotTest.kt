@@ -772,7 +772,12 @@ class UiScreenshotTest {
                 }
                 assertNotNull("Custom shape import action missing", button)
                 button!!.click()
-                assertTrue("Imported shape not shown", device.wait(Until.hasObject(By.text("arena_custom_shape")), 10000))
+                val shown = device.wait(Until.hasObject(By.text("arena_custom_shape")), 10000)
+                if (!shown) capture("markup-shape-import-result")
+                val parsed = org.lineageos.glimpse.models.CustomShapeParser.parse(
+                    "<svg xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M 0 0 L 100 0 L 50 100 Z\"/></svg>", "arena_custom_shape")
+                val stored = manager.getCustomShapes(context).map { it.name }
+                assertTrue("Imported shape not shown; monitorHits=${monitor.hits}, parser=${parsed.javaClass.simpleName}, stored=$stored", shown)
             } finally { instrumentation.removeMonitor(monitor) }
             val overlay = activity!!.findViewById<AnnotationOverlayView>(R.id.annotationOverlayView)
             instrumentation.runOnMainSync { assertEquals("arena_custom_shape", overlay.activeCustomShape?.name) }

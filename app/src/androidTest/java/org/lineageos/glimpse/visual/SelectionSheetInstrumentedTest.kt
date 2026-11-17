@@ -433,9 +433,31 @@ class SelectionSheetInstrumentedTest {
             val thumb = device.wait(Until.findObject(By.res(context.packageName, "thumbnailImageView")), 30000)
             assertNotNull("Diagnostic fixture missing", thumb)
             sample("before-selection")
+            val grid = requiredView("recyclerView") as RecyclerView
+            val touchProbe = object : RecyclerView.OnItemTouchListener {
+                override fun onInterceptTouchEvent(rv: RecyclerView, e: MotionEvent): Boolean {
+                    if (e.actionMasked != MotionEvent.ACTION_MOVE || e.historySize == 0) {
+                        trace.append("grid-touch action=${e.actionMasked} x=${e.x.toInt()} y=${e.y.toInt()}\n")
+                    }
+                    return false
+                }
+                override fun onTouchEvent(rv: RecyclerView, e: MotionEvent) = Unit
+                override fun onRequestDisallowInterceptTouchEvent(disallowIntercept: Boolean) {
+                    trace.append("grid-disallow=$disallowIntercept\n")
+                }
+            }
+            instrumentation.runOnMainSync { grid.addOnItemTouchListener(touchProbe) }
             thumb!!.longClick()
             assertTrue(device.wait(Until.hasObject(By.res(context.packageName, "selectionSheet")), 10000))
             device.waitForIdle(1000); sample("after-long-press")
+            instrumentation.runOnMainSync { grid.scrollBy(0, 200) }
+            device.waitForIdle(1000); sample("after-programmatic-scroll")
+            instrumentation.runOnMainSync { grid.scrollToPosition(0) }
+            device.waitForIdle(1000); sample("after-reset-to-first")
+            val check = requireNotNull(device.findObject(By.res(context.packageName, "dateCheckImageView"))).visibleBounds
+            trace.append("date-check bounds=$check\n")
+            trace.append("date-swipe injected=${device.swipe(check.centerX(), check.centerY(), check.centerX(), check.centerY() - 60, 20)}\n")
+            device.waitForIdle(1000); sample("after-date-swipe")
             val top = device.findObject(By.res(context.packageName, "selectionTopBar"))!!.visibleBounds
             val sheet = device.findObject(By.res(context.packageName, "selectionSheet"))!!.visibleBounds
             val x = 180; val start = sheet.top - 35; val end = top.bottom + 35
