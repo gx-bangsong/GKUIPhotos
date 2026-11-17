@@ -47,7 +47,10 @@ class ImageToolboxBottomSheet(
     private val lifecycleOwner: LifecycleOwner,
     private val medias: List<Media>,
     private val onComplete: (() -> Unit)? = null,
+    private val section: Section = Section.ALL,
 ) : BottomSheetDialog(context) {
+
+    enum class Section { ALL, COMPRESS, CONVERT }
 
     constructor(
         context: Context,
@@ -116,11 +119,15 @@ class ImageToolboxBottomSheet(
 
         // Only images expose compress + convert + edit; only videos expose video→GIF.
         val isSingleImage = medias.size == 1 && medias.first().mediaType == MediaType.IMAGE
-        compressSection.isVisible = hasImages
-        convertSection.isVisible = hasImages
-        editSection.isVisible = canBatchEdit(imageUris.size)
-        idPhotoSection.isVisible = isSingleImage
-        videoToGifSection.isVisible = isSingleVideo
+        compressSection.isVisible = hasImages && section != Section.CONVERT
+        convertSection.isVisible = hasImages && section != Section.COMPRESS
+        editSection.isVisible = section == Section.ALL && canBatchEdit(imageUris.size)
+        idPhotoSection.isVisible = section == Section.ALL && isSingleImage
+        videoToGifSection.isVisible = section == Section.ALL && isSingleVideo
+        if (section != Section.ALL) {
+            titleTextView.setText(if (section == Section.COMPRESS) R.string.toolbox_compress else R.string.toolbox_convert)
+            findViewById<View>(R.id.convertDivider)?.isVisible = false
+        }
 
         if (hasImages) {
             setupCompressControls()

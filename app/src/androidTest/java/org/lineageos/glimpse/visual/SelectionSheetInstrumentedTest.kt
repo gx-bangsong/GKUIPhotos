@@ -391,6 +391,23 @@ class SelectionSheetInstrumentedTest {
         assertEquals(context.getString(R.string.favorite_add_short), favorite.text)
         assertEquals(context.getString(R.string.file_action_add_to_favorites), favorite.contentDescription)
         capture("selection-sheet-viewer-delete")
+        for ((button, visible, hidden) in listOf(
+            Triple("toolboxCompressButton", "compressSection", "convertSection"),
+            Triple("toolboxConvertButton", "convertSection", "compressSection"))) {
+            var action = device.findObject(By.res(context.packageName, button))
+            if (action == null) {
+                val row = requireNotNull(device.findObject(By.res(context.packageName, "toolboxActions")))
+                val rect = row.visibleBounds
+                device.swipe(rect.right - 12, rect.centerY(), rect.left + 12, rect.centerY(), 20)
+                action = device.findObject(By.res(context.packageName, button))
+            }
+            assertNotNull("Missing independent tool action $button", action)
+            action!!.click()
+            assertTrue("Requested section missing: $visible", device.wait(Until.hasObject(By.res(context.packageName, visible)), 5000))
+            assertTrue("Other section must stay hidden: $hidden", !device.hasObject(By.res(context.packageName, hidden)))
+            capture("viewer-$visible")
+            device.pressBack()
+        }
         device.pressBack()
     }
 

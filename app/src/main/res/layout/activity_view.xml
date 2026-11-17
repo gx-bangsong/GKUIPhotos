@@ -94,21 +94,37 @@
 
     </LinearLayout>
 
-    <!-- Module 6: floating capsule that opens the offline image/video toolbox. -->
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/toolboxButton"
-        style="@style/Theme.Glimpse.MediaViewer.ToolboxCapsule"
-        android:layout_width="wrap_content"
+    <!-- Independent actions remain reachable on narrow windows. -->
+    <HorizontalScrollView
+        android:id="@+id/toolboxActions"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_gravity="bottom|center_horizontal"
+        android:layout_gravity="bottom"
         android:layout_marginBottom="124dp"
-        android:text="@string/toolbox_title"
-        android:visibility="gone"
-        app:backgroundTint="@android:color/black"
-        app:cornerRadius="24dp"
-        app:icon="@drawable/ic_toolbox"
-        app:iconTint="@android:color/white"
-        app:strokeColor="@android:color/white"
-        app:strokeWidth="1dp" />
+        android:scrollbars="none"
+        android:visibility="gone">
+        <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal" android:orientation="horizontal"
+            android:paddingHorizontal="16dp">
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/toolboxButton" style="@style/Theme.Glimpse.MediaViewer.ToolboxCapsule"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="@string/toolbox_title" app:cornerRadius="12dp"
+                app:backgroundTint="@android:color/black" app:icon="@drawable/ic_toolbox"
+                app:iconTint="@android:color/white" app:strokeColor="@android:color/white" app:strokeWidth="1dp" />
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/toolboxCompressButton" style="@style/Theme.Glimpse.MediaViewer.ToolboxCapsule"
+                android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp"
+                android:text="@string/toolbox_compress" app:cornerRadius="12dp"
+                app:backgroundTint="@android:color/black" app:icon="@drawable/ic_compress"
+                app:iconTint="@android:color/white" app:strokeColor="@android:color/white" app:strokeWidth="1dp" />
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/toolboxConvertButton" style="@style/Theme.Glimpse.MediaViewer.ToolboxCapsule"
+                android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp"
+                android:text="@string/toolbox_convert" app:cornerRadius="12dp"
+                app:backgroundTint="@android:color/black" app:icon="@drawable/ic_convert"
+                app:iconTint="@android:color/white" app:strokeColor="@android:color/white" app:strokeWidth="1dp" />
+        </LinearLayout>
+    </HorizontalScrollView>
 
 </FrameLayout>

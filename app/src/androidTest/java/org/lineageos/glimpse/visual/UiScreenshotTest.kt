@@ -741,6 +741,56 @@ class UiScreenshotTest {
     @Test fun collageTwoLayouts() { collageLayouts(2, "collage-two-layouts") }
     @Test fun collageSixLayouts() { collageLayouts(6, "collage-six-layouts") }
 
+    @Test fun markupCustomShapeImportDrawAndDelete() {
+        assumeTrue("Custom shape UI is candidate-only", isCandidate())
+        val manager = org.lineageos.glimpse.models.CustomEditorAssetManager
+        val original = manager.getCustomShapes(context)
+        val values = ContentValues().apply {
+            put(MediaStore.Downloads.DISPLAY_NAME, "arena_custom_shape.svg")
+            put(MediaStore.Downloads.MIME_TYPE, "image/svg+xml")
+            put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/GlimpseUiTest")
+        }
+        val uri = requireNotNull(context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values))
+        try {
+            requireNotNull(context.contentResolver.openOutputStream(uri)).use {
+                it.write("<svg xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M 0 0 L 100 0 L 50 100 Z\"/></svg>".toByteArray())
+            }
+            editor(); tool(R.string.editor_markup_shapes); subtool(R.string.markup_shape_section)
+            val filter = IntentFilter(Intent.ACTION_GET_CONTENT)
+            val monitor = instrumentation.addMonitor(filter, Instrumentation.ActivityResult(Activity.RESULT_OK, Intent().setData(uri)), true)
+            try {
+                var button = device.findObject(By.text(context.getString(R.string.editor_shape_import)))
+                if (button == null) {
+                    val row = requireNotNull(device.findObject(By.res(context.packageName, "markupOptionsScroll")))
+                    val r = row.visibleBounds
+                    repeat(3) { device.swipe(r.right - 10, r.centerY(), r.left + 10, r.centerY(), 20) }
+                    button = device.findObject(By.text(context.getString(R.string.editor_shape_import)))
+                }
+                assertNotNull("Custom shape import action missing", button)
+                button!!.click()
+                assertTrue("Imported shape not shown", device.wait(Until.hasObject(By.text("arena_custom_shape")), 10000))
+            } finally { instrumentation.removeMonitor(monitor) }
+            val overlay = activity!!.findViewById<AnnotationOverlayView>(R.id.annotationOverlayView)
+            instrumentation.runOnMainSync { assertEquals("arena_custom_shape", overlay.activeCustomShape?.name) }
+            val frame = device.findObject(By.res(context.packageName, "cropImageView"))!!.visibleBounds
+            assertTrue(device.swipe(frame.centerX() - 70, frame.centerY() - 70, frame.centerX() + 70, frame.centerY() + 70, 25))
+            instrumentation.runOnMainSync {
+                assertNotNull("Drawing custom shape through the window failed", overlay.activeShape)
+                assertEquals("Custom shape ID lost", overlay.activeCustomShape?.id, overlay.activeShape?.customShapeId)
+            }
+            capture("markup-custom-shape")
+            val chip = requireNotNull(device.findObject(By.text("arena_custom_shape")))
+            chip.longClick()
+            assertNotNull(device.wait(Until.findObject(By.text(context.getString(R.string.editor_shape_delete_title))), 5000))
+            device.findObject(By.text(context.getString(R.string.delete)))!!.click()
+            device.waitForIdle()
+            assertTrue("Custom shape was not deleted", manager.getCustomShapes(context).none { it.name == "arena_custom_shape" })
+        } finally {
+            manager.saveCustomShapes(context, original)
+            context.contentResolver.delete(uri, null, null)
+        }
+    }
+
     @Test fun markupTextResizeAndRotateHaveSeparateWindowHandles() {
         assumeTrue("Separate text handles are candidate-only", isCandidate())
         editor(); tool(R.string.editor_markup_text)

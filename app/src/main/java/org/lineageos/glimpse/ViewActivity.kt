@@ -322,6 +322,16 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
             }
         }
 
+        listOf(R.id.toolboxCompressButton to ImageToolboxBottomSheet.Section.COMPRESS,
+            R.id.toolboxConvertButton to ImageToolboxBottomSheet.Section.CONVERT).forEach { (button, section) ->
+            findViewById<View>(button).setOnClickListener {
+                viewModel.displayedMedia.value?.let { media ->
+                    ImageToolboxBottomSheet(this@ViewActivity, this@ViewActivity,
+                        listOf(media), section = section).show()
+                }
+            }
+        }
+
         deleteButton.setOnClickListener {
             viewModel.displayedMedia.value?.let { media ->
                 if (media.isTrashed) {
@@ -741,7 +751,7 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
      */
     private fun updateToolboxVisibility() {
         val media = viewModel.displayedMedia.value
-        toolboxButton.isVisible = media != null &&
+        findViewById<View>(R.id.toolboxActions).isVisible = media != null &&
             media.mediaType != MediaType.VIDEO &&
             !viewModel.readOnly.value &&
             !viewModel.fullscreenMode.value
