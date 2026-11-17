@@ -234,7 +234,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         if (result.resultCode == Activity.RESULT_OK) {
             val bytes = pendingOverwrite
             pendingOverwrite = null
-            if (bytes != null) overwrite(bytes) else finishWithSaved()
+            if (bytes != null) overwrite(bytes, requestPermission = false) else showFailed()
         } else {
             pendingOverwrite = null
             hideSaving()
@@ -2593,18 +2593,20 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             .show()
     }
 
-    private fun overwrite(bytes: ByteArray) {
+    private fun overwrite(bytes: ByteArray, requestPermission: Boolean = true) {
         val uri = sourceUri ?: run { hideSaving(); return }
         lifecycleScope.launch {
             val written = withContext(Dispatchers.IO) {
                 runCatching {
-                    contentResolver.openOutputStream(uri, "wt")?.use { it.write(bytes) }
+                    val stream = contentResolver.openOutputStream(uri, "wt")
+                        ?: throw IllegalStateException("Cannot open source for writing")
+                    stream.use { it.write(bytes) }
                     true
                 }.getOrDefault(false)
             }
             if (written) {
                 finishWithSaved(uri)
-            } else {
+            } else if (requestPermission) {
                 pendingOverwrite = bytes
                 try {
                     writeRequestContract.launch(contentResolver.createWriteRequest(uri))
@@ -2613,6 +2615,8 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                     hideSaving()
                     showFailed()
                 }
+            } else {
+                showFailed()
             }
         }
     }

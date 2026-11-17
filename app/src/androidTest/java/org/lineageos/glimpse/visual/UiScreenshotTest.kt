@@ -741,6 +741,62 @@ class UiScreenshotTest {
     @Test fun collageTwoLayouts() { collageLayouts(2, "collage-two-layouts") }
     @Test fun collageSixLayouts() { collageLayouts(6, "collage-six-layouts") }
 
+    @Test fun markupTextResizeAndRotateHaveSeparateWindowHandles() {
+        assumeTrue("Separate text handles are candidate-only", isCandidate())
+        editor(); tool(R.string.editor_markup_text)
+        val overlay = activity!!.findViewById<AnnotationOverlayView>(R.id.annotationOverlayView)
+        val crop = activity!!.findViewById<CropImageView>(R.id.cropImageView)
+        instrumentation.runOnMainSync { overlay.addTextItem("Window gesture", crop.width / 2f, crop.height / 2f) }
+        fun point(rotate: Boolean): IntArray {
+            val result = IntArray(2)
+            instrumentation.runOnMainSync {
+                val item = requireNotNull(overlay.activeText)
+                val bounds = android.graphics.RectF().also { item.computeBounds(it) }
+                val coords = if (rotate) floatArrayOf(bounds.centerX(), bounds.top - overlay.viewLengthToBase(36f * context.resources.displayMetrics.density))
+                    else floatArrayOf(bounds.right, bounds.bottom)
+                requireNotNull(overlay.imageMatrixProvider).invoke().mapPoints(coords)
+                val loc = IntArray(2); overlay.getLocationOnScreen(loc)
+                result[0] = loc[0] + coords[0].toInt(); result[1] = loc[1] + coords[1].toInt()
+            }
+            return result
+        }
+        val resize = point(false)
+        assertTrue(device.swipe(resize[0], resize[1], resize[0] + 35, resize[1] + 35, 20))
+        device.waitForIdle()
+        instrumentation.runOnMainSync {
+            val item = requireNotNull(overlay.activeText)
+            assertTrue("Resize did not change scale", item.scale > 1f)
+            assertEquals("Resize rotated text", 0f, item.rotation, .01f)
+        }
+        val rotate = point(true)
+        assertTrue(device.swipe(rotate[0], rotate[1], rotate[0] + 55, rotate[1] + 25, 20))
+        device.waitForIdle()
+        instrumentation.runOnMainSync {
+            assertTrue("Rotate handle did not rotate text", kotlin.math.abs(requireNotNull(overlay.activeText).rotation) > 1f)
+        }
+        capture("markup-text-separate-handles")
+    }
+
+    @Test fun markupOverwriteWritesSyntheticOriginal() {
+        assumeTrue("Overwrite result is candidate-only", isCandidate())
+        editor()
+        val uri = images.first()
+        val replacement = Bitmap.createBitmap(48, 48, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.MAGENTA) }
+        val out = java.io.ByteArrayOutputStream()
+        replacement.compress(Bitmap.CompressFormat.JPEG, 95, out); replacement.recycle()
+        instrumentation.runOnMainSync {
+            val method = ImageEditorActivity::class.java.getDeclaredMethod("overwrite", ByteArray::class.java, Boolean::class.javaPrimitiveType)
+            method.isAccessible = true
+            method.invoke(activity, out.toByteArray(), false)
+        }
+        val deadline = System.currentTimeMillis() + 10000
+        while (activity?.isFinishing != true && System.currentTimeMillis() < deadline) Thread.sleep(100)
+        assertTrue("Overwrite did not finish", activity?.isFinishing == true)
+        val decoded = requireNotNull(context.contentResolver.openInputStream(uri)).use { BitmapFactory.decodeStream(it) }
+        assertNotNull("Overwritten image could not be decoded", decoded)
+        assertEquals(48, decoded!!.width); assertEquals(48, decoded.height); decoded.recycle()
+    }
+
     @Test fun markupMultilineFontAndAlignment() {
         assumeTrue("Text layout is candidate-only", isCandidate())
         editor(); tool(R.string.editor_markup_text)

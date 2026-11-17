@@ -788,6 +788,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
     private var shapeDragStartX = 0f
     private var shapeDragStartY = 0f
     private var isDraggingTextHandle: Boolean = false
+    private var isRotatingTextHandle: Boolean = false
     private var isMovingText: Boolean = false
     private var textDragStartX = 0f
     private var textDragStartY = 0f
@@ -920,6 +921,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
         if (activeText == null) return
         activeText = null
         isDraggingTextHandle = false
+        isRotatingTextHandle = false
         isMovingText = false
         onAnnotationChanged?.invoke()
         invalidate()
@@ -1109,7 +1111,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
         }
         activeText?.let { activeColor = it.color; hasTextBackgroundPill = it.hasBackgroundPill; activeTextFontId = it.fontId; activeTextAlignment = it.alignment }
         draggedHandle = -1; isMovingShape = false
-        isMovingText = false; isDraggingTextHandle = false
+        isMovingText = false; isDraggingTextHandle = false; isRotatingTextHandle = false
         isMovingSticker = false; isDraggingStickerHandle = false
         invalidate()
         onAnnotationChanged?.invoke()
@@ -1261,6 +1263,9 @@ class AnnotationOverlayView @JvmOverloads constructor(
             val rect = RectF().also { bounds -> it.computeBounds(bounds) }
             canvas.drawRoundRect(rect, viewLengthToBase(8f), viewLengthToBase(8f), boundsDashPaint)
             drawHandle(canvas, rect.right, rect.bottom)
+            val rotateY = rect.top - viewLengthToBase(36f * resources.displayMetrics.density)
+            canvas.drawLine(rect.centerX(), rect.top, rect.centerX(), rotateY, boundsDashPaint)
+            drawHandle(canvas, rect.centerX(), rotateY)
         }
         if (activeTool == MarkupTool.STICKER) activeSticker?.let {
             val rect = RectF().also { bounds -> it.computeBounds(bounds) }
@@ -1399,6 +1404,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
         draggedHandle = -1
         isMovingShape = false
         isDraggingTextHandle = false
+        isRotatingTextHandle = false
         isMovingText = false
         isDraggingStickerHandle = false
         isMovingSticker = false
@@ -1688,6 +1694,14 @@ class AnnotationOverlayView @JvmOverloads constructor(
                             val bounds = RectF()
                             t.computeBounds(bounds)
 
+                            val rotateY = bounds.top - viewLengthToBase(36f * resources.displayMetrics.density)
+                            if (hypot((x - bounds.centerX()).toDouble(), (y - rotateY).toDouble()) <= hitRadius) {
+                                isRotatingTextHandle = true
+                                textInitialAngle = Math.toDegrees(atan2((y - t.centerY).toDouble(), (x - t.centerX).toDouble())).toFloat()
+                                textBaseRotation = t.rotation
+                                return true
+                            }
+
                             // 1. Check resize handle at (bounds.right, bounds.bottom)
                             if (hypot((x - bounds.right).toDouble(), (y - bounds.bottom).toDouble()) <= hitRadius) {
                                 isDraggingTextHandle = true
@@ -1759,6 +1773,11 @@ class AnnotationOverlayView @JvmOverloads constructor(
                             val currentDist = hypot((x - currentText.centerX).toDouble(), (y - currentText.centerY).toDouble()).toFloat()
                             val newScale = (currentDist / textInitialDist * textInitialScale).coerceIn(0.3f, 6.0f)
                             currentText.scale = newScale
+                            constrainActiveText()
+                            onAnnotationChanged?.invoke()
+                            invalidate()
+                            return true
+                        } else if (isRotatingTextHandle) {
                             val angle = Math.toDegrees(atan2((y - currentText.centerY).toDouble(), (x - currentText.centerX).toDouble())).toFloat()
                             currentText.rotation = textBaseRotation + angle - textInitialAngle
                             constrainActiveText()
@@ -1780,6 +1799,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
                     }
                     MotionEvent.ACTION_UP -> {
                         isDraggingTextHandle = false
+                        isRotatingTextHandle = false
                         isMovingText = false
                         gestureSnapshot = null
                         pendingTextEdit?.let { onTextEditRequested?.invoke(it) }
