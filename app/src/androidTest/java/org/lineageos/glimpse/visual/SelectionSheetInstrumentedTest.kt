@@ -649,6 +649,12 @@ class SelectionSheetInstrumentedTest {
         } finally {
             device.setOrientationNatural(); device.waitForIdle()
         }
+        val fixedSheetTop = IntArray(1)
+        instrumentation.runOnMainSync {
+            val bounds = Rect()
+            assertTrue(requiredView("selectionSheet").getGlobalVisibleRect(bounds))
+            fixedSheetTop[0] = bounds.top
+        }
         val actions = requireNotNull(device.findObject(By.res(context.packageName, "selectionSheetScroll")))
         val actionBounds = actions.visibleBounds
         assertTrue(device.swipe(actionBounds.right - 20, actionBounds.centerY(), actionBounds.left + 20, actionBounds.centerY(), 25))
@@ -657,11 +663,15 @@ class SelectionSheetInstrumentedTest {
             val scroll = requiredView("selectionSheetScroll") as android.widget.HorizontalScrollView
             val row = requiredView("selectionSheetPrimary") as ViewGroup
             if (row.width > scroll.width) assertTrue("Actions did not scroll horizontally", scroll.scrollX > 0)
-            assertEquals(BottomSheetBehavior.STATE_COLLAPSED, BottomSheetBehavior.from(requiredView("selectionSheet")).state)
+            val fixed = Rect()
+            assertTrue(requiredView("selectionSheet").getGlobalVisibleRect(fixed))
+            assertTrue("Horizontal actions moved the sheet vertically", kotlin.math.abs(fixed.top - fixedSheetTop[0]) <= 2)
         }
         val swipeArea = Rect()
         instrumentation.runOnMainSync {
-            assertEquals(BottomSheetBehavior.STATE_COLLAPSED, BottomSheetBehavior.from(requiredView("selectionSheet")).state)
+            val fixed = Rect()
+            assertTrue(requiredView("selectionSheet").getGlobalVisibleRect(fixed))
+            assertTrue("Horizontal actions moved the sheet vertically", kotlin.math.abs(fixed.top - fixedSheetTop[0]) <= 2)
             val grid = Rect(); val sheet = Rect(); val top = Rect()
             requiredView("recyclerView").getGlobalVisibleRect(grid)
             requiredView("selectionSheet").getGlobalVisibleRect(sheet)
@@ -707,11 +717,15 @@ class SelectionSheetInstrumentedTest {
         instrumentation.runOnMainSync {
             assertEquals(java.text.NumberFormat.getIntegerInstance().format(3),
                 (requiredView("selectionCount") as TextView).text.toString())
-            assertEquals(BottomSheetBehavior.STATE_COLLAPSED, BottomSheetBehavior.from(requiredView("selectionSheet")).state)
+            val fixed = Rect()
+            assertTrue(requiredView("selectionSheet").getGlobalVisibleRect(fixed))
+            assertTrue("Horizontal actions moved the sheet vertically", kotlin.math.abs(fixed.top - fixedSheetTop[0]) <= 2)
         }
         capture("selection-sheet-expanded")
         instrumentation.runOnMainSync {
-            assertEquals(BottomSheetBehavior.STATE_COLLAPSED, BottomSheetBehavior.from(requiredView("selectionSheet")).state)
+            val fixed = Rect()
+            assertTrue(requiredView("selectionSheet").getGlobalVisibleRect(fixed))
+            assertTrue("Horizontal actions moved the sheet vertically", kotlin.math.abs(fixed.top - fixedSheetTop[0]) <= 2)
             val grid = requiredView("recyclerView") as RecyclerView
             val last = requireNotNull(grid.findViewHolderForAdapterPosition(grid.adapter!!.itemCount - 1))
             val row = Rect(); val sheet = Rect()
