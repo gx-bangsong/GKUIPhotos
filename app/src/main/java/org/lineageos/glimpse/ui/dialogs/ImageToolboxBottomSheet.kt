@@ -46,8 +46,8 @@ class ImageToolboxBottomSheet(
     context: Context,
     private val lifecycleOwner: LifecycleOwner,
     private val medias: List<Media>,
-    private val onComplete: (() -> Unit)? = null,
     private val section: Section = Section.ALL,
+    private val onComplete: (() -> Unit)? = null,
 ) : BottomSheetDialog(context) {
 
     enum class Section { ALL, COMPRESS, CONVERT }
@@ -56,7 +56,7 @@ class ImageToolboxBottomSheet(
         context: Context,
         lifecycleOwner: LifecycleOwner,
         media: Media,
-    ) : this(context, lifecycleOwner, listOf(media), null)
+    ) : this(context, lifecycleOwner, listOf(media))
 
     private val isSingleVideo = medias.size == 1 && medias.first().mediaType == MediaType.VIDEO
     private val isMulti = medias.size > 1
