@@ -520,6 +520,48 @@ class SelectionSheetInstrumentedTest {
         }
     }
 
+    @Test fun selectionDateCheckboxTogglesEntireDayWithWindowTaps() {
+        val thumbnail = requireNotNull(device.findObject(By.res(context.packageName, "thumbnailImageView")))
+        thumbnail.longClick()
+        assertTrue("Selection sheet missing", device.wait(Until.hasObject(By.res(context.packageName, "selectionSheet")), 10000))
+        val grid = requiredView("recyclerView") as RecyclerView
+        lateinit var tracker: SelectionTracker<Media>
+        lateinit var day: List<Media>
+        val checkboxBounds = Rect()
+        instrumentation.runOnMainSync {
+            val adapter = grid.adapter as ThumbnailAdapter
+            tracker = requireNotNull(adapter.selectionTracker)
+            assertEquals("Expected a single initial selection", 1, tracker.selection.count())
+            val selected = tracker.selection.first()
+            val index = adapter.currentList.indexOfFirst {
+                it is org.lineageos.glimpse.viewmodels.AlbumViewModel.AlbumContent.MediaItem && it.media == selected
+            }
+            assertTrue("Selected media missing from adapter", index >= 0)
+            val header = adapter.currentList.take(index).last {
+                it is org.lineageos.glimpse.viewmodels.AlbumViewModel.AlbumContent.DateHeader
+            } as org.lineageos.glimpse.viewmodels.AlbumViewModel.AlbumContent.DateHeader
+            day = adapter.getMediaForDate(header.date)
+            assertTrue("Fixture day must contain multiple photos", day.size > 1)
+            val headerIndex = adapter.currentList.indexOf(header)
+            val holder = requireNotNull(grid.findViewHolderForAdapterPosition(headerIndex))
+            val checkbox = holder.itemView.findViewById<View>(R.id.dateCheckImageView)
+            assertTrue("Selected day's checkbox is not fully visible", checkbox.getGlobalVisibleRect(checkboxBounds) &&
+                checkboxBounds.width() == checkbox.width && checkboxBounds.height() == checkbox.height)
+        }
+        assertTrue("Date tap injection failed", device.click(checkboxBounds.centerX(), checkboxBounds.centerY()))
+        device.waitForIdle()
+        instrumentation.runOnMainSync {
+            assertEquals("Date tap must select exactly that day's photos", day.toSet(), tracker.selection.toSet())
+        }
+        capture("selection-date-selected")
+        assertTrue("Second date tap injection failed", device.click(checkboxBounds.centerX(), checkboxBounds.centerY()))
+        device.waitForIdle()
+        instrumentation.runOnMainSync {
+            assertTrue("Second date tap must clear the day's selection", day.none { tracker.isSelected(it) })
+            assertTrue("Selection must be empty", !tracker.hasSelection())
+        }
+    }
+
     @Test fun selectionSheetOpensUpdatesExpandsAndCloses() {
         val grid = requiredView("recyclerView") as RecyclerView
         lateinit var tracker: SelectionTracker<Media>

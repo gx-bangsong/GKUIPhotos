@@ -10,6 +10,8 @@ import android.os.Handler
 import android.os.Looper
 import android.text.format.DateUtils
 import android.view.LayoutInflater
+import android.view.MotionEvent
+import android.view.ViewConfiguration
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
@@ -306,8 +308,35 @@ class ThumbnailAdapter : ListAdapter<AlbumViewModel.AlbumContent, RecyclerView.V
         }
 
         init {
-            // Do not block the RecyclerView from intercepting a drag begun on the
-            // date checkbox. A tap still invokes the click listener below.
+            // SelectionTracker consumes header taps while selection is active, even
+            // though its predicate rejects the header key. Let the child handle a
+            // stationary tap, but give interception back as soon as it is a drag.
+            val slop = ViewConfiguration.get(view.context).scaledTouchSlop
+            var downX = 0f
+            var downY = 0f
+            var protectingTap = false
+            val tapOrScroll = View.OnTouchListener { touched, event ->
+                if (!isQuickSelectEnabled) return@OnTouchListener false
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> {
+                        downX = event.rawX; downY = event.rawY
+                        protectingTap = true
+                        touched.parent?.requestDisallowInterceptTouchEvent(true)
+                    }
+                    MotionEvent.ACTION_MOVE -> if (protectingTap &&
+                        (kotlin.math.abs(event.rawX - downX) > slop || kotlin.math.abs(event.rawY - downY) > slop)) {
+                        protectingTap = false
+                        touched.parent?.requestDisallowInterceptTouchEvent(false)
+                    }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        protectingTap = false
+                        touched.parent?.requestDisallowInterceptTouchEvent(false)
+                    }
+                }
+                false // retain normal click, pressed-state and accessibility behavior
+            }
+            itemView.setOnTouchListener(tapOrScroll)
+            checkImageView.setOnTouchListener(tapOrScroll)
             itemView.setOnClickListener {
                 if (isQuickSelectEnabled) {
                     checkImageView.performClick()
