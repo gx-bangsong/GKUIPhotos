@@ -9,8 +9,6 @@ collect() {
   adb shell wm density > ui-evidence/wm-density.txt || true
   adb shell settings get system font_scale > ui-evidence/font-scale.txt || true
   adb shell cmd uimode night > ui-evidence/night-mode.txt || true
-  # Debug-only fixed-padding experiment; includes only synthetic coordinates and stacks.
-  adb logcat -d -v threadtime -s 'SelectionPaddingExperiment:D' '*:S' > ui-evidence/selection-trace-padding-experiment.txt || true
   local pull_status=0
   adb pull /sdcard/Download/GlimpseUiTest/. ui-evidence/ || pull_status=$?
   if [[ -d app/build/outputs/androidTest-results/connected ]]; then
@@ -46,9 +44,9 @@ if [[ "$UI_VERSION" == candidate ]]; then
   adb push "$font" /sdcard/Android/data/org.lineageos.glimpse.dev/files/markup-test-source-sans.otf
 fi
 set +e
-# TEMPORARY EXPERIMENT: only the window diagnostic, date drag and last-row tests.
+# TEMPORARY TARGETED VERIFICATION: window diagnostic, date drag and last-row tests.
 # Other suites are NOT RUN, not silently counted as passed or skipped.
-echo 'EXPERIMENT ONLY: selectionScrollWindowDiagnostics, selectionActionsScrollHorizontallyOnShortScreen, selectionSheetOpensUpdatesExpandsAndCloses; other suites not run.' > ui-evidence/selection-trace-experiment-scope.txt
+echo 'TARGETED VERIFICATION ONLY: selectionScrollWindowDiagnostics, selectionActionsScrollHorizontallyOnShortScreen, selectionSheetOpensUpdatesExpandsAndCloses; other suites not run.' > ui-evidence/selection-trace-experiment-scope.txt
 execution_scope=targeted
 selection_class=org.lineageos.glimpse.visual.SelectionSheetInstrumentedTest
 selection_tests="${selection_class}#selectionScrollWindowDiagnostics,${selection_class}#selectionActionsScrollHorizontallyOnShortScreen,${selection_class}#selectionSheetOpensUpdatesExpandsAndCloses"
