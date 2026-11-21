@@ -188,12 +188,20 @@ class UiScreenshotTest {
         val nextPng = File(output, "${name}-probe.png")
         val nextXml = File(output, "${name}-probe.xml")
         var stable = false
-        repeat(4) {
+        device.waitForIdle()
+        Thread.sleep(600)
+        device.dumpWindowHierarchy(xml)
+        assertTrue("Screenshot failed: $name", device.takeScreenshot(png))
+        repeat(4) { attempt ->
             if (!stable) {
-                device.waitForIdle()
-                Thread.sleep(600)
-                device.dumpWindowHierarchy(xml)
-                assertTrue("Screenshot failed: $name", device.takeScreenshot(png))
+                if (attempt > 0) {
+                    // The preceding probe is the first sample of the next pair.
+                    // Keep the existing idle/settle delay before the new probe.
+                    nextXml.copyTo(xml, overwrite = true)
+                    nextPng.copyTo(png, overwrite = true)
+                    device.waitForIdle()
+                    Thread.sleep(600)
+                }
                 Thread.sleep(350)
                 device.dumpWindowHierarchy(nextXml)
                 assertTrue("Screenshot probe failed: $name", device.takeScreenshot(nextPng))
