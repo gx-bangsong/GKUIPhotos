@@ -741,8 +741,14 @@ class UiScreenshotTest {
     @Test fun collageTwoLayouts() { collageLayouts(2, "collage-two-layouts") }
     @Test fun collageSixLayouts() { collageLayouts(6, "collage-six-layouts") }
 
-    @Test fun markupCustomShapeImportDrawAndDelete() {
+    @Test fun markupCustomShapeImportDrawAndDelete() = exerciseCustomShapeImport(bypassSaf = false)
+
+    // Bypass the system picker only in this diagnostic; the other test still exercises it.
+    @Test fun markupCustomShapeImportWithResultIntent() = exerciseCustomShapeImport(bypassSaf = true)
+
+    private fun exerciseCustomShapeImport(bypassSaf: Boolean) {
         assumeTrue("Custom shape UI is candidate-only", isCandidate())
+        val mode = if (bypassSaf) "intent" else "saf"
         val manager = org.lineageos.glimpse.models.CustomEditorAssetManager
         val original = manager.getCustomShapes(context)
         val values = ContentValues().apply {
@@ -761,18 +767,36 @@ class UiScreenshotTest {
                 val outer = requireNotNull(device.findObject(By.res(context.packageName, "markupOptionsScroll")))
                 val row = requireNotNull(outer.findObject(By.clazz("android.widget.HorizontalScrollView")))
                 val r = row.visibleBounds
-                capture("markup-shape-import-before-scroll")
+                capture("markup-shape-import-$mode-before-scroll")
                 repeat(3) { assertTrue("Shape options swipe injection failed", device.swipe(r.right - 10, r.centerY(), r.left + 10, r.centerY(), 20)) }
                 device.waitForIdle()
-                capture("markup-shape-import-after-scroll")
+                capture("markup-shape-import-$mode-after-scroll")
                 button = device.findObject(By.text(context.getString(R.string.editor_shape_import)))
             }
             assertNotNull("Custom shape import action missing", button)
-            button!!.click()
-            val file = device.wait(Until.findObject(By.text("arena_custom_shape.svg")), 10000)
-            if (file == null) capture("markup-shape-import-picker-missing")
-            assertNotNull("Synthetic SVG missing from system file picker", file)
-            file!!.click()
+            if (bypassSaf) {
+                // Match the full GetContent intent, including its MIME type and category.
+                // The result intent supplies only our app-owned synthetic URI.
+                val filter = IntentFilter(Intent.ACTION_GET_CONTENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    addDataType("*/*")
+                }
+                val result = Intent().setData(uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                val monitor = instrumentation.addMonitor(filter, Instrumentation.ActivityResult(Activity.RESULT_OK, result), true)
+                try {
+                    button!!.click()
+                    device.waitForIdle()
+                    assertTrue("GetContent intent was not intercepted; SAF bypass not exercised", monitor.hits > 0)
+                } finally {
+                    instrumentation.removeMonitor(monitor)
+                }
+            } else {
+                button!!.click()
+                val file = device.wait(Until.findObject(By.text("arena_custom_shape.svg")), 10000)
+                if (file == null) capture("markup-shape-import-$mode-picker-missing")
+                assertNotNull("Synthetic SVG missing from system file picker", file)
+                file!!.click()
+            }
             assertTrue("Editor did not resume after file selection", device.wait(
                 Until.hasObject(By.res(context.packageName, "markupOptionsScroll")), 10000))
             var shown = device.wait(Until.hasObject(By.text("arena_custom_shape")), 3000)
@@ -787,7 +811,7 @@ class UiScreenshotTest {
                     }
                 }
             }
-            if (!shown) capture("markup-shape-import-result")
+            if (!shown) capture("markup-shape-import-$mode-result")
             val stored = manager.getCustomShapes(context).map { it.name }
             assertTrue("Imported shape not shown; stored=$stored", shown)
             val overlay = activity!!.findViewById<AnnotationOverlayView>(R.id.annotationOverlayView)
@@ -798,13 +822,18 @@ class UiScreenshotTest {
                 assertNotNull("Drawing custom shape through the window failed", overlay.activeShape)
                 assertEquals("Custom shape ID lost", overlay.activeCustomShape?.id, overlay.activeShape?.customShapeId)
             }
-            capture("markup-custom-shape")
+            capture("markup-shape-import-$mode-drawn")
             val chip = requireNotNull(device.findObject(By.text("arena_custom_shape")))
+            val beforeDelete = manager.getCustomShapes(context)
+            val activeId = overlay.activeCustomShape?.id
             chip.longClick()
             assertNotNull(device.wait(Until.findObject(By.text(context.getString(R.string.editor_shape_delete_title))), 5000))
+            capture("markup-shape-import-$mode-delete-dialog")
             device.findObject(By.text(context.getString(R.string.delete)))!!.click()
             device.waitForIdle()
-            assertTrue("Custom shape was not deleted", manager.getCustomShapes(context).none { it.name == "arena_custom_shape" })
+            val afterDelete = manager.getCustomShapes(context)
+            if (afterDelete.any { it.name == "arena_custom_shape" }) capture("markup-shape-import-$mode-delete-result")
+            assertTrue("Custom shape was not deleted; activeId=$activeId before=${beforeDelete.map { it.id to it.name }} after=${afterDelete.map { it.id to it.name }} original=${original.map { it.id to it.name }}", afterDelete.none { it.name == "arena_custom_shape" })
         } finally {
             manager.saveCustomShapes(context, original)
             context.contentResolver.delete(uri, null, null)
