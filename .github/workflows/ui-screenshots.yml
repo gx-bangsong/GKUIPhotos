@@ -170,18 +170,9 @@ jobs:
             exit 1
           fi
           python3 scripts/prepare-ui-return.py --evidence "$UI_EVIDENCE_DIR" --jobs "$UI_RETURN_DIR/jobs.json" --out "$UI_RETURN_DIR"
-          if ! gh api --method POST "repos/$GITHUB_REPOSITORY/git/blobs" --input "$UI_RETURN_DIR/blob-payload.json" --jq .sha > "$UI_RETURN_DIR/blob-sha.txt" 2> "$UI_RETURN_DIR/blob-error.txt"; then
-            echo '::error::Unable to create the detached screenshot blob.'
-            python3 - "$UI_RETURN_DIR/blob-error.txt" "$UI_RETURN_DIR/ui-evidence.zip" <<'PY'
-          import os, re, sys
-          error = open(sys.argv[1], encoding='utf-8', errors='replace').read()[:1000]
-          error = re.sub(r'https?://\S+|file://\S+', '[url]', error)
-          error = re.sub(r'(?i)(bearer|token|password|secret|signature|sig|authorization)\s*[:= ]\s*\S+', r'\1=[redacted]', error)
-          print('::error::Blob bytes: ' + str(os.path.getsize(sys.argv[2])))
-          print('::error::Blob API error: ' + error.replace('%', '%25').replace('\r', ' ').replace('\n', ' '))
-          PY
-            exit 1
-          fi
+          # Preserve the complete archive across bounded Git blobs. A manifest
+          # records order, per-chunk hashes, and the whole archive SHA-256.
+          python3 scripts/publish-ui-evidence.py
           # Publish the screenshot report first, so an APK failure cannot hide it.
           python3 scripts/write-ui-comment.py
           owner=${GITHUB_REPOSITORY%/*}

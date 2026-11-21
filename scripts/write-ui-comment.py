@@ -14,8 +14,18 @@ reports = json.loads((root / 'bounds-report.json').read_text())
 errors = json.loads((root / 'lint-errors.json').read_text())
 lines = ['<!-- arena-ui-evidence -->', '## 模拟器截图自动回传', '',
          f"运行：{os.environ['GITHUB_RUN_ID']}；提交：{os.environ['UI_SOURCE_SHA']}",
-         f"Git blob：`{blob or '上传失败，不可用'}`（未提交到分支，可能被清理）", '',
+         f"截图分块清单 Git blob：`{blob or '上传失败，不可用'}`（未提交到分支，可能被清理）", '',
          ]
+manifest_path = root / 'evidence-manifest.json'
+if manifest_path.is_file():
+    manifest = json.loads(manifest_path.read_text())
+    lines += [f"完整 ZIP：{manifest['size']} 字节；SHA-256 `{manifest['sha256']}`。",
+              '按顺序获取以下 Git blobs 并拼接为 ZIP，使用 SHA-256 校验：', '```bash',
+              'test ! -e ui-evidence.zip || { echo "ui-evidence.zip already exists"; exit 1; }',
+              'touch ui-evidence.zip']
+    for part in manifest['parts']:
+        lines.append(f"git fetch origin {part['git_blob']} && git cat-file blob {part['git_blob']} >> ui-evidence.zip")
+    lines += [f"echo '{manifest['sha256']}  ui-evidence.zip' | sha256sum -c -", '```', '']
 apk_meta_path = root / 'apk-metadata.json'
 apk_blob_path = root / 'apk-blob-sha.txt'
 if apk_meta_path.is_file() and apk_blob_path.is_file():

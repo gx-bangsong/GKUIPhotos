@@ -3,7 +3,6 @@
 # SPDX-FileCopyrightText: The LineageOS Project
 # SPDX-License-Identifier: Apache-2.0
 import argparse
-import base64
 import json
 import re
 import xml.etree.ElementTree as ET
@@ -234,6 +233,3 @@ with zipfile.ZipFile(out / 'ui-evidence.zip', 'w', compression=zipfile.ZIP_DEFLA
         archive.write(lint_tail, 'ui-lint-evidence/failure-tail.txt')
     for filename in ('bounds-report.json', 'job-status.json', 'lint-errors.json'):
         archive.write(out / filename, filename)
-
-payload = {'encoding': 'base64', 'content': base64.b64encode((out / 'ui-evidence.zip').read_bytes()).decode('ascii')}
-(out / 'blob-payload.json').write_text(json.dumps(payload))
