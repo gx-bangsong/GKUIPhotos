@@ -46,18 +46,22 @@ class ImageToolboxBottomSheet(
     context: Context,
     private val lifecycleOwner: LifecycleOwner,
     private val medias: List<Media>,
+    private val section: Section = Section.ALL,
     private val onComplete: (() -> Unit)? = null,
 ) : BottomSheetDialog(context) {
+
+    enum class Section { ALL, COMPRESS, CONVERT }
 
     constructor(
         context: Context,
         lifecycleOwner: LifecycleOwner,
         media: Media,
-    ) : this(context, lifecycleOwner, listOf(media), null)
+    ) : this(context, lifecycleOwner, listOf(media))
 
     private val isSingleVideo = medias.size == 1 && medias.first().mediaType == MediaType.VIDEO
     private val isMulti = medias.size > 1
-    private val hasImages = medias.any { it.mediaType == MediaType.IMAGE }
+    private val imageUris = selectedImages(medias) { it.mediaType }.map { it.uri }
+    private val hasImages = imageUris.isNotEmpty()
 
     private val titleTextView by lazy { findViewById<TextView>(R.id.toolboxTitleTextView)!! }
     private val compressSection by lazy { findViewById<View>(R.id.compressSection)!! }
@@ -115,11 +119,15 @@ class ImageToolboxBottomSheet(
 
         // Only images expose compress + convert + edit; only videos expose video→GIF.
         val isSingleImage = medias.size == 1 && medias.first().mediaType == MediaType.IMAGE
-        compressSection.isVisible = hasImages
-        convertSection.isVisible = hasImages
-        editSection.isVisible = hasImages
-        idPhotoSection.isVisible = isSingleImage
-        videoToGifSection.isVisible = isSingleVideo
+        compressSection.isVisible = hasImages && section != Section.CONVERT
+        convertSection.isVisible = hasImages && section != Section.COMPRESS
+        editSection.isVisible = section == Section.ALL && canBatchEdit(imageUris.size)
+        idPhotoSection.isVisible = section == Section.ALL && isSingleImage
+        videoToGifSection.isVisible = section == Section.ALL && isSingleVideo
+        if (section != Section.ALL) {
+            titleTextView.setText(if (section == Section.COMPRESS) R.string.toolbox_compress else R.string.toolbox_convert)
+            findViewById<View>(R.id.convertDivider)?.isVisible = false
+        }
 
         if (hasImages) {
             setupCompressControls()
@@ -464,7 +472,6 @@ class ImageToolboxBottomSheet(
             maxEdge = selectedResolutionMaxEdge,
         )
         val mainHandler = Handler(Looper.getMainLooper())
-        val imageUris = medias.filter { it.mediaType == MediaType.IMAGE }.map { it.uri }
         launchHeavy(progressive = true) { onProgress ->
             ImageToolbox.batchCompress(context, imageUris, options) { current, total ->
                 mainHandler.post { onProgress(current.toFloat() / total.toFloat()) }
@@ -474,7 +481,6 @@ class ImageToolboxBottomSheet(
 
     private fun runConvert() {
         val mainHandler = Handler(Looper.getMainLooper())
-        val imageUris = medias.filter { it.mediaType == MediaType.IMAGE }.map { it.uri }
         val isPdf = convertTarget == ImageTargetFormat.PDF
         launchHeavy(progressive = true) { onProgress ->
             ImageToolbox.batchConvert(context, imageUris, convertTarget) { current, total ->
@@ -484,8 +490,8 @@ class ImageToolboxBottomSheet(
     }
 
     private fun runEdit() {
+        if (!canBatchEdit(imageUris.size)) return
         val mainHandler = Handler(Looper.getMainLooper())
-        val imageUris = medias.filter { it.mediaType == MediaType.IMAGE }.map { it.uri }
         launchHeavy(progressive = true) { onProgress ->
             ImageToolbox.batchEdit(context, imageUris, selectedRotation, selectedFilter) { current, total ->
                 mainHandler.post { onProgress(current.toFloat() / total.toFloat()) }

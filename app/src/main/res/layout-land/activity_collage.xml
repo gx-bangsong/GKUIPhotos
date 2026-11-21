@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Landscape collage workspace with preview and contextual controls.
+     SPDX-FileCopyrightText: The LineageOS Project
+     SPDX-License-Identifier: Apache-2.0 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/collageRoot" android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical" android:background="?attr/colorSurface">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"
+        android:orientation="horizontal" android:paddingHorizontal="12dp">
+        <FrameLayout android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1.2"
+            android:padding="12dp">
+            <org.lineageos.glimpse.collage.CollageView android:id="@+id/collagePreview"
+                android:layout_width="match_parent" android:layout_height="match_parent"
+                android:contentDescription="@string/collage_preview_hint" />
+        </FrameLayout>
+        <LinearLayout android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1"
+            android:orientation="vertical" android:gravity="bottom">
+            <com.google.android.material.progressindicator.LinearProgressIndicator android:id="@+id/collageProgress"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:indeterminate="true" android:visibility="gone" />
+            <include layout="@layout/collage_controls" />
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

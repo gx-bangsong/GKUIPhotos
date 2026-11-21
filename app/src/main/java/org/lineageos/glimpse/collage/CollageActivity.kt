@@ -1,0 +1,407 @@
+/* Offline collage editor entered from the album selection action bar.
+ * SPDX-FileCopyrightText: The LineageOS Project
+ * SPDX-License-Identifier: Apache-2.0
+ */
+package org.lineageos.glimpse.collage
+
+import android.app.Activity
+import android.content.ContentValues
+import android.content.Context
+import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.RectF
+import android.net.Uri
+import android.os.Bundle
+import android.os.Environment
+import android.provider.MediaStore
+import android.view.View
+import android.view.Gravity
+import android.widget.LinearLayout
+import android.widget.Toast
+import androidx.activity.addCallback
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.graphics.ColorUtils
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.isVisible
+import androidx.core.view.updatePadding
+import androidx.lifecycle.lifecycleScope
+import com.google.android.material.card.MaterialCardView
+import com.google.android.material.color.MaterialColors
+import com.google.android.material.button.MaterialButton
+import com.google.android.material.progressindicator.LinearProgressIndicator
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlin.coroutines.coroutineContext
+import org.lineageos.glimpse.R
+import org.lineageos.glimpse.ImageEditorActivity
+
+class CollageActivity : AppCompatActivity(R.layout.activity_collage) {
+    private lateinit var preview: CollageView
+    private lateinit var progress: LinearProgressIndicator
+    private lateinit var save: MaterialButton
+    private lateinit var replace: View
+    private lateinit var layoutCards: LinearLayout
+    private var job: Job? = null
+    private var loading = true
+    private var photoMode = false
+    private var pendingEdit = false
+    private var uris = arrayListOf<Uri>()
+    private var replacementIndex = -1
+    private var pendingReplacement: Uri? = null
+    private val replacePhoto = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val data = result.data
+        val uri = data?.data
+        if (result.resultCode == Activity.RESULT_OK && uri != null && replacementIndex in uris.indices) {
+            try {
+                val type = contentResolver.getType(uri)
+                require(type == null || type.startsWith("image/"))
+                if (data.flags and Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION != 0) {
+                    contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                pendingReplacement = uri
+                if (!loading) applyPendingReplacement()
+            } catch (e: Exception) {
+                replacementIndex = -1
+                Toast.makeText(this, R.string.collage_replace_failed, Toast.LENGTH_LONG).show()
+            }
+        } else {
+            replacementIndex = -1
+        }
+    }
+
+    private val editPhoto = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val uri = result.data?.data
+        if (result.resultCode == Activity.RESULT_OK && uri != null && replacementIndex in uris.indices) {
+            pendingEdit = true
+            pendingReplacement = uri
+            if (!loading) applyPendingReplacement()
+        } else {
+            replacementIndex = -1
+            pendingEdit = false
+        }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
+        super.onCreate(savedInstanceState)
+        val root = findViewById<View>(R.id.collageRoot)
+        // The edge-to-edge status bar overlays the actual surface, not the system theme.
+        val surface = MaterialColors.getColor(root, com.google.android.material.R.attr.colorSurface)
+        WindowInsetsControllerCompat(window, root).apply {
+            isAppearanceLightStatusBars = ColorUtils.calculateLuminance(surface) > 0.5
+            isAppearanceLightNavigationBars = ColorUtils.calculateLuminance(surface) > 0.5
+        }
+        ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+            view.updatePadding(left = bars.left, top = bars.top, right = bars.right, bottom = bars.bottom)
+            insets
+        }
+        preview = findViewById(R.id.collagePreview)
+        progress = findViewById(R.id.collageProgress)
+        save = findViewById(R.id.collageSave)
+        replace = findViewById(R.id.collageReplace)
+        replacementIndex = savedInstanceState?.getInt(KEY_REPLACEMENT_INDEX, -1) ?: -1
+        pendingReplacement = savedInstanceState?.getParcelable(KEY_PENDING_REPLACEMENT)
+        layoutCards = findViewById(R.id.collageLayoutCards)
+        pendingEdit = savedInstanceState?.getBoolean(KEY_PENDING_EDIT, false) ?: false
+        showPhotoMode(savedInstanceState?.getBoolean(KEY_PHOTO_MODE, false) ?: false)
+        uris = savedInstanceState?.getParcelableArrayList(KEY_URIS)
+            ?: intent.getParcelableArrayListExtra(KEY_URIS) ?: arrayListOf()
+        if (uris.size !in 2..6) { finish(); return }
+        preview.layout = savedInstanceState?.getInt(KEY_LAYOUT, 0) ?: 0
+        preview.split = (savedInstanceState?.getFloat(KEY_SPLIT, 0.5f) ?: 0.5f).coerceIn(0.2f, 0.8f)
+        preview.selected = (savedInstanceState?.getInt(KEY_SELECTED, 0) ?: 0).coerceIn(0, uris.lastIndex)
+        preview.onSelectionChanged = { updateControls() }
+        preview.onPhotoTap = { showPhotoMode(true) }
+        preview.onReorder = { from, to -> movePhoto(from, to) }
+        buildLayoutCards()
+        findViewById<View>(R.id.collageCancelBottom).setOnClickListener { cancel() }
+        findViewById<View>(R.id.collageDone).setOnClickListener { showPhotoMode(false) }
+        onBackPressedDispatcher.addCallback(this) { if (photoMode && job == null) showPhotoMode(false) else cancel() }
+        save.setOnClickListener { saveCollage() }
+        findViewById<View>(R.id.collageEdit).setOnClickListener {
+            val photo = preview.photos.getOrNull(preview.selected)
+            if (job == null && photo != null) {
+                replacementIndex = preview.selected
+                try { editPhoto.launch(ImageEditorActivity.createIntent(this, photo.uri, contentResolver.getType(photo.uri))) }
+                catch (e: Exception) { replacementIndex = -1; Toast.makeText(this, R.string.collage_replace_failed, Toast.LENGTH_LONG).show() }
+            }
+        }
+        replace.setOnClickListener {
+            if (job == null && preview.selected in preview.photos.indices) {
+                replacementIndex = preview.selected
+                pendingEdit = false
+                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "image/*"
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+                }
+                try {
+                    replacePhoto.launch(intent)
+                } catch (e: android.content.ActivityNotFoundException) {
+                    replacementIndex = -1
+                    Toast.makeText(this, R.string.collage_replace_failed, Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+        val state = savedInstanceState?.getFloatArray(KEY_TRANSFORMS)
+        setBusy(true)
+        job = lifecycleScope.launch {
+            try {
+                val loaded = withContext(Dispatchers.IO) {
+                    uris.mapIndexed { index, uri ->
+                        coroutineContext.ensureActive()
+                        val bmp = decodeCollageImage(contentResolver, uri, 768)
+                        CollagePhoto(uri, bmp,
+                            state?.getOrNull(index * 3) ?: 1f,
+                            state?.getOrNull(index * 3 + 1) ?: 0f,
+                            state?.getOrNull(index * 3 + 2) ?: 0f)
+                    }.toMutableList()
+                }
+                preview.photos = loaded
+                preview.invalidate()
+                loading = false
+                job = null
+                setBusy(false)
+                applyPendingReplacement()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Toast.makeText(this@CollageActivity, R.string.collage_load_failed, Toast.LENGTH_LONG).show()
+                finish()
+            }
+        }
+    }
+
+    private fun applyPendingReplacement() {
+        val uri = pendingReplacement ?: return
+        val index = replacementIndex
+        replaceAt(index, uri)
+    }
+
+    private fun replaceAt(index: Int, uri: Uri) {
+        if (job != null || index !in preview.photos.indices) return
+        setBusy(true)
+        job = lifecycleScope.launch {
+            try {
+                val bitmap = withContext(Dispatchers.IO) { decodeCollageImage(contentResolver, uri, 768) }
+                val previous = preview.photos[index]
+                preview.photos[index] = if (pendingEdit) previous.copy(uri = uri, preview = bitmap) else CollagePhoto(uri, bitmap)
+                uris[index] = uri
+                pendingEdit = false
+                pendingReplacement = null
+                replacementIndex = -1
+                preview.selected = index
+                preview.invalidate()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                pendingReplacement = null
+                pendingEdit = false
+                replacementIndex = -1
+                Toast.makeText(this@CollageActivity, R.string.collage_replace_failed, Toast.LENGTH_LONG).show()
+            } finally {
+                job = null
+                if (!isFinishing && !isDestroyed) setBusy(false)
+            }
+        }
+    }
+
+    private fun showPhotoMode(active: Boolean) {
+        photoMode = active
+        findViewById<View>(R.id.collageLayouts).isVisible = !active
+        findViewById<View>(R.id.collageMainActions).isVisible = !active
+        findViewById<View>(R.id.collageActions).isVisible = active
+        findViewById<View>(R.id.collageDone).isVisible = active
+        preview.showSelection = active
+        preview.invalidate()
+    }
+
+    private fun updateControls() { updateLayoutSelection() }
+
+    private fun buildLayoutCards() {
+        layoutCards.removeAllViews()
+        val density = resources.displayMetrics.density
+        val labels = when (uris.size) {
+            2 -> listOf(R.string.collage_layout_side_by_side, R.string.collage_layout_stacked)
+            4 -> listOf(R.string.collage_layout_rows, R.string.collage_layout_featured)
+            else -> listOf(R.string.collage_layout_rows, R.string.collage_layout_columns)
+        }
+        labels.forEachIndexed { index, label ->
+            val card = MaterialCardView(this).apply {
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginEnd = (8 * density).toInt() }
+                minimumWidth = (64 * density).toInt()
+                minimumHeight = (64 * density).toInt()
+                radius = 16 * density
+                cardElevation = 0f
+                isClickable = true
+                isFocusable = true
+                contentDescription = getString(R.string.collage_layout_description, getString(label), uris.size)
+                setCardBackgroundColor(MaterialColors.getColor(this, com.google.android.material.R.attr.colorSurfaceVariant))
+                setOnClickListener { preview.layout = index; preview.invalidate(); updateControls() }
+            }
+            val content = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+                setPadding((8 * density).toInt(), (4 * density).toInt(), (8 * density).toInt(), (4 * density).toInt())
+            }
+            content.addView(CollageLayoutPreview(this, uris.size, index),
+                LinearLayout.LayoutParams((56 * density).toInt(), (56 * density).toInt()))
+            card.addView(content)
+            layoutCards.addView(card)
+        }
+        updateLayoutSelection()
+    }
+
+    private fun updateLayoutSelection() {
+        for (index in 0 until layoutCards.childCount) {
+            val card = layoutCards.getChildAt(index) as MaterialCardView
+            card.isSelected = index == preview.layout
+            card.strokeWidth = if (card.isSelected) (2 * resources.displayMetrics.density).toInt() else 0
+            card.strokeColor = MaterialColors.getColor(card, androidx.appcompat.R.attr.colorPrimary)
+            card.setCardBackgroundColor(MaterialColors.getColor(card,
+                if (card.isSelected) com.google.android.material.R.attr.colorSecondaryContainer
+                else com.google.android.material.R.attr.colorSurfaceVariant))
+        }
+    }
+
+    private fun movePhoto(from: Int, to: Int) {
+        if (job != null || from !in preview.photos.indices || to !in preview.photos.indices || from == to) return
+        java.util.Collections.swap(preview.photos, from, to)
+        preview.selected = to
+        uris = ArrayList(preview.photos.map { it.uri })
+        preview.invalidate()
+        updateControls()
+    }
+
+    private fun setBusy(busy: Boolean) {
+        progress.isVisible = busy
+        save.isEnabled = !busy
+        replace.isEnabled = !busy
+        preview.isEnabled = !busy
+        findViewById<View>(R.id.collageEdit).isEnabled = !busy
+        findViewById<View>(R.id.collageDone).isEnabled = !busy
+        findViewById<View>(R.id.collageCancelBottom).isEnabled = !busy
+        for (i in 0 until layoutCards.childCount) layoutCards.getChildAt(i).isEnabled = !busy
+        if (!busy) updateControls()
+    }
+
+    private fun cancel() {
+        if (job != null && !loading) {
+            // Keep controls disabled until the IO worker has closed and removed its pending row.
+            if (pendingReplacement != null) {
+                pendingReplacement = null
+                replacementIndex = -1
+            }
+            job?.cancel()
+        } else {
+            job?.cancel()
+            finish()
+        }
+    }
+
+    private fun saveCollage() {
+        if (job != null || preview.photos.size !in 2..6) return
+        // Snapshot mutable UI state before crossing dispatchers.
+        val photos = preview.photos.map { it.copy() }
+        val layout = preview.layout
+        val splitValue = preview.split
+        setBusy(true)
+        job = lifecycleScope.launch {
+            try {
+                withContext(Dispatchers.IO) { renderAndSave(photos, layout, splitValue) }
+                job = null
+                Toast.makeText(this@CollageActivity, R.string.collage_saved, Toast.LENGTH_SHORT).show()
+                setResult(Activity.RESULT_OK)
+                finish()
+            } catch (e: CancellationException) {
+                if (!isFinishing && !isDestroyed) {
+                    Toast.makeText(this@CollageActivity, R.string.collage_cancelled, Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Toast.makeText(this@CollageActivity, R.string.collage_save_failed, Toast.LENGTH_LONG).show()
+            } finally {
+                job = null
+                if (!isFinishing && !isDestroyed) setBusy(false)
+            }
+        }
+    }
+
+    private suspend fun renderAndSave(photos: List<CollagePhoto>, layout: Int, split: Float) {
+        val edge = 1800
+        val output = Bitmap.createBitmap(edge, edge, Bitmap.Config.ARGB_8888)
+        var target: Uri? = null
+        try {
+            val canvas = Canvas(output)
+            collageCells(photos.size, layout, split).forEachIndexed { index, cell ->
+                coroutineContext.ensureActive()
+                val photo = photos[index]
+                val bitmap = decodeCollageImage(contentResolver, photo.uri, edge)
+                try {
+                    drawCollagePhoto(canvas, bitmap, RectF(cell.left * edge, cell.top * edge,
+                        cell.right * edge, cell.bottom * edge), photo.zoom, photo.offsetX, photo.offsetY)
+                } finally { bitmap.recycle() }
+            }
+            coroutineContext.ensureActive()
+            val values = ContentValues().apply {
+                put(MediaStore.Images.Media.DISPLAY_NAME, "Glimpse_Collage_${System.currentTimeMillis()}.jpg")
+                put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+                put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/Glimpse")
+                put(MediaStore.Images.Media.IS_PENDING, 1)
+            }
+            val uri = contentResolver.insert(MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY), values)
+                ?: error("Unable to create image")
+            target = uri
+            contentResolver.openOutputStream(uri, "w")?.use {
+                check(output.compress(Bitmap.CompressFormat.JPEG, 95, it))
+            } ?: error("Unable to open image")
+            coroutineContext.ensureActive()
+            values.clear()
+            values.put(MediaStore.Images.Media.IS_PENDING, 0)
+            check(contentResolver.update(uri, values, null, null) == 1)
+            target = null
+        } finally {
+            target?.let { contentResolver.delete(it, null, null) }
+            output.recycle()
+        }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putParcelableArrayList(KEY_URIS, uris)
+        outState.putInt(KEY_REPLACEMENT_INDEX, replacementIndex)
+        outState.putParcelable(KEY_PENDING_REPLACEMENT, pendingReplacement)
+        outState.putBoolean(KEY_PHOTO_MODE, photoMode)
+        outState.putBoolean(KEY_PENDING_EDIT, pendingEdit)
+        outState.putInt(KEY_LAYOUT, preview.layout)
+        outState.putFloat(KEY_SPLIT, preview.split)
+        outState.putInt(KEY_SELECTED, preview.selected)
+        if (preview.photos.isNotEmpty()) outState.putFloatArray(KEY_TRANSFORMS,
+            preview.photos.flatMap { listOf(it.zoom, it.offsetX, it.offsetY) }.toFloatArray())
+        super.onSaveInstanceState(outState)
+    }
+
+    companion object {
+        private const val KEY_PENDING_REPLACEMENT = "collage_pending_replacement"
+        private const val KEY_REPLACEMENT_INDEX = "collage_replacement_index"
+        private const val KEY_URIS = "collage_uris"
+        private const val KEY_PHOTO_MODE = "collage_photo_mode"
+        private const val KEY_PENDING_EDIT = "collage_pending_edit"
+        private const val KEY_LAYOUT = "collage_layout"
+        private const val KEY_SPLIT = "collage_split"
+        private const val KEY_SELECTED = "collage_selected"
+        private const val KEY_TRANSFORMS = "collage_transforms"
+        fun createIntent(context: Context, uris: List<Uri>) = Intent(context, CollageActivity::class.java)
+            .putParcelableArrayListExtra(KEY_URIS, ArrayList(uris))
+    }
+}

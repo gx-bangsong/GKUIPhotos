@@ -20,39 +20,39 @@
         <item quantity="other">%d éléments</item>
     </plurals>
     <plurals name="delete_file_forever_confirm_message">
-        <item quantity="one">Êtes-vous sûr de vouloir supprimer définitivement ce fichier ?</item>
+        <item quantity="one">Êtes-vous sûr de vouloir supprimer définitivement %d fichier ?</item>
         <item quantity="other">Êtes-vous sûr de vouloir supprimer définitivement %d fichiers ?</item>
     </plurals>
     <plurals name="delete_file_forever_successful">
-        <item quantity="one">Fichier définitivement supprimé</item>
+        <item quantity="one">%d fichier définitivement supprimé</item>
         <item quantity="other">%d fichiers définitivement supprimés</item>
     </plurals>
     <plurals name="delete_file_forever_unsuccessful">
-        <item quantity="one">Le fichier n\'a pas pu être définitivement supprimé</item>
+        <item quantity="one">%d fichier n\'a pas pu être définitivement supprimé</item>
         <item quantity="other">%d fichiers n\'ont pas pu être définitivement supprimés</item>
     </plurals>
     <plurals name="move_file_to_trash_confirm_message">
-        <item quantity="one">Êtes-vous sûr de vouloir déplacer un fichier vers la corbeille ?</item>
+        <item quantity="one">Êtes-vous sûr de vouloir déplacer %d fichier vers la corbeille ?</item>
         <item quantity="other">Êtes-vous sûr de vouloir déplacer %d fichiers vers la corbeille ?</item>
     </plurals>
     <plurals name="move_file_to_trash_successful">
-        <item quantity="one">Fichier déplacé vers la corbeille</item>
+        <item quantity="one">%d fichier déplacé vers la corbeille</item>
         <item quantity="other">%d fichiers déplacés vers la corbeille</item>
     </plurals>
     <plurals name="move_file_to_trash_unsuccessful">
-        <item quantity="one">Le fichier n\'a pas pu être déplacé vers la corbeille</item>
+        <item quantity="one">%d fichier n\'a pas pu être déplacé vers la corbeille</item>
         <item quantity="other">%d fichiers n\'ont pas pu être déplacés vers la corbeille</item>
     </plurals>
     <plurals name="restore_file_from_trash_confirm_message">
-        <item quantity="one">Êtes-vous sûr de vouloir récupérer un fichier de la corbeille ?</item>
+        <item quantity="one">Êtes-vous sûr de vouloir récupérer %d fichier de la corbeille ?</item>
         <item quantity="other">Êtes-vous sûr de vouloir récupérer %d fichiers de la corbeille ?</item>
     </plurals>
     <plurals name="restore_file_from_trash_successful">
-        <item quantity="one">Fichier récupéré de la corbeille</item>
+        <item quantity="one">%d fichier récupéré de la corbeille</item>
         <item quantity="other">%d fichiers récupérés de la corbeille</item>
     </plurals>
     <plurals name="restore_file_from_trash_unsuccessful">
-        <item quantity="one">Le fichier n\'a pas pu être récupéré de la corbeille</item>
+        <item quantity="one">%d fichier n\'a pas pu être récupéré de la corbeille</item>
         <item quantity="other">%d fichiers n\'ont pas pu être récupérés de la corbeille</item>
     </plurals>
     <string name="manage_media_permission_title">Gérer les autorisations pour les médias</string>

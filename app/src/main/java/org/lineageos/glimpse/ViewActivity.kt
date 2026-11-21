@@ -19,6 +19,7 @@ import android.util.Log
 import android.util.Rational
 import android.view.View
 import android.widget.LinearLayout
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -37,6 +38,7 @@ import androidx.viewpager2.widget.ViewPager2
 import com.google.android.material.appbar.AppBarLayout
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
+import com.google.android.material.bottomsheet.BottomSheetDialog
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -320,24 +322,34 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
             }
         }
 
+        listOf(R.id.toolboxCompressButton to ImageToolboxBottomSheet.Section.COMPRESS,
+            R.id.toolboxConvertButton to ImageToolboxBottomSheet.Section.CONVERT).forEach { (button, section) ->
+            findViewById<View>(button).setOnClickListener {
+                viewModel.displayedMedia.value?.let { media ->
+                    ImageToolboxBottomSheet(this@ViewActivity, this@ViewActivity,
+                        listOf(media), section = section).show()
+                }
+            }
+        }
+
         deleteButton.setOnClickListener {
-            viewModel.displayedMedia.value?.let {
-                dismissKeyguardAndRun {
-                    trashMedia(it)
+            viewModel.displayedMedia.value?.let { media ->
+                if (media.isTrashed) {
+                    dismissKeyguardAndRun { trashMedia(media, false) }
+                } else {
+                    showSingleMoveToTrashConfirmation(media)
                 }
             }
         }
 
         deleteButton.setOnLongClickListener {
-            viewModel.displayedMedia.value?.let {
-                MediaDialogsUtils.openDeleteForeverDialog(this, it.uri) { uris ->
+            val media = viewModel.displayedMedia.value
+            if (media == null) false else {
+                MediaDialogsUtils.openDeleteForeverDialog(this, media.uri) { uris ->
                     deleteUriContract.launch(contentResolver.createDeleteRequest(*uris))
                 }
-
                 true
             }
-
-            false
         }
 
         motionPhotoToggleButton.setOnClickListener {
@@ -566,12 +578,9 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
                     // Update favorite button
                     val isFavorite = displayedMedia?.isFavorite ?: false
                     favoriteButton.isSelected = isFavorite
-                    favoriteButton.setText(
-                        when (isFavorite) {
-                            true -> R.string.file_action_remove_from_favorites
-                            false -> R.string.file_action_add_to_favorites
-                        }
-                    )
+                    favoriteButton.setText(if (isFavorite) R.string.favorite_remove_short else R.string.favorite_add_short)
+                    favoriteButton.contentDescription = getString(if (isFavorite)
+                        R.string.file_action_remove_from_favorites else R.string.file_action_add_to_favorites)
 
                     // Update info button
                     infoButton.isVisible = displayedMedia != null
@@ -585,8 +594,9 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
                     val isTrashed = displayedMedia?.isTrashed ?: false
                     deleteButton.text = when (isTrashed) {
                         true -> getString(R.string.file_action_restore_from_trash)
-                        false -> getString(R.string.file_action_move_to_trash)
+                        false -> getString(R.string.delete)
                     }
+                    deleteButton.contentDescription = getString(if (isTrashed) R.string.file_action_restore_from_trash else R.string.file_action_move_to_trash)
                     deleteButton.setCompoundDrawablesWithIntrinsicBounds(
                         0,
                         when (isTrashed) {
@@ -679,6 +689,31 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
         viewModel.saveCurrentVideoPosition(lastVideoUriPlayed)
     }
 
+    private fun showSingleMoveToTrashConfirmation(media: Media) {
+        val dialog = BottomSheetDialog(this)
+        dialog.setContentView(R.layout.dialog_single_move_to_trash)
+        val content = requireNotNull(dialog.findViewById<View>(R.id.singleTrashSheetContent))
+        val originalBottomPadding = content.paddingBottom
+        ViewCompat.setOnApplyWindowInsetsListener(content) { view, insets ->
+            val bottom = insets.getInsets(WindowInsetsCompat.Type.navigationBars() or
+                WindowInsetsCompat.Type.displayCutout()).bottom
+            view.updatePadding(bottom = originalBottomPadding + bottom)
+            insets
+        }
+        requireNotNull(dialog.findViewById<TextView>(R.id.singleTrashMessage)).text =
+            resources.getQuantityString(R.plurals.move_file_to_trash_confirm_message, 1, 1)
+        requireNotNull(dialog.findViewById<View>(R.id.singleTrashCancel)).setOnClickListener { dialog.dismiss() }
+        requireNotNull(dialog.findViewById<View>(R.id.singleTrashConfirm)).setOnClickListener {
+            dialog.dismiss()
+            dismissKeyguardAndRun { trashMedia(media, true) }
+        }
+        dialog.setOnShowListener {
+            dialog.findViewById<View>(R.id.singleTrashTitle)?.requestFocus()
+            ViewCompat.requestApplyInsets(content)
+        }
+        dialog.show()
+    }
+
     private fun trashMedia(media: Media, trash: Boolean = !media.isTrashed) {
         if (trash) {
             lastProcessedMedia = media
@@ -716,7 +751,7 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
      */
     private fun updateToolboxVisibility() {
         val media = viewModel.displayedMedia.value
-        toolboxButton.isVisible = media != null &&
+        findViewById<View>(R.id.toolboxActions).isVisible = media != null &&
             media.mediaType != MediaType.VIDEO &&
             !viewModel.readOnly.value &&
             !viewModel.fullscreenMode.value

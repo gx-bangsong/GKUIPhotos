@@ -10,33 +10,12 @@
     android:layout_height="match_parent"
     android:background="@android:color/black">
 
-    <!-- Top Action Bar: Back icon on left, Save icon on right -->
-    <com.google.android.material.appbar.AppBarLayout
-        android:id="@+id/appBarLayout"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:background="@android:color/black"
-        android:fitsSystemWindows="true">
-
-        <com.google.android.material.appbar.MaterialToolbar
-            android:id="@+id/toolbar"
-            android:layout_width="match_parent"
-            android:layout_height="?attr/actionBarSize"
-            app:menu="@menu/menu_id_photo"
-            app:navigationIcon="@drawable/ic_back"
-            app:navigationIconTint="@android:color/white"
-            app:title="@string/image_toolbox_id_photo"
-            app:titleTextColor="@android:color/white" />
-
-    </com.google.android.material.appbar.AppBarLayout>
-
     <!-- Center: Interactive Framing Surface -->
     <FrameLayout
         android:id="@+id/previewContainer"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:layout_marginBottom="230dp"
-        app:layout_behavior="@string/appbar_scrolling_view_behavior">
+        android:layout_marginBottom="230dp">
 
         <org.lineageos.glimpse.ui.views.CropImageView
             android:id="@+id/cropImageView"
@@ -63,7 +42,7 @@
                 android:paddingHorizontal="12dp"
                 android:paddingVertical="5dp"
                 android:textAppearance="?attr/textAppearanceLabelSmall"
-                android:textColor="@android:color/white" />
+                android:textColor="?attr/colorOnSurface" />
         </com.google.android.material.card.MaterialCardView>
 
         <com.google.android.material.progressindicator.CircularProgressIndicator

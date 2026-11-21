@@ -14,6 +14,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.Matrix
+import android.graphics.RectF
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.net.Uri
@@ -23,6 +24,7 @@ import android.provider.MediaStore
 import android.view.Gravity
 import android.view.View
 import android.widget.FrameLayout
+import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -30,7 +32,6 @@ import android.widget.Toast
 import androidx.activity.addCallback
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -39,15 +40,22 @@ import androidx.core.view.isVisible
 import androidx.core.view.updatePadding
 import androidx.exifinterface.media.ExifInterface
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.preference.PreferenceManager
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.card.MaterialCardView
+import com.google.android.material.button.MaterialButton
+import com.google.android.material.color.MaterialColors
 import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.slider.Slider
 import com.google.android.material.textfield.TextInputEditText
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
@@ -60,6 +68,7 @@ import org.lineageos.glimpse.models.CustomBrush
 import org.lineageos.glimpse.models.CustomCropRatioManager
 import org.lineageos.glimpse.models.CustomEditorAssetManager
 import org.lineageos.glimpse.models.CustomShape
+import org.lineageos.glimpse.models.MarkupFonts
 import org.lineageos.glimpse.models.CustomShapeParseResult
 import org.lineageos.glimpse.ui.views.AngleRulerView
 import org.lineageos.glimpse.ui.views.AnnotationItem
@@ -70,6 +79,7 @@ import org.lineageos.glimpse.ui.views.MarkupTool
 import org.lineageos.glimpse.ui.views.MosaicEffect
 import org.lineageos.glimpse.ui.views.ShapeStyle
 import org.lineageos.glimpse.ui.views.ShapeType
+import org.lineageos.glimpse.ui.views.TextAlignment
 import org.lineageos.glimpse.utils.EditSaveBehavior
 import org.lineageos.glimpse.utils.media.AdjustParameters
 import org.lineageos.glimpse.utils.media.ImageAdjuster
@@ -142,6 +152,17 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
     private val filtersContainer by lazy { findViewById<LinearLayout>(R.id.filtersContainer) }
 
     // Strip Controls: Markup
+    private val markupToolsScroll by lazy { findViewById<HorizontalScrollView>(R.id.markupToolsScroll) }
+    private enum class MarkupSubtool {
+        BRUSH, WIDTH, COLOR, ADVANCED, SHAPE, STYLE, TEXT, FONT, ALIGNMENT, BACKGROUND,
+        EFFECT, STICKER_PRESET, STICKER_CUSTOM, STICKER_IMPORT
+    }
+    private val markupSubtoolByTool = mutableMapOf<MarkupTool, MarkupSubtool>()
+    private val markupSubtoolsScroll by lazy { findViewById<View>(R.id.markupSubtoolsScroll) }
+    private val markupSubtoolsRow by lazy { findViewById<LinearLayout>(R.id.markupSubtoolsRow) }
+    private val markupHistoryBar by lazy { findViewById<View>(R.id.markupHistoryBar) }
+    private val subEditSpacer by lazy { findViewById<View>(R.id.subEditSpacer) }
+    private var activeCustomMosaicId: String? = null
     private val markupToolsRow by lazy { findViewById<LinearLayout>(R.id.markupToolsRow) }
     private val markupOptionsScroll by lazy { findViewById<View>(R.id.markupOptionsScroll) }
     private val markupOptionsContent by lazy { findViewById<LinearLayout>(R.id.markupOptionsContent) }
@@ -165,11 +186,35 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
     private val subEditActionBar by lazy { findViewById<View>(R.id.subEditActionBar) }
     private val subEditCancelButton by lazy { findViewById<TextView>(R.id.subEditCancelButton) }
     private val subEditUndoButton by lazy { findViewById<ImageView>(R.id.subEditUndoButton) }
+    private val subEditRedoButton by lazy { findViewById<ImageView>(R.id.subEditRedoButton) }
+    private val subEditClearButton by lazy { findViewById<ImageView>(R.id.subEditClearButton) }
     private val subEditDoneButton by lazy { findViewById<View>(R.id.subEditDoneButton) }
 
     private var sourceUri: Uri? = null
     private var sourceMimeType: String? = null
     private var baseBitmap: Bitmap? = null
+    // baseBitmap (EXIF-normalized) -> current transformed display bitmap pixels.
+    private var baseToDisplayBitmap = Matrix()
+
+    /** One editor frame joins the crop's bitmap/rect with its base-space transforms. */
+    private class EditorFrame(val crop: CropImageView.CropSnapshot, baseToDisplay: Matrix) {
+        val baseToDisplay = Matrix(baseToDisplay)
+        val baseToView = Matrix().apply { setConcat(crop.displayToView, this@EditorFrame.baseToDisplay) }
+        val baseToOutput = Matrix().apply { setConcat(crop.displayToOutput, this@EditorFrame.baseToDisplay) }
+        val displayToBase = Matrix().also { this.baseToDisplay.invert(it) }
+    }
+    private var cachedEditorFrame: EditorFrame? = null
+    // UI-thread lease: a published display bitmap is read-only and never explicitly
+    // recycled. This reference pins the exact frame until background encoding finishes.
+    private var encodingFrame: EditorFrame? = null
+    private var refreshAfterEncoding = false
+    private fun editorFrame(): EditorFrame? {
+        val crop = cropImageView.cropSnapshot() ?: return null
+        val old = cachedEditorFrame
+        if (old != null && old.crop === crop && old.baseToDisplay == baseToDisplayBitmap) return old
+        return EditorFrame(crop, baseToDisplayBitmap).also { cachedEditorFrame = it }
+    }
+
     private var rotation: Int = 0
     private var fineRotation: Float = 0f
     private var currentFilter: ImageFilter = ImageFilter.NONE
@@ -180,10 +225,6 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
     private var activeCategory = EditorCategory.CROP
     private var isFramingModified = false
     private var isFlippedHorizontal = false
-    private var isDoodleConfirmed = false
-    private var isShapeConfirmed = false
-    private var isMosaicConfirmed = false
-    private var isStickerConfirmed = false
     private var refreshJob: Job? = null
     private var pendingOverwrite: ByteArray? = null
 
@@ -193,10 +234,20 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         if (result.resultCode == Activity.RESULT_OK) {
             val bytes = pendingOverwrite
             pendingOverwrite = null
-            if (bytes != null) overwrite(bytes) else finishWithSaved()
+            if (bytes != null) overwrite(bytes, requestPermission = false) else showFailed()
         } else {
             pendingOverwrite = null
             hideSaving()
+        }
+    }
+
+    private val pickMarkupFontLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) lifecycleScope.launch {
+            val id = withContext(Dispatchers.IO) { MarkupFonts.importFont(applicationContext, uri) }
+            if (id == null) Toast.makeText(this@ImageEditorActivity, R.string.markup_font_import_failed, Toast.LENGTH_LONG).show()
+            else showMarkupToolOptions(MarkupTool.TEXT)
         }
     }
 
@@ -208,7 +259,6 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             val bmp = asset?.loadBitmap() ?: loadStickerBitmap(uri)
             if (bmp != null) {
                 annotationOverlayView.addSticker(bmp)
-                isStickerConfirmed = true
                 showMarkupToolOptions(MarkupTool.STICKER)
             } else {
                 Toast.makeText(this, R.string.editor_sticker_failed, Toast.LENGTH_SHORT).show()
@@ -228,21 +278,33 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         return uri.path?.substringAfterLast('/')
     }
 
+    private fun brushImportMimeTypes(): Array<String> {
+        val types = mutableListOf(
+            "image/png", "image/jpeg", "image/webp", "image/gif", "image/bmp",
+            "image/x-ms-bmp", "image/vnd.wap.wbmp", "image/heif", "image/heic", "image/svg+xml",
+        )
+        if (android.os.Build.VERSION.SDK_INT >= 31) types.add("image/avif")
+        return types.toTypedArray()
+    }
+
     private val pickBrushTextureLauncher = registerForActivityResult(
-        ActivityResultContracts.GetContent()
+        ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) {
-            val name = getFileNameFromUri(uri)?.substringBeforeLast(".") ?: getString(R.string.editor_brush_import)
+            val fileName = getFileNameFromUri(uri)
+            val name = fileName?.substringBeforeLast(".") ?: getString(R.string.editor_brush_import)
+            val isSvg = fileName?.endsWith(".svg", true) == true ||
+                runCatching { contentResolver.getType(uri).equals("image/svg+xml", true) }.getOrDefault(false)
             val brush = CustomEditorAssetManager.importCustomBrush(this, uri, name)
             if (brush != null) {
                 annotationOverlayView.activeBrushType = BrushType.CUSTOM_TEXTURE
                 annotationOverlayView.activeCustomBrush = brush
                 annotationOverlayView.activeCustomBrushTipBitmap = brush.loadTipBitmap()
                 annotationOverlayView.activeStrokeWidth = brush.sizeDp * resources.displayMetrics.density
-                isDoodleConfirmed = true
                 showMarkupToolOptions(MarkupTool.DOODLE)
             } else {
-                Toast.makeText(this, R.string.editor_brush_import_failed, Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, if (isSvg) R.string.editor_brush_svg_failed
+                    else R.string.editor_brush_import_failed, Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -263,7 +325,6 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                         if (imported != null) {
                             annotationOverlayView.selectedShapeType = ShapeType.CUSTOM
                             annotationOverlayView.activeCustomShape = imported
-                            isShapeConfirmed = true
                             showMarkupToolOptions(MarkupTool.SHAPES)
                         }
                     }
@@ -286,7 +347,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             if (bmp != null) {
                 annotationOverlayView.activeMosaicEffect = MosaicEffect.CUSTOM_PATTERN
                 annotationOverlayView.activeCustomMosaicPattern = bmp
-                isMosaicConfirmed = true
+                activeCustomMosaicId = asset?.id
                 showMarkupToolOptions(MarkupTool.MOSAIC)
             }
         }
@@ -312,15 +373,31 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         }
     }
 
+    class MarkupRetainedState : ViewModel() {
+        var document: Any? = null
+    }
+    private val markupRetainedState by lazy { ViewModelProvider(this).get(MarkupRetainedState::class.java) }
+
+    override fun onDestroy() {
+        if (isChangingConfigurations) markupRetainedState.document = annotationOverlayView.retainDocument()
+        super.onDestroy()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        MarkupFonts.initialize(this)
 
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.editorRootLayout)) { _, insets ->
             val status = insets.getInsets(WindowInsetsCompat.Type.statusBars())
             cropImageView.updatePadding(top = status.top)
             annotationOverlayView.updatePadding(top = status.top)
             insets
+        }
+        findViewById<View>(R.id.editorRootLayout).addOnLayoutChangeListener { _, _, top, _, bottom, _, oldTop, _, oldBottom ->
+            if (bottom - top != oldBottom - oldTop && activeCategory == EditorCategory.MARKUP) {
+                updateMarkupPanelHeight()
+            }
         }
         ViewCompat.setOnApplyWindowInsetsListener(editorBottomDeck) { v, insets ->
             val nav = insets.getInsets(WindowInsetsCompat.Type.navigationBars())
@@ -342,6 +419,16 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
 
         cropImageView.onFramingModified = {
             isFramingModified = true
+            // The overlay is a sibling; invalidating the photo does not invalidate it.
+            annotationOverlayView.isMarkupRestrictedToCrop =
+                activeCategory != EditorCategory.CROP && cropImageView.hasUserModifiedCrop
+            annotationOverlayView.invalidate()
+        }
+
+        cropImageView.onPreviewGeometryChanged = {
+            annotationOverlayView.isMarkupRestrictedToCrop =
+                activeCategory != EditorCategory.CROP && cropImageView.hasUserModifiedCrop
+            annotationOverlayView.invalidate()
         }
 
         // Crop Controls
@@ -391,42 +478,44 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         updateWatermarkButtonState()
 
         // Annotation Overlay Callbacks
-        annotationOverlayView.cropRectProvider = { cropImageView.getCropRect() }
-        annotationOverlayView.imageBoundsProvider = { cropImageView.getImageBounds() }
-        annotationOverlayView.displayBitmapProvider = { cropImageView.getDisplayBitmap() }
-        annotationOverlayView.imageMatrixProvider = { cropImageView.getImageMatrix() }
-        annotationOverlayView.onAnnotationChanged = {
-            subEditUndoButton.isEnabled = annotationOverlayView.hasAnnotations()
-            subEditUndoButton.alpha = if (annotationOverlayView.hasAnnotations()) 1f else 0.4f
+        cropImageView.clipToOutputBounds = true
+        cropImageView.renderEditorGuidesOnOverlay = true
+        annotationOverlayView.cropRectProvider = { editorFrame()?.crop?.viewBounds ?: RectF() }
+        annotationOverlayView.imageBoundsProvider = {
+            if (activeCategory == EditorCategory.CROP) cropImageView.getImageBounds()
+            else editorFrame()?.crop?.viewBounds ?: RectF()
         }
+        annotationOverlayView.drawPreviewForeground = { cropImageView.drawEditorGuides(it) }
+        annotationOverlayView.displayBitmapProvider = { cropImageView.getDisplayBitmap() }
+        annotationOverlayView.isPreviewFrameAvailable = {
+            if (activeCategory == EditorCategory.CROP) cropImageView.getDisplayBitmap() != null else editorFrame() != null
+        }
+        annotationOverlayView.imageMatrixProvider = {
+            editorFrame()?.baseToView ?: Matrix().apply {
+                setConcat(cropImageView.getImageMatrix(), baseToDisplayBitmap)
+            }
+        }
+        annotationOverlayView.displayToBaseMatrixProvider = {
+            editorFrame()?.displayToBase ?: Matrix().also { baseToDisplayBitmap.invert(it) }
+        }
+        annotationOverlayView.baseBoundsProvider = {
+            baseBitmap?.let { RectF(0f, 0f, it.width.toFloat(), it.height.toFloat()) } ?: RectF()
+        }
+        annotationOverlayView.onPreviewGesture = { px, py, x, y, scale ->
+            cropImageView.updatePreviewGesture(px, py, x, y, scale)
+        }
+        annotationOverlayView.onAnnotationChanged = { updateMarkupHistoryButtons() }
+        annotationOverlayView.onTextSelectionChanged = { showMarkupToolOptions(MarkupTool.TEXT) }
         annotationOverlayView.onTextEditRequested = { textItem ->
             showTextInputDialog(textItem)
         }
-        annotationOverlayView.onShapeStarted = {
-            if (!isShapeConfirmed) {
-                isShapeConfirmed = true
-                showMarkupToolOptions(MarkupTool.SHAPES)
-            }
-        }
-        annotationOverlayView.onDoodleStarted = {
-            if (!isDoodleConfirmed) {
-                isDoodleConfirmed = true
-                showMarkupToolOptions(MarkupTool.DOODLE)
-            }
-        }
-        annotationOverlayView.onMosaicStarted = {
-            if (!isMosaicConfirmed) {
-                isMosaicConfirmed = true
-                showMarkupToolOptions(MarkupTool.MOSAIC)
-            }
-        }
-
         // Setup Strips
         setupAdjustControls()
         setupFilterCards()
         setupMarkupControls()
         setupCategoryTabs()
         switchCategory(EditorCategory.CROP)
+        annotationOverlayView.restoreRetainedDocument(markupRetainedState.document)
 
         lifecycleScope.launch {
             val bmp = withContext(Dispatchers.IO) { loadBitmap(uri) }
@@ -466,6 +555,8 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                 text = getString(category.titleRes)
                 textSize = 13f
                 gravity = Gravity.CENTER
+                minWidth = (48 * density).toInt()
+                minHeight = (48 * density).toInt()
                 setPadding((16 * density).toInt(), (8 * density).toInt(), (16 * density).toInt(), (8 * density).toInt())
                 val isSelected = category == activeCategory
                 if (isSelected) {
@@ -499,6 +590,17 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
 
     private fun switchCategory(category: EditorCategory) {
         activeCategory = category
+        // All editor categories share the same dark canvas and action-bar colors.
+        val foreground = Color.WHITE
+        val deckColor = Color.BLACK
+        editorBottomDeck.setBackgroundColor(deckColor)
+        WindowInsetsControllerCompat(window, window.decorView).isAppearanceLightNavigationBars =
+            androidx.core.graphics.ColorUtils.calculateLuminance(deckColor) > 0.5
+        (cancelButton as TextView).setTextColor(foreground)
+        subEditCancelButton.setTextColor(foreground)
+        listOf(subEditUndoButton, subEditRedoButton, subEditClearButton).forEach {
+            it.imageTintList = ColorStateList.valueOf(foreground)
+        }
         setupCategoryTabs()
 
         stripCrop.isVisible = category == EditorCategory.CROP
@@ -509,8 +611,10 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
 
         // Crop guides only in CROP mode
         cropImageView.showCropGuides = (category == EditorCategory.CROP)
-        annotationOverlayView.isMarkupRestrictedToCrop = cropImageView.hasUserModifiedCrop
+        annotationOverlayView.isMarkupRestrictedToCrop =
+            activeCategory != EditorCategory.CROP && cropImageView.hasUserModifiedCrop
         annotationOverlayView.isVisible = true
+        annotationOverlayView.invalidate()
 
         // Exit adjust slider if active
         if (activeAdjustParam != null) {
@@ -523,12 +627,14 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         // In Google Photos (e.g. google-photos-markup.jpg), categories start in neutral state:
         // No tool is active, tool options are hidden, Category Tabs bar is visible, Cancel/Save copy action bar is visible.
         annotationOverlayView.activeTool = MarkupTool.NONE
-        markupOptionsScroll.isVisible = false
+        showMarkupToolOptions(MarkupTool.NONE)
         updateMarkupToolButtons()
 
         setCategoryTabsVisible(true)
         regularActionBar.isVisible = true
         subEditActionBar.isVisible = false
+        markupHistoryBar.isVisible = false
+        subEditSpacer.isVisible = true
     }
 
     private fun updateFlipButtonUI() {
@@ -819,46 +925,74 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         }
     }
 
+    /** Shared caption layout for editor icons and thumbnails. */
+    private fun editorToolCaption(labelRes: Int, color: Int): TextView = TextView(this).apply {
+        text = getString(labelRes)
+        layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+        gravity = Gravity.CENTER_HORIZONTAL
+        setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,
+            resources.getDimension(R.dimen.editor_tool_label_size))
+        setTextColor(color)
+        setPadding(0, resources.getDimensionPixelSize(R.dimen.editor_tool_label_gap), 0, 0)
+    }
+
+    /** Reserve enough width for the widest translated caption, not only the icon. */
+    private fun editorToolItemWidth(labelResources: List<Int>, horizontalPadding: Int =
+        resources.getDimensionPixelSize(R.dimen.editor_tool_horizontal_padding)): Int {
+        val label = editorToolCaption(labelResources.first(), Color.WHITE)
+        val textWidth = labelResources.maxOf { label.paint.measureText(getString(it)) }
+        return maxOf(resources.getDimensionPixelSize(R.dimen.editor_tool_item_min_width),
+            kotlin.math.ceil(textWidth).toInt() + 2 * horizontalPadding)
+    }
+
     private fun updateAdjustToolItems() {
         adjustToolItemsLayout.removeAllViews()
         val density = resources.displayMetrics.density
+        // Adjust controls used 12dp on each side; filters and markup used 8dp.
+        val itemWidth = editorToolItemWidth(AdjustParam.values().map { it.labelRes }, (12 * density).toInt())
 
         AdjustParam.values().forEach { param ->
             val isApplied = getAdjustParamValue(param) != 0
-            val isSelected = activeAdjustParam == param
+            // Avoid View.isSelected shadowing the outer selection value in apply blocks.
+            val selectedParam = activeAdjustParam == param
 
             val itemLayout = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER
-                setPadding((12 * density).toInt(), 0, (12 * density).toInt(), 0)
+                layoutParams = LinearLayout.LayoutParams(itemWidth, LinearLayout.LayoutParams.WRAP_CONTENT)
+                minimumHeight = resources.getDimensionPixelSize(R.dimen.editor_tool_touch_size)
                 isClickable = true
                 isFocusable = true
+                isSelected = selectedParam
+                contentDescription = getString(param.labelRes)
                 setOnClickListener {
                     selectAdjustParam(param)
                 }
             }
 
             val iconCircle = FrameLayout(this).apply {
-                val size = (48 * density).toInt()
-                layoutParams = LinearLayout.LayoutParams(size, size)
-                setBackgroundResource(
-                    if (isSelected) R.drawable.bg_circle_tool_selected else R.drawable.bg_circle_tool
-                )
+                val size = resources.getDimensionPixelSize(R.dimen.editor_tool_touch_size)
+                layoutParams = LinearLayout.LayoutParams(size, size).apply {
+                    gravity = Gravity.CENTER_HORIZONTAL
+                }
+                background = markupBackground(selectedParam, circle = true)
 
                 val iv = ImageView(this@ImageEditorActivity).apply {
-                    val iconSize = (24 * density).toInt()
+                    val iconSize = resources.getDimensionPixelSize(R.dimen.editor_tool_icon_size)
                     layoutParams = FrameLayout.LayoutParams(iconSize, iconSize).apply {
                         gravity = Gravity.CENTER
                     }
                     setImageResource(param.iconRes)
+                    scaleType = ImageView.ScaleType.FIT_CENTER
                     imageTintList = ColorStateList.valueOf(
-                        if (isSelected) Color.parseColor("#001D35") else Color.WHITE
+                        Color.WHITE
                     )
                 }
                 addView(iv)
 
                 // Google Photos applied indicator dot
-                if (isApplied && !isSelected) {
+                if (isApplied && !selectedParam) {
                     val dot = View(this@ImageEditorActivity).apply {
                         val dotSize = (8 * density).toInt()
                         layoutParams = FrameLayout.LayoutParams(dotSize, dotSize).apply {
@@ -871,11 +1005,17 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                 }
             }
 
-            val label = TextView(this).apply {
-                text = getString(param.labelRes)
-                textSize = 11f
-                setTextColor(if (isApplied || isSelected) Color.parseColor("#A8C7FA") else Color.parseColor("#B0B0B0"))
-                setPadding(0, (4 * density).toInt(), 0, 0)
+            val label = editorToolCaption(param.labelRes,
+                if (isApplied || selectedParam) Color.WHITE else Color.parseColor("#B0B0B0")).apply {
+                // A fixed measured column and text gravity align every translated
+                // caption with the independently centered 48dp icon target.
+                layoutParams = LinearLayout.LayoutParams(itemWidth, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                    gravity = Gravity.CENTER_HORIZONTAL
+                }
+                gravity = Gravity.CENTER_HORIZONTAL
+                textAlignment = View.TEXT_ALIGNMENT_GRAVITY
+                setSingleLine(true)
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
             }
 
             itemLayout.addView(iconCircle)
@@ -896,7 +1036,12 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         regularActionBar.isVisible = false
         subEditActionBar.isVisible = true
         subEditUndoButton.isVisible = false
+        subEditRedoButton.isVisible = false
+        subEditClearButton.isVisible = false
         subEditCancelButton.setText(R.string.cancel)
+        subEditCancelButton.contentDescription = getString(R.string.cancel)
+        subEditCancelButton.isEnabled = true
+        subEditCancelButton.alpha = 1f
 
         val initialVal = getAdjustParamValue(param)
         subEditCancelButton.setOnClickListener {
@@ -950,12 +1095,14 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             ImageFilter.INVERT to R.string.editor_filter_invert,
         )
 
+        val itemWidth = editorToolItemWidth(filters.map { it.second })
         filters.forEach { (filter, labelRes) ->
             val isSelected = currentFilter == filter
             val itemLayout = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER
-                setPadding((8 * density).toInt(), 0, (8 * density).toInt(), 0)
+                layoutParams = LinearLayout.LayoutParams(itemWidth, LinearLayout.LayoutParams.WRAP_CONTENT)
+                minimumHeight = resources.getDimensionPixelSize(R.dimen.editor_tool_touch_size)
                 isClickable = true
                 isFocusable = true
                 setOnClickListener {
@@ -1013,12 +1160,8 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                 }
             }
 
-            val label = TextView(this).apply {
-                text = getString(labelRes)
-                textSize = 11f
-                setTextColor(if (isSelected) Color.WHITE else Color.parseColor("#A0A0A0"))
-                setPadding(0, (4 * density).toInt(), 0, 0)
-            }
+            val label = editorToolCaption(labelRes,
+                if (isSelected) Color.WHITE else Color.parseColor("#A0A0A0"))
 
             itemLayout.addView(card)
             itemLayout.addView(label)
@@ -1030,49 +1173,75 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         updateMarkupToolButtons()
     }
 
+    private fun markupBackground(selected: Boolean, circle: Boolean = false): android.graphics.drawable.Drawable =
+        android.graphics.drawable.GradientDrawable().apply {
+            shape = if (circle) android.graphics.drawable.GradientDrawable.OVAL else android.graphics.drawable.GradientDrawable.RECTANGLE
+            cornerRadius = 24f * resources.displayMetrics.density
+            // Match the editor's selected category and neutral tool backgrounds.
+            setColor(Color.parseColor(if (selected) "#383838" else "#282A2C"))
+        }
+
     private fun updateMarkupToolButtons() {
         markupToolsRow.removeAllViews()
         val density = resources.displayMetrics.density
 
         val tools = listOf(
-            MarkupTool.DOODLE to (R.string.editor_markup_doodle to R.drawable.ic_edit),
-            MarkupTool.SHAPES to (R.string.editor_markup_shapes to R.drawable.ic_crop_ratio),
-            MarkupTool.TEXT to (R.string.editor_markup_text to R.drawable.ic_contact_page),
-            MarkupTool.MOSAIC to (R.string.editor_markup_mosaic to R.drawable.ic_compress),
-            MarkupTool.STICKER to (R.string.editor_markup_sticker to R.drawable.ic_sticker),
+            MarkupTool.DOODLE to (R.string.editor_markup_doodle to R.drawable.ic_markup_brush),
+            MarkupTool.SHAPES to (R.string.editor_markup_shapes to R.drawable.ic_markup_shapes),
+            MarkupTool.TEXT to (R.string.editor_markup_text to R.drawable.ic_markup_text),
+            MarkupTool.MOSAIC to (R.string.editor_markup_mosaic to R.drawable.ic_markup_mosaic),
+            MarkupTool.STICKER to (R.string.editor_markup_sticker to R.drawable.ic_markup_sticker),
         )
+
+        // Reserve the same width for every tool, using the widest bold label so
+        // changing selection does not shift adjacent tools in any locale.
+        val compact = activeCategory == EditorCategory.MARKUP && annotationOverlayView.activeTool != MarkupTool.NONE
+        val measuringLabel = TextView(this).apply {
+            textSize = if (compact) 14f else 11f
+            setTypeface(null, Typeface.BOLD)
+        }
+        val itemWidth = maxOf(resources.getDimensionPixelSize(R.dimen.editor_tool_item_min_width),
+            kotlin.math.ceil(tools.maxOf { measuringLabel.paint.measureText(getString(it.second.first)) }).toInt() +
+                2 * resources.getDimensionPixelSize(R.dimen.editor_tool_horizontal_padding))
 
         tools.forEach { (tool, pair) ->
             val (labelRes, iconRes) = pair
-            val isSelected = annotationOverlayView.activeTool == tool
-
+            val selected = annotationOverlayView.activeTool == tool
             val itemLayout = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                setPadding((4 * density).toInt(), 0, (4 * density).toInt(), 0)
+                layoutParams = LinearLayout.LayoutParams(
+                    itemWidth, LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+                minimumWidth = resources.getDimensionPixelSize(R.dimen.editor_tool_item_min_width)
+                minimumHeight = resources.getDimensionPixelSize(R.dimen.editor_tool_touch_size)
+                setPadding((8 * density).toInt(), 0, (8 * density).toInt(), 0)
                 isClickable = true
                 isFocusable = true
+                isSelected = selected
+                if (compact && selected) background = markupBackground(true)
+                contentDescription = getString(labelRes)
+                val outValue = android.util.TypedValue()
+                theme.resolveAttribute(android.R.attr.selectableItemBackground, outValue, true)
+                foreground = getDrawable(outValue.resourceId)
                 setOnClickListener {
                     selectMarkupTool(tool)
                 }
             }
 
             val circle = FrameLayout(this).apply {
-                val size = (48 * density).toInt()
+                val size = ((if (compact) 24 else 48) * density).toInt()
                 layoutParams = LinearLayout.LayoutParams(size, size)
-                setBackgroundResource(
-                    if (isSelected) R.drawable.bg_circle_tool_selected else R.drawable.bg_circle_tool
-                )
+                background = markupBackground(selected, circle = true)
 
                 val iv = ImageView(this@ImageEditorActivity).apply {
-                    val iconSize = (24 * density).toInt()
+                    val iconSize = ((if (compact) 20 else 24) * density).toInt()
                     layoutParams = FrameLayout.LayoutParams(iconSize, iconSize).apply {
                         gravity = Gravity.CENTER
                     }
                     setImageResource(iconRes)
                     imageTintList = ColorStateList.valueOf(
-                        if (isSelected) Color.parseColor("#001D35") else Color.WHITE
+                        if (compact && !selected) Color.parseColor("#B0B0B0") else Color.WHITE
                     )
                 }
                 addView(iv)
@@ -1080,50 +1249,69 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
 
             val label = TextView(this).apply {
                 text = getString(labelRes)
-                textSize = 11f
-                setTextColor(if (isSelected) Color.parseColor("#A8C7FA") else Color.parseColor("#B0B0B0"))
-                setPadding(0, (4 * density).toInt(), 0, 0)
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                gravity = Gravity.CENTER
+                setSingleLine(true)
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                textSize = if (compact) 14f else 11f
+                setTypeface(null, if (selected) Typeface.BOLD else Typeface.NORMAL)
+                setTextColor(if (selected) Color.WHITE else Color.parseColor(if (compact) "#A0A0A0" else "#B0B0B0"))
+                setPadding(0, if (compact) 0 else (4 * density).toInt(), 0, 0)
             }
 
-            itemLayout.addView(circle)
+            if (!compact) itemLayout.addView(circle)
             itemLayout.addView(label)
             markupToolsRow.addView(itemLayout)
+            if (selected) markupToolsScroll.post {
+                markupToolsScroll.smoothScrollTo(
+                    itemLayout.left - (markupToolsScroll.width - itemLayout.width) / 2, 0
+                )
+            }
         }
     }
 
+    private fun updateMarkupHistoryButtons() {
+        val undo = annotationOverlayView.canUndo()
+        val redo = annotationOverlayView.canRedo()
+        val clear = annotationOverlayView.hasAnnotations()
+        subEditUndoButton.isEnabled = undo
+        subEditUndoButton.alpha = if (undo) 1f else 0.4f
+        subEditRedoButton.isEnabled = redo
+        subEditRedoButton.alpha = if (redo) 1f else 0.4f
+        subEditClearButton.isEnabled = clear
+        subEditClearButton.alpha = if (clear) 1f else 0.4f
+    }
+
     private fun selectMarkupTool(tool: MarkupTool) {
-        if (tool != MarkupTool.DOODLE) isDoodleConfirmed = false
-        if (tool != MarkupTool.SHAPES) isShapeConfirmed = false
-        if (tool != MarkupTool.MOSAIC) isMosaicConfirmed = false
-        if (tool != MarkupTool.STICKER) isStickerConfirmed = false
 
         annotationOverlayView.activeTool = tool
         updateMarkupToolButtons()
         showMarkupToolOptions(tool)
 
-        if (tool == MarkupTool.TEXT && annotationOverlayView.activeText == null) {
-            val rect = cropImageView.getCropRect()
-            val cx = if (!rect.isEmpty) rect.centerX() else cropImageView.width / 2f
-            val cy = if (!rect.isEmpty) rect.centerY() else cropImageView.height / 2f
-            annotationOverlayView.addTextItem("", cx, cy)
-        }
-
         if (tool != MarkupTool.NONE) {
-            // Category Tabs automatically disappear in sub-editing mode (text-on-images.jpg & use-arrow-tool.jpg)
+            // Only the editor-level categories disappear; all five Markup tools remain available.
             setCategoryTabsVisible(false)
             regularActionBar.isVisible = false
             subEditActionBar.isVisible = true
+            markupHistoryBar.isVisible = true
+            subEditSpacer.isVisible = false
 
-            subEditCancelButton.setText(R.string.editor_markup_clear)
-            subEditCancelButton.setOnClickListener {
-                annotationOverlayView.clear()
-            }
+            subEditCancelButton.setText(R.string.editor_markup_close)
+            subEditCancelButton.contentDescription = getString(R.string.editor_markup_close)
+            subEditCancelButton.isEnabled = true
+            subEditCancelButton.alpha = 1f
+            subEditCancelButton.setOnClickListener { exitMarkupSubEdit() }
             subEditUndoButton.isVisible = true
-            subEditUndoButton.isEnabled = annotationOverlayView.hasAnnotations()
-            subEditUndoButton.alpha = if (annotationOverlayView.hasAnnotations()) 1f else 0.4f
+            subEditRedoButton.isVisible = true
+            subEditClearButton.isVisible = true
+            updateMarkupHistoryButtons()
             subEditUndoButton.setOnClickListener {
-                annotationOverlayView.undo()
+                if (annotationOverlayView.undo()) showMarkupToolOptions(annotationOverlayView.activeTool)
             }
+            subEditRedoButton.setOnClickListener {
+                if (annotationOverlayView.redo()) showMarkupToolOptions(annotationOverlayView.activeTool)
+            }
+            subEditClearButton.setOnClickListener { annotationOverlayView.clear() }
             subEditDoneButton.setOnClickListener {
                 exitMarkupSubEdit()
             }
@@ -1133,74 +1321,300 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
     }
 
     private fun exitMarkupSubEdit() {
-        isDoodleConfirmed = false
-        isShapeConfirmed = false
-        isMosaicConfirmed = false
-        isStickerConfirmed = false
         annotationOverlayView.activeTool = MarkupTool.NONE
         updateMarkupToolButtons()
-        markupOptionsScroll.isVisible = false
-        // Category Tabs bar reappears when exiting sub-editing mode (google-photos-markup.jpg)
+        showMarkupToolOptions(MarkupTool.NONE)
         setCategoryTabsVisible(true)
         regularActionBar.isVisible = true
         subEditActionBar.isVisible = false
+        markupHistoryBar.isVisible = false
+        subEditSpacer.isVisible = true
+    }
+
+    /** Each section owns its own scroll direction; sliders never live in a horizontal scroller. */
+    private fun addMarkupSection(title: Int, horizontal: Boolean, showTitle: Boolean = true, build: () -> Unit) {
+        val start = markupOptionsContent.childCount
+        build()
+        val children = mutableListOf<View>()
+        while (markupOptionsContent.childCount > start) {
+            val child = markupOptionsContent.getChildAt(start)
+            markupOptionsContent.removeViewAt(start)
+            children.add(child)
+        }
+        if (children.isEmpty()) return
+        val density = resources.displayMetrics.density
+        val section = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        if (showTitle) section.addView(TextView(this).apply {
+            text = getString(title)
+            setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_LabelMedium)
+            setTextColor(MaterialColors.getColor(this, com.google.android.material.R.attr.colorOnSurfaceVariant))
+            setPadding(0, (8 * density).toInt(), 0, (4 * density).toInt())
+        })
+        if (horizontal) {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            children.forEach { child -> row.addView(child) }
+            val scroller = HorizontalScrollView(this).apply {
+                // Preserve horizontal scrolling and the edge hint without a persistent thumb.
+                isHorizontalScrollBarEnabled = false
+                isHorizontalFadingEdgeEnabled = true
+                setFadingEdgeLength((20 * density).toInt())
+                addView(row)
+            }
+            section.addView(scroller, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+            if (title == R.string.markup_effect_section) scroller.post {
+                val group = children.filterIsInstance<ChipGroup>().firstOrNull()
+                val selected = group?.let { g ->
+                    (0 until g.childCount).map { g.getChildAt(it) }
+                        .filterIsInstance<Chip>().firstOrNull { it.isChecked }
+                }
+                if (selected != null) {
+                    val bounds = android.graphics.Rect()
+                    selected.getDrawingRect(bounds)
+                    row.offsetDescendantRectToMyCoords(selected, bounds)
+                    scroller.smoothScrollTo((bounds.centerX() - scroller.width / 2).coerceAtLeast(0), 0)
+                }
+            }
+        } else {
+            children.forEach { child -> section.addView(child, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)) }
+        }
+        markupOptionsContent.addView(section)
+    }
+
+    private fun updateMarkupPanelHeight() {
+        val screenHeight = findViewById<View>(R.id.editorRootLayout).height.takeIf { it > 0 }
+            ?: resources.displayMetrics.heightPixels
+        // Keep the viewport independent of the selected tool and expanded sections.
+        // Otherwise the deck resizes the image and its annotation coordinate mapping.
+        // A compact fixed viewport avoids a large empty gap for single-row pages.
+        // Longer pages remain internally scrollable, including at larger font scales.
+        val height = minOf((96 * resources.displayMetrics.density).toInt(), (screenHeight * 0.16f).toInt())
+        val params = markupOptionsScroll.layoutParams
+        if (params.height != height) {
+            params.height = height
+            markupOptionsScroll.layoutParams = params
+        }
+    }
+
+    private data class MarkupSubtoolItem(val key: MarkupSubtool, val label: Int, val icon: Int)
+
+    private fun markupSubtools(tool: MarkupTool): List<MarkupSubtoolItem> = when (tool) {
+        MarkupTool.DOODLE -> buildList {
+            add(MarkupSubtoolItem(MarkupSubtool.BRUSH, R.string.markup_brush_section, R.drawable.ic_markup_brush))
+            add(MarkupSubtoolItem(MarkupSubtool.WIDTH, R.string.editor_markup_stroke_width, R.drawable.ic_markup_width))
+            add(MarkupSubtoolItem(MarkupSubtool.COLOR, R.string.markup_color_section, R.drawable.ic_markup_palette))
+            if (annotationOverlayView.activeCustomBrush != null)
+                add(MarkupSubtoolItem(MarkupSubtool.ADVANCED, R.string.markup_advanced, R.drawable.ic_adjust))
+        }
+        MarkupTool.SHAPES -> listOf(
+            MarkupSubtoolItem(MarkupSubtool.SHAPE, R.string.markup_shape_section, R.drawable.ic_markup_shapes),
+            MarkupSubtoolItem(MarkupSubtool.STYLE, R.string.markup_style_section, R.drawable.ic_markup_fill),
+            MarkupSubtoolItem(MarkupSubtool.WIDTH, R.string.editor_markup_stroke_width, R.drawable.ic_markup_width),
+            MarkupSubtoolItem(MarkupSubtool.COLOR, R.string.markup_color_section, R.drawable.ic_markup_palette),
+        )
+        MarkupTool.TEXT -> listOf(
+            MarkupSubtoolItem(MarkupSubtool.TEXT, R.string.markup_text_section, R.drawable.ic_markup_text),
+            MarkupSubtoolItem(MarkupSubtool.FONT, R.string.markup_font, R.drawable.ic_markup_font),
+            MarkupSubtoolItem(MarkupSubtool.ALIGNMENT, R.string.markup_alignment, R.drawable.ic_markup_align_center),
+            MarkupSubtoolItem(MarkupSubtool.BACKGROUND, R.string.editor_markup_text_bg, R.drawable.ic_markup_fill),
+            MarkupSubtoolItem(MarkupSubtool.COLOR, R.string.markup_color_section, R.drawable.ic_markup_palette),
+        )
+        MarkupTool.MOSAIC -> listOf(
+            MarkupSubtoolItem(MarkupSubtool.EFFECT, R.string.markup_effect_section, R.drawable.ic_markup_mosaic),
+            MarkupSubtoolItem(MarkupSubtool.WIDTH, R.string.editor_markup_mosaic_brush, R.drawable.ic_markup_width),
+        )
+        MarkupTool.STICKER -> listOf(
+            MarkupSubtoolItem(MarkupSubtool.STICKER_PRESET, R.string.markup_preset_stickers, R.drawable.ic_markup_sticker),
+            MarkupSubtoolItem(MarkupSubtool.STICKER_CUSTOM, R.string.markup_custom_stickers, R.drawable.ic_image),
+            MarkupSubtoolItem(MarkupSubtool.STICKER_IMPORT, R.string.markup_import_section, R.drawable.ic_markup_import),
+        )
+        MarkupTool.NONE -> emptyList()
     }
 
     private fun showMarkupToolOptions(tool: MarkupTool) {
+        // A late import callback must not replace the dock for a different tool.
+        if (tool != MarkupTool.NONE && (activeCategory != EditorCategory.MARKUP ||
+                annotationOverlayView.activeTool != tool)) return
+        val items = if (activeCategory == EditorCategory.MARKUP) markupSubtools(tool) else emptyList()
+        val current = markupSubtoolByTool[tool]?.takeIf { selected -> items.any { it.key == selected } }
+            ?: items.firstOrNull()?.key
+        if (current != null) markupSubtoolByTool[tool] = current
+        markupSubtoolsScroll.isVisible = items.isNotEmpty()
+        markupOptionsScroll.isVisible = items.isNotEmpty()
         markupOptionsContent.removeAllViews()
-        markupOptionsScroll.isVisible = (tool != MarkupTool.NONE)
+        markupSubtoolsRow.removeAllViews()
+        if (current == null) return
 
+        markupSubtoolsRow.background = markupBackground(false)
+        val density = resources.displayMetrics.density
+        items.forEach { item ->
+            val selected = item.key == current
+            markupSubtoolsRow.addView(ImageView(this).apply {
+                val size = (48 * density).toInt()
+                layoutParams = LinearLayout.LayoutParams(size, size)
+                setPadding((12 * density).toInt(), (12 * density).toInt(), (12 * density).toInt(), (12 * density).toInt())
+                setImageResource(item.icon)
+                imageTintList = ColorStateList.valueOf(
+                    if (selected) Color.WHITE else Color.parseColor("#B0B0B0"))
+                if (selected) background = markupBackground(true)
+                contentDescription = getString(item.label)
+                isFocusable = true
+                isClickable = true
+                isSelected = selected
+                setOnClickListener {
+                    markupSubtoolByTool[tool] = item.key
+                    showMarkupToolOptions(tool)
+                }
+            })
+        }
         when (tool) {
-            MarkupTool.DOODLE -> {
-                if (!isDoodleConfirmed) {
-                    addDoodleBrushTypeSelector()
-                } else {
-                    addConfirmedDoodleControls()
-                }
-            }
-            MarkupTool.SHAPES -> {
-                if (!isShapeConfirmed) {
-                    addShapeTypeSelector()
-                } else {
-                    addConfirmedShapeControls()
-                }
-            }
-            MarkupTool.TEXT -> {
-                val bgChip = Chip(this).apply {
-                    text = getString(R.string.editor_markup_text_bg)
-                    isCheckable = true
-                    isChecked = annotationOverlayView.hasTextBackgroundPill
-                    setOnCheckedChangeListener { _, isChecked ->
-                        annotationOverlayView.hasTextBackgroundPill = isChecked
-                        annotationOverlayView.activeText?.hasBackgroundPill = isChecked
-                        annotationOverlayView.invalidate()
+            MarkupTool.DOODLE -> when (current) {
+                MarkupSubtool.BRUSH -> addMarkupSection(R.string.markup_brush_section, true, false) { addDoodleBrushTypeSelector() }
+                MarkupSubtool.WIDTH -> addMarkupSection(R.string.editor_markup_stroke_width, false, false) { addStrokeWidthSlider() }
+                MarkupSubtool.COLOR -> {
+                    val custom = annotationOverlayView.activeCustomBrush
+                    if (custom == null || custom.colorMode != BrushColorMode.ORIGINAL)
+                        addMarkupSection(R.string.markup_color_section, true, false) { addColorPalette() }
+                    else addMarkupSection(R.string.markup_color_section, false, false) {
+                        markupOptionsContent.addView(TextView(this).apply {
+                            text = getString(R.string.editor_brush_original_hint)
+                            setTextColor(MaterialColors.getColor(this, com.google.android.material.R.attr.colorOnSurfaceVariant))
+                        })
                     }
                 }
-                markupOptionsContent.addView(bgChip)
-
-                addColorPalette { c ->
-                    annotationOverlayView.activeText?.color = c
-                    annotationOverlayView.invalidate()
+                MarkupSubtool.ADVANCED -> annotationOverlayView.activeCustomBrush?.let { brush ->
+                    addMarkupSection(R.string.markup_advanced, false, false) { addCustomBrushControls(brush) }
                 }
+                else -> Unit
             }
-            MarkupTool.MOSAIC -> {
-                if (!isMosaicConfirmed) {
-                    addMosaicEffectSelector()
-                } else {
-                    addConfirmedMosaicControls()
+            MarkupTool.SHAPES -> when (current) {
+                MarkupSubtool.SHAPE -> addMarkupSection(R.string.markup_shape_section, true, false) { addShapeTypeSelector() }
+                MarkupSubtool.STYLE -> addMarkupSection(R.string.markup_style_section, true, false) { addShapeStyleSelector() }
+                MarkupSubtool.WIDTH -> addMarkupSection(R.string.editor_markup_stroke_width, false, false) { addStrokeWidthSlider() }
+                MarkupSubtool.COLOR -> addMarkupSection(R.string.markup_color_section, true, false) {
+                    addColorPalette { c -> annotationOverlayView.editAnnotation { annotationOverlayView.activeShape?.color = c } }
                 }
+                else -> Unit
             }
-            MarkupTool.STICKER -> {
-                if (!isStickerConfirmed) {
-                    addStickerSelector()
-                } else {
-                    addConfirmedStickerControls()
+            MarkupTool.TEXT -> when (current) {
+                MarkupSubtool.TEXT -> addMarkupSection(R.string.markup_text_section, true, false) {
+                    markupOptionsContent.addView(MaterialButton(this).apply {
+                        text = getString(R.string.markup_text_action)
+                        minHeight = (48 * density).toInt()
+                        setAllCaps(false)
+                        setOnClickListener {
+                            if (annotationOverlayView.activeText == null) {
+                                val rect = cropImageView.getCropRect()
+                                annotationOverlayView.addTextItem("", rect.centerX(), rect.centerY())
+                            }
+                            annotationOverlayView.activeText?.let { showTextInputDialog(it) }
+                        }
+                    })
                 }
+                MarkupSubtool.FONT -> addMarkupSection(R.string.markup_font, true, false) {
+                    // Keep font styling local to this page; the mosaic selector is unchanged.
+                    val group = ChipGroup(this).apply {
+                        isSingleSelection = true
+                        isSingleLine = true
+                        chipSpacingHorizontal = (8 * density).toInt()
+                    }
+                    (listOf("sans", "serif", "mono") + MarkupFonts.ids()).forEach { id ->
+                        val face = MarkupFonts.resolve(id)
+                        group.addView(Chip(this).apply {
+                            text = getString(R.string.markup_font_sample)
+                            contentDescription = getString(R.string.markup_font_option, id.take(12))
+                            typeface = face
+                            minWidth = (48 * density).toInt()
+                            minHeight = (48 * density).toInt()
+                            chipStartPadding = 8 * density
+                            chipEndPadding = 8 * density
+                            gravity = Gravity.CENTER
+                            isCheckable = true
+                            isChecked = (annotationOverlayView.activeText?.fontId ?: annotationOverlayView.activeTextFontId) == id
+                            setOnClickListener {
+                                annotationOverlayView.activeTextFontId = id
+                                annotationOverlayView.editAnnotation {
+                                    annotationOverlayView.activeText?.fontId = id
+                                }
+                                showMarkupToolOptions(tool)
+                            }
+                        })
+                    }
+                    markupOptionsContent.addView(group)
+                    markupOptionsContent.addView(TextView(this).apply {
+                        minimumWidth = (48 * density).toInt()
+                        minimumHeight = (48 * density).toInt()
+                        gravity = Gravity.CENTER
+                        isFocusable = true
+                        text = getString(R.string.markup_font_import)
+                        background = markupBackground(false)
+                        setTextColor(MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary))
+                        textSize = 12f
+                        setPadding((14 * density).toInt(), (8 * density).toInt(),
+                            (14 * density).toInt(), (8 * density).toInt())
+                        setOnClickListener { pickMarkupFontLauncher.launch(arrayOf("font/ttf", "font/otf", "application/octet-stream")) }
+                    }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginStart = (8 * density).toInt() })
+                }
+                MarkupSubtool.ALIGNMENT -> addMarkupSection(R.string.markup_alignment, true, false) {
+                    val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+                    listOf(Triple(TextAlignment.LEFT, R.string.markup_align_left, R.drawable.ic_markup_align_left),
+                        Triple(TextAlignment.CENTER, R.string.markup_align_center, R.drawable.ic_markup_align_center),
+                        Triple(TextAlignment.RIGHT, R.string.markup_align_right, R.drawable.ic_markup_align_right)).forEach { (value, label, icon) ->
+                        row.addView(ImageView(this).apply {
+                            layoutParams = LinearLayout.LayoutParams((48 * density).toInt(), (48 * density).toInt())
+                            setPadding((12 * density).toInt(), (12 * density).toInt(), (12 * density).toInt(), (12 * density).toInt())
+                            setImageResource(icon)
+                            imageTintList = ColorStateList.valueOf(Color.WHITE)
+                            contentDescription = getString(label)
+                            isSelected = (annotationOverlayView.activeText?.alignment ?: annotationOverlayView.activeTextAlignment) == value
+                            if (isSelected) background = markupBackground(true)
+                            isFocusable = true
+                            setOnClickListener {
+                                annotationOverlayView.activeTextAlignment = value
+                                annotationOverlayView.editAnnotation { annotationOverlayView.activeText?.alignment = value }
+                                showMarkupToolOptions(tool)
+                            }
+                        })
+                    }
+                    markupOptionsContent.addView(row)
+                }
+                MarkupSubtool.BACKGROUND -> addMarkupSection(R.string.editor_markup_text_bg, true, false) {
+                    markupOptionsContent.addView(Chip(this).apply {
+                        minHeight = (48 * density).toInt()
+                        text = getString(R.string.editor_markup_text_bg)
+                        isCheckable = true
+                        isChecked = annotationOverlayView.activeText?.hasBackgroundPill
+                            ?: annotationOverlayView.hasTextBackgroundPill
+                        setOnCheckedChangeListener { _, checked ->
+                            annotationOverlayView.hasTextBackgroundPill = checked
+                            annotationOverlayView.editAnnotation { annotationOverlayView.activeText?.hasBackgroundPill = checked }
+                        }
+                    })
+                }
+                MarkupSubtool.COLOR -> addMarkupSection(R.string.markup_color_section, true, false) {
+                    addColorPalette { c -> annotationOverlayView.editAnnotation { annotationOverlayView.activeText?.color = c } }
+                }
+                else -> Unit
             }
-            MarkupTool.NONE -> {
-                markupOptionsScroll.isVisible = false
+            MarkupTool.MOSAIC -> when (current) {
+                MarkupSubtool.EFFECT -> addMarkupSection(R.string.markup_effect_section, true, false) { addMosaicEffectSelector() }
+                MarkupSubtool.WIDTH -> addMarkupSection(R.string.editor_markup_mosaic_brush, false, false) { addMosaicBrushSlider() }
+                else -> Unit
             }
+            MarkupTool.STICKER -> when (current) {
+                MarkupSubtool.STICKER_PRESET -> addMarkupSection(R.string.markup_preset_stickers, true, false) { addStickerSelector(0) }
+                MarkupSubtool.STICKER_CUSTOM -> addMarkupSection(R.string.markup_custom_stickers, true, false) { addStickerSelector(1) }
+                MarkupSubtool.STICKER_IMPORT -> addMarkupSection(R.string.markup_import_section, true, false) { addStickerSelector(2) }
+                else -> Unit
+            }
+            MarkupTool.NONE -> Unit
         }
+        updateMarkupPanelHeight()
     }
 
     private fun addDoodleBrushTypeSelector() {
@@ -1227,7 +1641,6 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                 annotationOverlayView.activeBrushType = bt
                 annotationOverlayView.activeCustomBrush = null
                 annotationOverlayView.activeCustomBrushTipBitmap = null
-                isDoodleConfirmed = true
                 showMarkupToolOptions(MarkupTool.DOODLE)
             }
             typeGroup.addView(chip)
@@ -1251,7 +1664,6 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                     annotationOverlayView.activeCustomBrush = brush
                     annotationOverlayView.activeCustomBrushTipBitmap = brush.loadTipBitmap()
                     annotationOverlayView.activeStrokeWidth = brush.sizeDp * density
-                    isDoodleConfirmed = true
                     showMarkupToolOptions(MarkupTool.DOODLE)
                 }
                 chip.setOnLongClickListener {
@@ -1277,13 +1689,17 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         }
 
         val importBrushBtn = TextView(this).apply {
+            minimumHeight = (48 * density).toInt()
+            gravity = Gravity.CENTER
+            isFocusable = true
             text = getString(R.string.editor_brush_import)
-            setBackgroundResource(R.drawable.bg_google_photos_pill_selected)
-            setTextColor(Color.parseColor("#A8C7FA"))
+            background = markupBackground(false)
+            setTextColor(MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary))
             textSize = 12f
             setPadding((14 * density).toInt(), (8 * density).toInt(), (14 * density).toInt(), (8 * density).toInt())
             setOnClickListener {
-                pickBrushTextureLauncher.launch("image/*")
+                // SAF filters by provider MIME metadata; the importer still validates file contents.
+                pickBrushTextureLauncher.launch(brushImportMimeTypes())
             }
         }
         val lp = LinearLayout.LayoutParams(
@@ -1295,85 +1711,26 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         markupOptionsContent.addView(importBrushBtn, lp)
     }
 
-    private fun addConfirmedDoodleControls() {
-        val density = resources.displayMetrics.density
-        val customBrush = annotationOverlayView.activeCustomBrush
-        val brushLabel = if (customBrush != null) {
-            customBrush.name
-        } else {
-            when (annotationOverlayView.activeBrushType) {
-                BrushType.NORMAL -> getString(R.string.editor_brush_normal)
-                BrushType.HIGHLIGHTER -> getString(R.string.editor_brush_highlighter)
-                BrushType.NEON -> getString(R.string.editor_brush_neon)
-                BrushType.DASHED -> getString(R.string.editor_brush_dashed)
-                BrushType.CUSTOM_TEXTURE -> getString(R.string.editor_brush_custom_texture)
-            }
-        }
-
-        val backBtn = TextView(this).apply {
-            text = "‹ $brushLabel"
-            setBackgroundResource(R.drawable.bg_google_photos_pill_selected)
-            setTextColor(Color.WHITE)
-            textSize = 12f
-            setPadding(28, 14, 28, 14)
-            setOnClickListener {
-                isDoodleConfirmed = false
-                showMarkupToolOptions(MarkupTool.DOODLE)
-            }
-        }
-        val lp = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT
-        ).apply {
-            marginEnd = (12 * density).toInt()
-        }
-        markupOptionsContent.addView(backBtn, lp)
-
-        addStrokeWidthSlider()
-
-        if (customBrush != null) {
-            if (customBrush.colorMode == BrushColorMode.ORIGINAL) {
-                val hint = TextView(this).apply {
-                    text = getString(R.string.editor_brush_original_hint)
-                    setTextColor(Color.parseColor("#9AA0A6"))
-                    textSize = 11f
-                    setPadding((8 * density).toInt(), 0, (12 * density).toInt(), 0)
-                }
-                markupOptionsContent.addView(hint)
-            } else {
-                addColorPalette()
-            }
-            addCustomBrushControls(customBrush)
-        } else {
-            addColorPalette()
-        }
-    }
-
     private fun addCustomBrushControls(brush: CustomBrush) {
         val density = resources.displayMetrics.density
 
         // Spacing slider (5%..200%)
         val spacingContainer = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding((8 * density).toInt(), 0, (8 * density).toInt(), 0)
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.START
         }
         val spacingLabel = TextView(this).apply {
             text = "${getString(R.string.editor_brush_spacing)}: ${brush.spacingPercent}%"
-            setTextColor(Color.WHITE)
+            setTextColor(MaterialColors.getColor(this, com.google.android.material.R.attr.colorOnSurface))
             textSize = 12f
             minWidth = (80 * density).toInt()
         }
         val spacingSlider = Slider(this).apply {
-            layoutParams = LinearLayout.LayoutParams((120 * density).toInt(), LinearLayout.LayoutParams.WRAP_CONTENT)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
             valueFrom = 5f
             valueTo = 200f
             stepSize = 5f
             value = brush.spacingPercent.toFloat().coerceIn(5f, 200f)
-            thumbTintList = ColorStateList.valueOf(Color.parseColor("#A8C7FA"))
-            trackActiveTintList = ColorStateList.valueOf(Color.parseColor("#A8C7FA"))
-            trackInactiveTintList = ColorStateList.valueOf(Color.parseColor("#3C4043"))
-            haloTintList = ColorStateList.valueOf(Color.parseColor("#33A8C7FA"))
             addOnChangeListener { _, value, fromUser ->
                 if (fromUser) {
                     brush.spacingPercent = value.toInt()
@@ -1387,32 +1744,29 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                 }
             }
         }
+        spacingSlider.id = View.generateViewId()
+        spacingLabel.labelFor = spacingSlider.id
         spacingContainer.addView(spacingLabel)
         spacingContainer.addView(spacingSlider)
         markupOptionsContent.addView(spacingContainer)
 
         // Opacity slider (10%..100%)
         val opacityContainer = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding((8 * density).toInt(), 0, (8 * density).toInt(), 0)
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.START
         }
         val opacityLabel = TextView(this).apply {
             text = "${getString(R.string.editor_brush_opacity)}: ${brush.opacity}%"
-            setTextColor(Color.WHITE)
+            setTextColor(MaterialColors.getColor(this, com.google.android.material.R.attr.colorOnSurface))
             textSize = 12f
             minWidth = (80 * density).toInt()
         }
         val opacitySlider = Slider(this).apply {
-            layoutParams = LinearLayout.LayoutParams((120 * density).toInt(), LinearLayout.LayoutParams.WRAP_CONTENT)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
             valueFrom = 10f
             valueTo = 100f
             stepSize = 5f
             value = brush.opacity.toFloat().coerceIn(10f, 100f)
-            thumbTintList = ColorStateList.valueOf(Color.parseColor("#A8C7FA"))
-            trackActiveTintList = ColorStateList.valueOf(Color.parseColor("#A8C7FA"))
-            trackInactiveTintList = ColorStateList.valueOf(Color.parseColor("#3C4043"))
-            haloTintList = ColorStateList.valueOf(Color.parseColor("#33A8C7FA"))
             addOnChangeListener { _, value, fromUser ->
                 if (fromUser) {
                     brush.opacity = value.toInt()
@@ -1426,6 +1780,8 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                 }
             }
         }
+        opacitySlider.id = View.generateViewId()
+        opacityLabel.labelFor = opacitySlider.id
         opacityContainer.addView(opacityLabel)
         opacityContainer.addView(opacitySlider)
         markupOptionsContent.addView(opacityContainer)
@@ -1469,6 +1825,13 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         shapeTypes.forEachIndexed { index, (st, labelRes) ->
             val chip = Chip(this).apply {
                 text = getString(labelRes)
+                val preview = Bitmap.createBitmap(48, 48, Bitmap.Config.ARGB_8888)
+                AnnotationItem.Shape(st, 7f, 7f, 41f, 41f,
+                    MaterialColors.getColor(this, com.google.android.material.R.attr.colorOnSurface), 3f).draw(Canvas(preview))
+                chipIcon = android.graphics.drawable.BitmapDrawable(resources, preview)
+                chipIconSize = 24f * density
+                isChipIconVisible = true
+                minHeight = (48 * density).toInt()
                 isCheckable = true
                 id = index
                 isChecked = st == annotationOverlayView.selectedShapeType && annotationOverlayView.activeCustomShape == null
@@ -1476,7 +1839,6 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             chip.setOnClickListener {
                 annotationOverlayView.selectedShapeType = st
                 annotationOverlayView.activeCustomShape = null
-                isShapeConfirmed = true
                 showMarkupToolOptions(MarkupTool.SHAPES)
             }
             chipGroup.addView(chip)
@@ -1498,7 +1860,6 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                 chip.setOnClickListener {
                     annotationOverlayView.selectedShapeType = ShapeType.CUSTOM
                     annotationOverlayView.activeCustomShape = shape
-                    isShapeConfirmed = true
                     showMarkupToolOptions(MarkupTool.SHAPES)
                 }
                 chip.setOnLongClickListener {
@@ -1523,9 +1884,12 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         }
 
         val importShapeBtn = TextView(this).apply {
+            minimumHeight = (48 * density).toInt()
+            gravity = Gravity.CENTER
+            isFocusable = true
             text = getString(R.string.editor_shape_import)
-            setBackgroundResource(R.drawable.bg_google_photos_pill_selected)
-            setTextColor(Color.parseColor("#A8C7FA"))
+            background = markupBackground(false)
+            setTextColor(MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary))
             textSize = 12f
             setPadding((14 * density).toInt(), (8 * density).toInt(), (14 * density).toInt(), (8 * density).toInt())
             setOnClickListener {
@@ -1541,47 +1905,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         markupOptionsContent.addView(importShapeBtn, lp)
     }
 
-    private fun addConfirmedShapeControls() {
-        val customShape = annotationOverlayView.activeCustomShape
-        val shapeTitle = if (customShape != null) {
-            customShape.name
-        } else {
-            val currentShapeLabel = when (annotationOverlayView.selectedShapeType) {
-                ShapeType.ARROW -> R.string.editor_shape_arrow
-                ShapeType.DOUBLE_ARROW -> R.string.editor_shape_double_arrow
-                ShapeType.RECTANGLE -> R.string.editor_shape_rect
-                ShapeType.ROUNDED_RECTANGLE -> R.string.editor_shape_round_rect
-                ShapeType.ELLIPSE -> R.string.editor_shape_circle
-                ShapeType.LINE -> R.string.editor_shape_line
-                ShapeType.TRIANGLE -> R.string.editor_shape_triangle
-                ShapeType.STAR -> R.string.editor_shape_star
-                ShapeType.DIAMOND -> R.string.editor_shape_diamond
-                ShapeType.CUSTOM -> R.string.editor_shape_custom
-            }
-            getString(currentShapeLabel)
-        }
-
-        val shapeBtn = TextView(this).apply {
-            text = "‹ $shapeTitle"
-            setBackgroundResource(R.drawable.bg_google_photos_pill_selected)
-            setTextColor(Color.WHITE)
-            textSize = 12f
-            setPadding(28, 14, 28, 14)
-            setOnClickListener {
-                isShapeConfirmed = false
-                showMarkupToolOptions(MarkupTool.SHAPES)
-            }
-        }
-        val density = resources.displayMetrics.density
-        val lp = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT
-        ).apply {
-            marginEnd = (12 * density).toInt()
-        }
-        markupOptionsContent.addView(shapeBtn, lp)
-
-        // Shape style selector chips: 描边、实心、半透明
+    private fun addShapeStyleSelector() {
         val styles = listOf(
             ShapeStyle.OUTLINE to R.string.editor_shape_style_outline,
             ShapeStyle.SOLID to R.string.editor_shape_style_solid,
@@ -1601,231 +1925,145 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             }
             chip.setOnClickListener {
                 annotationOverlayView.activeShapeStyle = st
-                annotationOverlayView.activeShape?.let { s ->
-                    s.style = st
-                    annotationOverlayView.invalidate()
-                }
+                annotationOverlayView.editAnnotation { annotationOverlayView.activeShape?.style = st }
             }
             styleGroup.addView(chip)
         }
         markupOptionsContent.addView(styleGroup)
 
-        addStrokeWidthSlider()
-        addColorPalette { c ->
-            annotationOverlayView.activeShape?.let { s ->
-                s.color = c
-                annotationOverlayView.invalidate()
+    }
+
+    // Small illustrative swatches differentiate effects without bundling image assets.
+    private fun mosaicEffectIcon(effect: MosaicEffect): android.graphics.drawable.Drawable {
+        val bitmap = Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888)
+        val pixels = IntArray(32 * 32) { index ->
+            val x = index % 32; val y = index / 32
+            when (effect) {
+                MosaicEffect.PIXELATE -> if ((x / 8 + y / 8) % 2 == 0) Color.rgb(80, 120, 180) else Color.rgb(220, 180, 100)
+                MosaicEffect.BLUR -> {
+                    val value = (90 + 100 * x / 31).coerceIn(0, 255)
+                    Color.rgb(value, value, value)
+                }
+                MosaicEffect.BLACKOUT -> Color.BLACK
+                MosaicEffect.STRIPES -> if ((x + y) / 5 % 2 == 0) Color.rgb(28, 27, 31) else Color.rgb(245, 166, 35)
+                MosaicEffect.NOISE -> {
+                    val value = 30 + ((x * 37 + y * 83 + x * y * 13) % 195)
+                    Color.rgb(value, value, value)
+                }
+                MosaicEffect.CUSTOM_PATTERN -> Color.GRAY
             }
         }
+        bitmap.setPixels(pixels, 0, 32, 0, 0, 32, 32)
+        return android.graphics.drawable.BitmapDrawable(resources, bitmap)
     }
 
     private fun addMosaicEffectSelector() {
         val density = resources.displayMetrics.density
-        val isNonImage = annotationOverlayView.activeMosaicEffect == MosaicEffect.PIXELATE ||
-                annotationOverlayView.activeMosaicEffect == MosaicEffect.BLUR
-
-        val catGroup = ChipGroup(this).apply {
-            isSingleSelection = true
-            isSingleLine = true
-            isSelectionRequired = true
-        }
-        val catNonImage = Chip(this).apply {
-            text = getString(R.string.editor_mosaic_cat_non_image)
-            isCheckable = true
-            isChecked = isNonImage
-        }
-        val catGraphical = Chip(this).apply {
-            text = getString(R.string.editor_mosaic_cat_graphical)
-            isCheckable = true
-            isChecked = !isNonImage
-        }
-        catNonImage.setOnClickListener {
-            annotationOverlayView.activeMosaicEffect = MosaicEffect.PIXELATE
-            showMarkupToolOptions(MarkupTool.MOSAIC)
-        }
-        catGraphical.setOnClickListener {
-            annotationOverlayView.activeMosaicEffect = MosaicEffect.BLACKOUT
-            showMarkupToolOptions(MarkupTool.MOSAIC)
-        }
-        catGroup.addView(catNonImage)
-        catGroup.addView(catGraphical)
-        markupOptionsContent.addView(catGroup)
-
-        if (isNonImage) {
-            val cellSizes = listOf(
-                8 to R.string.editor_mosaic_low,
-                16 to R.string.editor_mosaic_medium,
-                24 to R.string.editor_mosaic_high,
-            )
-            val pixGroup = ChipGroup(this).apply {
-                isSingleSelection = true
-                isSingleLine = true
-            }
-            cellSizes.forEach { (cs, labelRes) ->
-                val chip = Chip(this).apply {
-                    text = "${getString(R.string.editor_mosaic_pixelate)} (${getString(labelRes)})"
-                    isCheckable = true
-                    isChecked = annotationOverlayView.activeMosaicEffect == MosaicEffect.PIXELATE &&
-                            annotationOverlayView.activeMosaicCellSize == cs
-                }
-                chip.setOnClickListener {
-                    annotationOverlayView.activeMosaicEffect = MosaicEffect.PIXELATE
-                    annotationOverlayView.activeMosaicCellSize = cs
-                    isMosaicConfirmed = true
-                    showMarkupToolOptions(MarkupTool.MOSAIC)
-                }
-                pixGroup.addView(chip)
-            }
-            val blurChip = Chip(this).apply {
-                text = getString(R.string.editor_mosaic_blur)
+        // One mutually exclusive row replaces the old category + effect double selection.
+        val effects = listOf(
+            MosaicEffect.PIXELATE to R.string.editor_mosaic_pixelate,
+            MosaicEffect.BLUR to R.string.editor_mosaic_blur,
+            MosaicEffect.BLACKOUT to R.string.editor_mosaic_blackout,
+            MosaicEffect.STRIPES to R.string.editor_mosaic_stripes,
+            MosaicEffect.NOISE to R.string.editor_mosaic_noise,
+        )
+        val group = ChipGroup(this).apply { isSingleSelection = true; isSingleLine = true }
+        effects.forEach { (effect, label) ->
+            val chip = Chip(this).apply {
+                text = getString(label)
+                chipIcon = mosaicEffectIcon(effect)
+                chipIconSize = 24f * density
+                isChipIconVisible = true
+                minHeight = (48 * density).toInt()
                 isCheckable = true
-                isChecked = annotationOverlayView.activeMosaicEffect == MosaicEffect.BLUR
-            }
-            blurChip.setOnClickListener {
-                annotationOverlayView.activeMosaicEffect = MosaicEffect.BLUR
-                isMosaicConfirmed = true
-                showMarkupToolOptions(MarkupTool.MOSAIC)
-            }
-            pixGroup.addView(blurChip)
-            markupOptionsContent.addView(pixGroup)
-        } else {
-            val graphEffects = listOf(
-                MosaicEffect.BLACKOUT to R.string.editor_mosaic_blackout,
-                MosaicEffect.STRIPES to R.string.editor_mosaic_stripes,
-                MosaicEffect.NOISE to R.string.editor_mosaic_noise,
-            )
-            val gGroup = ChipGroup(this).apply {
-                isSingleSelection = true
-                isSingleLine = true
-            }
-            graphEffects.forEach { (eff, labelRes) ->
-                val chip = Chip(this).apply {
-                    text = getString(labelRes)
-                    isCheckable = true
-                    isChecked = eff == annotationOverlayView.activeMosaicEffect
-                }
-                chip.setOnClickListener {
-                    annotationOverlayView.activeMosaicEffect = eff
+                isChecked = annotationOverlayView.activeMosaicEffect == effect
+                setOnClickListener {
+                    annotationOverlayView.activeMosaicEffect = effect
                     annotationOverlayView.activeCustomMosaicPattern = null
-                    isMosaicConfirmed = true
+                    activeCustomMosaicId = null
+                    if (effect == MosaicEffect.PIXELATE) annotationOverlayView.activeMosaicCellSize = 16
                     showMarkupToolOptions(MarkupTool.MOSAIC)
                 }
-                gGroup.addView(chip)
             }
-
-            val customMosaics = CustomEditorAssetManager.getCustomMosaics(this)
-            customMosaics.forEach { asset ->
-                val chip = Chip(this).apply {
-                    text = asset.name
-                    isCheckable = true
-                }
-                chip.setOnClickListener {
-                    val bmp = asset.loadBitmap()
-                    if (bmp != null) {
+            group.addView(chip)
+        }
+        CustomEditorAssetManager.getCustomMosaics(this).forEach { asset ->
+            group.addView(Chip(this).apply {
+                text = asset.name
+                isCheckable = true
+                isChecked = annotationOverlayView.activeMosaicEffect == MosaicEffect.CUSTOM_PATTERN &&
+                    activeCustomMosaicId == asset.id
+                setOnClickListener {
+                    asset.loadBitmap()?.let { bitmap ->
                         annotationOverlayView.activeMosaicEffect = MosaicEffect.CUSTOM_PATTERN
-                        annotationOverlayView.activeCustomMosaicPattern = bmp
-                        isMosaicConfirmed = true
+                        annotationOverlayView.activeCustomMosaicPattern = bitmap
+                        activeCustomMosaicId = asset.id
                         showMarkupToolOptions(MarkupTool.MOSAIC)
                     }
                 }
-                gGroup.addView(chip)
-            }
-            markupOptionsContent.addView(gGroup)
+            })
+        }
+        markupOptionsContent.addView(group)
+        markupOptionsContent.addView(TextView(this).apply {
+            minimumHeight = (48 * density).toInt()
+            gravity = Gravity.CENTER
+            isFocusable = true
+            text = getString(R.string.editor_mosaic_import)
+            background = markupBackground(false)
+            setTextColor(MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary))
+            textSize = 12f
+            setPadding((14 * density).toInt(), (8 * density).toInt(), (14 * density).toInt(), (8 * density).toInt())
+            setOnClickListener { pickMosaicTextureLauncher.launch("image/*") }
+        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginStart = (8 * density).toInt() })
+    }
 
-            val importMosaicBtn = TextView(this).apply {
-                text = getString(R.string.editor_mosaic_import)
-                setBackgroundResource(R.drawable.bg_google_photos_pill_selected)
-                setTextColor(Color.parseColor("#A8C7FA"))
-                textSize = 12f
+    private fun addStickerSelector(section: Int) {
+        val density = resources.displayMetrics.density
+        if (section == 2) {
+            val importBtn = TextView(this).apply {
+                minimumHeight = (48 * density).toInt()
+                gravity = Gravity.CENTER
+                isFocusable = true
+                text = getString(R.string.editor_sticker_import)
+                background = markupBackground(false)
+                setTextColor(MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary))
+                textSize = 13f
+                setTypeface(null, Typeface.BOLD)
                 setPadding((14 * density).toInt(), (8 * density).toInt(), (14 * density).toInt(), (8 * density).toInt())
-                setOnClickListener {
-                    pickMosaicTextureLauncher.launch("image/*")
-                }
+                setOnClickListener { pickCustomStickerLauncher.launch("image/*") }
             }
             val lp = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                marginStart = (8 * density).toInt()
-            }
-            markupOptionsContent.addView(importMosaicBtn, lp)
-        }
-    }
-
-    private fun addConfirmedMosaicControls() {
-        val density = resources.displayMetrics.density
-        val mosaicLabel = when (annotationOverlayView.activeMosaicEffect) {
-            MosaicEffect.PIXELATE -> getString(R.string.editor_mosaic_pixelate)
-            MosaicEffect.BLUR -> getString(R.string.editor_mosaic_blur)
-            MosaicEffect.BLACKOUT -> getString(R.string.editor_mosaic_blackout)
-            MosaicEffect.STRIPES -> getString(R.string.editor_mosaic_stripes)
-            MosaicEffect.NOISE -> getString(R.string.editor_mosaic_noise)
-            MosaicEffect.CUSTOM_PATTERN -> getString(R.string.editor_mosaic_custom_pattern)
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { marginEnd = (8 * density).toInt() }
+            markupOptionsContent.addView(importBtn, lp)
+            return
         }
 
-        val backBtn = TextView(this).apply {
-            text = "‹ $mosaicLabel"
-            setBackgroundResource(R.drawable.bg_google_photos_pill_selected)
-            setTextColor(Color.WHITE)
-            textSize = 12f
-            setPadding(28, 14, 28, 14)
-            setOnClickListener {
-                isMosaicConfirmed = false
-                showMarkupToolOptions(MarkupTool.MOSAIC)
-            }
-        }
-        val lp = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT
-        ).apply {
-            marginEnd = (12 * density).toInt()
-        }
-        markupOptionsContent.addView(backBtn, lp)
-
-        addMosaicBrushSlider()
-    }
-
-    private fun addStickerSelector() {
-        val density = resources.displayMetrics.density
-        val importBtn = TextView(this).apply {
-            text = getString(R.string.editor_sticker_import)
-            setBackgroundResource(R.drawable.bg_google_photos_pill_selected)
-            setTextColor(Color.parseColor("#A8C7FA"))
-            textSize = 13f
-            setTypeface(null, Typeface.BOLD)
-            setPadding(28, 14, 28, 14)
-            setOnClickListener {
-                pickCustomStickerLauncher.launch("image/*")
-            }
-        }
-        val lp = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT
-        ).apply {
-            marginEnd = (12 * density).toInt()
-        }
-        markupOptionsContent.addView(importBtn, lp)
-
-        val customStickers = CustomEditorAssetManager.getCustomStickers(this)
-        customStickers.forEach { asset ->
-            val iv = ImageView(this).apply {
-                val cardSize = (38 * density).toInt()
-                layoutParams = LinearLayout.LayoutParams(cardSize, cardSize).apply {
-                    marginEnd = (8 * density).toInt()
-                }
-                setBackgroundResource(R.drawable.bg_circle_tool)
-                setPadding(4, 4, 4, 4)
-                val bmp = asset.loadBitmap()
-                if (bmp != null) setImageBitmap(bmp)
-                setOnClickListener {
-                    asset.loadBitmap()?.let { b ->
-                        annotationOverlayView.addSticker(b)
-                        isStickerConfirmed = true
-                        showMarkupToolOptions(MarkupTool.STICKER)
+        if (section == 1) {
+            CustomEditorAssetManager.getCustomStickers(this).forEach { asset ->
+                val iv = ImageView(this).apply {
+                    val cardSize = (48 * density).toInt()
+                    layoutParams = LinearLayout.LayoutParams(cardSize, cardSize).apply {
+                        marginEnd = (8 * density).toInt()
+                    }
+                    background = markupBackground(false, circle = true)
+                    contentDescription = asset.name
+                    isFocusable = true
+                    val inset = (4 * density).toInt()
+                    setPadding(inset, inset, inset, inset)
+                    val bmp = asset.loadBitmap()
+                    if (bmp != null) setImageBitmap(bmp)
+                    setOnClickListener {
+                        asset.loadBitmap()?.let { b ->
+                            annotationOverlayView.addSticker(b)
+                            showMarkupToolOptions(MarkupTool.STICKER)
+                        }
                     }
                 }
+                markupOptionsContent.addView(iv)
             }
-            markupOptionsContent.addView(iv)
+            return
         }
 
         val presets = listOf("⭐", "❤️", "⭕", "❌", "🏷️", "📌", "🔒", "🔏")
@@ -1836,15 +2074,16 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                 gravity = Gravity.CENTER
                 includeFontPadding = false
                 setPadding(0, 0, 0, 0)
-                val cardSize = (40 * density).toInt()
+                val cardSize = (48 * density).toInt()
                 layoutParams = LinearLayout.LayoutParams(cardSize, cardSize).apply {
                     marginEnd = (8 * density).toInt()
                 }
-                setBackgroundResource(R.drawable.bg_circle_tool)
+                background = markupBackground(false, circle = true)
+                contentDescription = symbol
+                isFocusable = true
                 setOnClickListener {
                     val bmp = createPresetStickerBitmap(symbol)
                     annotationOverlayView.addSticker(bmp)
-                    isStickerConfirmed = true
                     showMarkupToolOptions(MarkupTool.STICKER)
                 }
             }
@@ -1852,54 +2091,27 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         }
     }
 
-    private fun addConfirmedStickerControls() {
-        val density = resources.displayMetrics.density
-        val backBtn = TextView(this).apply {
-            text = getString(R.string.editor_sticker_back)
-            setBackgroundResource(R.drawable.bg_google_photos_pill_selected)
-            setTextColor(Color.WHITE)
-            textSize = 12f
-            setPadding(28, 14, 28, 14)
-            setOnClickListener {
-                isStickerConfirmed = false
-                showMarkupToolOptions(MarkupTool.STICKER)
-            }
-        }
-        val lp = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT
-        ).apply {
-            marginEnd = (12 * density).toInt()
-        }
-        markupOptionsContent.addView(backBtn, lp)
-    }
-
     private fun addMosaicBrushSlider() {
         val density = resources.displayMetrics.density
         val mosaicBrushContainer = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding((12 * density).toInt(), 0, (12 * density).toInt(), 0)
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.START
         }
 
         val currentBrushDp = (kotlin.math.round((annotationOverlayView.activeMosaicBrushSize / density) / 2f) * 2f).coerceIn(10f, 60f)
         val brushLabel = TextView(this).apply {
             text = "${getString(R.string.editor_markup_mosaic_brush)}: ${currentBrushDp.toInt()}dp"
-            setTextColor(Color.WHITE)
+            setTextColor(MaterialColors.getColor(this, com.google.android.material.R.attr.colorOnSurface))
             textSize = 12f
             minWidth = (96 * density).toInt()
         }
 
         val brushSlider = Slider(this).apply {
-            layoutParams = LinearLayout.LayoutParams((150 * density).toInt(), LinearLayout.LayoutParams.WRAP_CONTENT)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
             valueFrom = 10f
             valueTo = 60f
             stepSize = 2f
             value = currentBrushDp
-            thumbTintList = ColorStateList.valueOf(Color.parseColor("#A8C7FA"))
-            trackActiveTintList = ColorStateList.valueOf(Color.parseColor("#A8C7FA"))
-            trackInactiveTintList = ColorStateList.valueOf(Color.parseColor("#3C4043"))
-            haloTintList = ColorStateList.valueOf(Color.parseColor("#33A8C7FA"))
 
             addOnChangeListener { _, valDp, _ ->
                 annotationOverlayView.activeMosaicBrushSize = valDp * density
@@ -1907,6 +2119,8 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             }
         }
 
+        brushSlider.id = View.generateViewId()
+        brushLabel.labelFor = brushSlider.id
         mosaicBrushContainer.addView(brushLabel)
         mosaicBrushContainer.addView(brushSlider)
         markupOptionsContent.addView(mosaicBrushContainer)
@@ -1957,40 +2171,31 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         val density = resources.displayMetrics.density
 
         val sliderContainer = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding((12 * density).toInt(), 0, (12 * density).toInt(), 0)
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.START
         }
 
         val currentDp = kotlin.math.round(annotationOverlayView.activeStrokeWidth / density).coerceIn(2f, 40f)
 
-        val dotPreview = View(this).apply {
-            val sizePx = (currentDp * density).toInt().coerceIn(4, 28)
-            layoutParams = LinearLayout.LayoutParams(sizePx, sizePx).apply {
-                marginEnd = (8 * density).toInt()
-            }
-            setBackgroundResource(R.drawable.bg_circle_tool_selected)
-        }
-
         val label = TextView(this).apply {
             text = "${getString(R.string.editor_markup_stroke_width)}: ${currentDp.toInt()}dp"
-            setTextColor(Color.WHITE)
+            setTextColor(MaterialColors.getColor(this, com.google.android.material.R.attr.colorOnSurface))
             textSize = 12f
             minWidth = (80 * density).toInt()
         }
 
         val slider = Slider(this).apply {
-            layoutParams = LinearLayout.LayoutParams((120 * density).toInt(), LinearLayout.LayoutParams.WRAP_CONTENT)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
             valueFrom = 2f
             valueTo = 40f
             stepSize = 1f
             value = currentDp
-            thumbTintList = ColorStateList.valueOf(Color.parseColor("#A8C7FA"))
-            trackActiveTintList = ColorStateList.valueOf(Color.parseColor("#A8C7FA"))
-            trackInactiveTintList = ColorStateList.valueOf(Color.parseColor("#3C4043"))
-            haloTintList = ColorStateList.valueOf(Color.parseColor("#33A8C7FA"))
 
-            addOnChangeListener { _, valDp, _ ->
+            addOnSliderTouchListener(object : Slider.OnSliderTouchListener {
+                override fun onStartTrackingTouch(slider: Slider) = annotationOverlayView.beginControlEdit()
+                override fun onStopTrackingTouch(slider: Slider) = annotationOverlayView.endControlEdit()
+            })
+            addOnChangeListener { _, valDp, fromUser ->
                 val px = valDp * density
                 annotationOverlayView.activeStrokeWidth = px
                 annotationOverlayView.activeCustomBrush?.let { brush ->
@@ -2002,19 +2207,15 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                         CustomEditorAssetManager.saveCustomBrushesList(this@ImageEditorActivity, all)
                     }
                 }
-                annotationOverlayView.activeShape?.let { s ->
-                    s.strokeWidth = px
-                    annotationOverlayView.invalidate()
+                if (fromUser) annotationOverlayView.updateControlEdit {
+                    annotationOverlayView.activeShape?.strokeWidth = annotationOverlayView.viewLengthToBase(px)
                 }
                 label.text = "${getString(R.string.editor_markup_stroke_width)}: ${valDp.toInt()}dp"
-                val previewSize = px.toInt().coerceIn(4, 28)
-                dotPreview.layoutParams = LinearLayout.LayoutParams(previewSize, previewSize).apply {
-                    marginEnd = (8 * density).toInt()
-                }
             }
         }
 
-        sliderContainer.addView(dotPreview)
+        slider.id = View.generateViewId()
+        label.labelFor = slider.id
         sliderContainer.addView(label)
         sliderContainer.addView(slider)
 
@@ -2024,40 +2225,49 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
     private fun addColorPalette(onColorChanged: ((Int) -> Unit)? = null) {
         val density = resources.displayMetrics.density
         val colors = listOf(
-            Color.parseColor("#F44336"), // Red
-            Color.WHITE,
-            Color.BLACK,
-            Color.parseColor("#FFEB3B"), // Yellow
-            Color.parseColor("#2196F3"), // Blue
-            Color.parseColor("#4CAF50"), // Green
+            Color.parseColor("#F44336") to R.string.markup_color_red,
+            Color.WHITE to R.string.markup_color_white,
+            Color.BLACK to R.string.markup_color_black,
+            Color.parseColor("#FFEB3B") to R.string.markup_color_yellow,
+            Color.parseColor("#2196F3") to R.string.markup_color_blue,
+            Color.parseColor("#4CAF50") to R.string.markup_color_green,
         )
         val paletteContainer = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(8, 0, 8, 0)
         }
 
         val cards = mutableListOf<Pair<Int, MaterialCardView>>()
+        val selectedColor = when (annotationOverlayView.activeTool) {
+            MarkupTool.SHAPES -> annotationOverlayView.activeShape?.color
+            MarkupTool.TEXT -> annotationOverlayView.activeText?.color
+            else -> null
+        } ?: annotationOverlayView.activeColor
 
-        colors.forEach { c ->
+        colors.forEach { (c, label) ->
             val card = MaterialCardView(this).apply {
-                radius = 14f * density
+                radius = 24f * density
                 cardElevation = 0f
-                strokeWidth = if (c == annotationOverlayView.activeColor) (2.5f * density).toInt() else 0
-                strokeColor = Color.parseColor("#A8C7FA")
+                strokeWidth = if (c == selectedColor) (3f * density).toInt() else if (c == Color.BLACK) (1.5f * density).toInt().coerceAtLeast(1) else 0
+                strokeColor = if (c == selectedColor) MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary) else Color.WHITE
                 setCardBackgroundColor(c)
-                val size = (28f * density).toInt()
+                val size = (48f * density).toInt()
                 val lp = LinearLayout.LayoutParams(size, size).apply {
-                    setMargins(6, 0, 6, 0)
+                    marginEnd = (2 * density).toInt()
                 }
                 layoutParams = lp
                 isClickable = true
+                isFocusable = true
+                isSelected = c == selectedColor
+                contentDescription = getString(label)
                 setOnClickListener {
                     annotationOverlayView.activeColor = c
                     onColorChanged?.invoke(c)
                     // Update selection borders on existing cards in place without duplicating palette
                     cards.forEach { (cardColor, cardView) ->
-                        cardView.strokeWidth = if (cardColor == c) (2.5f * density).toInt() else 0
+                        cardView.strokeWidth = if (cardColor == c) (3f * density).toInt() else if (cardColor == Color.BLACK) (1.5f * density).toInt().coerceAtLeast(1) else 0
+                        cardView.strokeColor = if (cardColor == c) MaterialColors.getColor(cardView, androidx.appcompat.R.attr.colorPrimary) else Color.WHITE
+                        cardView.isSelected = cardColor == c
                     }
                 }
             }
@@ -2085,86 +2295,173 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             .setTitle(R.string.editor_markup_text)
             .setView(container)
             .setNegativeButton(R.string.cancel) { _, _ ->
-                if (textItem.text.isBlank()) {
-                    annotationOverlayView.undo()
-                }
+                annotationOverlayView.discardEmptyText(textItem)
             }
+            .setOnCancelListener { annotationOverlayView.discardEmptyText(textItem) }
             .setPositiveButton(android.R.string.ok) { _, _ ->
                 val str = input.text?.toString()?.trim() ?: ""
-                if (str.isNotBlank()) {
-                    textItem.text = str
-                    annotationOverlayView.invalidate()
-                    annotationOverlayView.onAnnotationChanged?.invoke()
-                } else {
-                    annotationOverlayView.undo()
-                }
+                annotationOverlayView.editText(textItem, str)
             }
             .show()
     }
 
+    /** Debug builds may provide a non-blocking, instrumentation-controlled gate.
+     * Release and AOSP sources contain no gate implementation or installable callback.
+     */
+    private suspend fun awaitRefreshTestGate(bitmap: Bitmap) {
+        if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE == 0) return
+        val gateClass = try {
+            Class.forName("org.lineageos.glimpse.testing.EditorRefreshTestGate")
+        } catch (_: ClassNotFoundException) {
+            return
+        }
+        val gate = gateClass.getMethod("onCandidate", Bitmap::class.java).invoke(null, bitmap) as? Deferred<*>
+            ?: return
+        // Keep the worker suspended until the test releases it, including after
+        // cancellation, so the cancellation/publication race is deterministic.
+        withContext(NonCancellable) { gate.await() }
+    }
+
     /** Rebuild the displayed (rotated + flipped + filtered + adjusted) bitmap on the crop view. */
     private fun refreshBaseBitmap(debounceMs: Long = 0) {
+        if (encodingFrame != null) {
+            refreshAfterEncoding = true
+            return
+        }
         val bmp = baseBitmap ?: return
         refreshJob?.cancel()
         refreshJob = lifecycleScope.launch {
-            if (debounceMs > 0) {
-                delay(debounceMs)
+            var produced: Bitmap? = null
+            var published = false
+            try {
+                if (debounceMs > 0) {
+                    delay(debounceMs)
+                }
+                val degrees = rotation.toFloat() + fineRotation
+                val flipped = isFlippedHorizontal
+                val filter = currentFilter
+                val adjustments = adjustParameters
+                val display = withContext(Dispatchers.Default) {
+                    // bmp is borrowed; every distinct working bitmap is owned here
+                    // until it is handed to the UI, even on cancellation.
+                    var working = bmp
+                    try {
+                        ensureActive()
+                        val (transformed, matrix) = transformBitmapAndMatrix(bmp, degrees, flipped)
+                        working = transformed
+                        ensureActive()
+                        val filtered = applyFilter(working, filter)
+                        if (filtered !== working) {
+                            if (working !== bmp) working.recycle()
+                            working = filtered
+                        }
+                        ensureActive()
+                        val adjusted = ImageAdjuster.applyAdjustments(working, adjustments)
+                        if (adjusted !== working) {
+                            if (working !== bmp) working.recycle()
+                            working = adjusted
+                        }
+                        produced = working
+                        awaitRefreshTestGate(working)
+                        ensureActive()
+                        working to matrix
+                    } finally {
+                        if (produced == null && working !== bmp && !working.isRecycled) working.recycle()
+                    }
+                }
+                ensureActive()
+                if (display.first.isRecycled) return@launch
+                val sameGeometry = baseToDisplayBitmap == display.second
+                baseToDisplayBitmap = display.second
+                if (!sameGeometry || !cropImageView.replaceBitmapPreservingFraming(display.first)) {
+                    cropImageView.setBitmap(display.first)
+                }
+                published = true
+                annotationOverlayView.invalidateMosaicCache()
+            } finally {
+                val orphan = produced
+                // If a callback failed after setBitmap, it is still owned by the view.
+                if (!published && orphan != null && orphan !== bmp &&
+                    cropImageView.getDisplayBitmap() !== orphan && !orphan.isRecycled) orphan.recycle()
             }
-            val displayed = withContext(Dispatchers.Default) {
-                ensureActive()
-                val transformed = transformBitmap(bmp, rotation.toFloat() + fineRotation, isFlippedHorizontal)
-                ensureActive()
-                val filtered = applyFilter(transformed, currentFilter)
-                if (filtered !== transformed && transformed !== bmp) transformed.recycle()
-                ensureActive()
-                val adjusted = ImageAdjuster.applyAdjustments(filtered, adjustParameters)
-                if (adjusted !== filtered && filtered !== bmp) filtered.recycle()
-                adjusted
-            }
-            cropImageView.setBitmap(displayed)
-            annotationOverlayView.invalidateMosaicCache()
+        }
+    }
+
+    private fun releaseEncodingFrame() {
+        encodingFrame = null
+        if (refreshAfterEncoding) {
+            refreshAfterEncoding = false
+            if (!isFinishing && !isDestroyed) refreshBaseBitmap()
         }
     }
 
     private fun onSave() {
-        val cropped = cropImageView.crop()
-        val result = if (cropped != null) {
-            cropped
-        } else {
-            val bmp = baseBitmap ?: return
-            val transformed = transformBitmap(bmp, rotation.toFloat() + fineRotation, isFlippedHorizontal)
-            val filtered = applyFilter(transformed, currentFilter)
-            if (filtered !== transformed && transformed !== bmp) transformed.recycle()
-            val adjusted = ImageAdjuster.applyAdjustments(filtered, adjustParameters)
-            if (adjusted !== filtered && filtered !== bmp) filtered.recycle()
-            adjusted
+        if (encodingFrame != null) return
+        val frame = editorFrame() ?: run {
+            val message = if (cropImageView.getDisplayBitmap() == null) R.string.editor_save_failed
+                else R.string.editor_crop_outside_image
+            Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+            return
         }
-        val finalResult = if (annotationOverlayView.hasAnnotations()) {
-            val canvasBmp = Bitmap.createBitmap(result.width, result.height, Bitmap.Config.ARGB_8888)
-            val canvas = Canvas(canvasBmp)
-            canvas.drawBitmap(result, 0f, 0f, null)
-            val targetRect = if (cropped != null) cropImageView.getCropRect() else cropImageView.getImageBounds()
-            annotationOverlayView.rasterize(canvas, targetRect, result)
-            if (result !== baseBitmap && result !== cropped) result.recycle()
-            canvasBmp
-        } else {
-            result
+        // Published bitmaps are never modified/recycled by the editor. Cancel an
+        // in-flight rebuild, pin this frame, and defer new publication until encoding
+        // completes. A crop/annotation output allocates only the output-sized bitmap.
+        if (refreshJob?.isActive == true) {
+            refreshAfterEncoding = true
+            refreshJob?.cancel()
         }
-
-        val watermarkedResult = cropImageView.watermarkText?.takeIf { it.isNotBlank() }?.let {
-            ImageToolbox.applyWatermark(finalResult, it)
-        } ?: finalResult
+        encodingFrame = frame
         showSaving()
-        lifecycleScope.launch {
-            val bytes = withContext(Dispatchers.Default) {
-                encode(watermarkedResult, sourceMimeType ?: "image/jpeg")
+        val snapshot = frame.crop
+        val watermarkedResult = try {
+            val result = if (annotationOverlayView.hasAnnotations()) {
+                val output = Bitmap.createBitmap(snapshot.outputWidth, snapshot.outputHeight, Bitmap.Config.ARGB_8888)
+                val canvas = Canvas(output)
+                canvas.drawBitmap(snapshot.bitmap, snapshot.source,
+                    android.graphics.Rect(0, 0, snapshot.outputWidth, snapshot.outputHeight), null)
+                annotationOverlayView.rasterize(canvas, frame.baseToOutput)
+                output
+            } else {
+                val source = snapshot.source
+                if (source.left == 0 && source.top == 0 && source.right == snapshot.bitmap.width &&
+                    source.bottom == snapshot.bitmap.height) snapshot.bitmap
+                else snapshot.createOutputBitmap()
             }
-            val behavior = PreferenceManager.getDefaultSharedPreferences(this@ImageEditorActivity)
-                .editSaveBehavior
-            when (behavior) {
-                EditSaveBehavior.ALWAYS_SAVE_AS_NEW -> saveAsNew(bytes)
-                EditSaveBehavior.ALWAYS_OVERWRITE -> overwrite(bytes)
-                EditSaveBehavior.ASK -> askAndSave(bytes)
+            val watermarked = cropImageView.watermarkText?.takeIf { it.isNotBlank() }?.let {
+                ImageToolbox.applyWatermark(result, it)
+            } ?: result
+            if (watermarked !== result && result !== snapshot.bitmap) result.recycle()
+            watermarked
+        } catch (error: OutOfMemoryError) {
+            releaseEncodingFrame()
+            showFailed()
+            return
+        } catch (error: Exception) {
+            releaseEncodingFrame()
+            showFailed()
+            return
+        }
+        lifecycleScope.launch {
+            try {
+                val bytes = withContext(Dispatchers.Default) {
+                    encode(watermarkedResult, sourceMimeType ?: "image/jpeg")
+                }
+                val behavior = PreferenceManager.getDefaultSharedPreferences(this@ImageEditorActivity)
+                    .editSaveBehavior
+                when (behavior) {
+                    EditSaveBehavior.ALWAYS_SAVE_AS_NEW -> saveAsNew(bytes)
+                    EditSaveBehavior.ALWAYS_OVERWRITE -> overwrite(bytes)
+                    EditSaveBehavior.ASK -> askAndSave(bytes)
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: OutOfMemoryError) {
+                showFailed()
+            } catch (error: Exception) {
+                showFailed()
+            } finally {
+                if (watermarkedResult !== snapshot.bitmap && !watermarkedResult.isRecycled) watermarkedResult.recycle()
+                releaseEncodingFrame()
             }
         }
     }
@@ -2284,7 +2581,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
 
     private fun askAndSave(bytes: ByteArray) {
         hideSaving()
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle(R.string.editor_save_dialog_title)
             .setMessage(null)
             .setPositiveButton(R.string.editor_save_overwrite) { _, _ ->
@@ -2296,18 +2593,20 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             .show()
     }
 
-    private fun overwrite(bytes: ByteArray) {
+    private fun overwrite(bytes: ByteArray, requestPermission: Boolean = true) {
         val uri = sourceUri ?: run { hideSaving(); return }
         lifecycleScope.launch {
             val written = withContext(Dispatchers.IO) {
                 runCatching {
-                    contentResolver.openOutputStream(uri, "wt")?.use { it.write(bytes) }
+                    val stream = contentResolver.openOutputStream(uri, "wt")
+                        ?: throw IllegalStateException("Cannot open source for writing")
+                    stream.use { it.write(bytes) }
                     true
                 }.getOrDefault(false)
             }
             if (written) {
-                finishWithSaved()
-            } else {
+                finishWithSaved(uri)
+            } else if (requestPermission) {
                 pendingOverwrite = bytes
                 try {
                     writeRequestContract.launch(contentResolver.createWriteRequest(uri))
@@ -2316,16 +2615,18 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                     hideSaving()
                     showFailed()
                 }
+            } else {
+                showFailed()
             }
         }
     }
 
     private fun saveAsNew(bytes: ByteArray) {
         lifecycleScope.launch {
-            val ok = withContext(Dispatchers.IO) {
-                runCatching { writeToMediaStore(bytes) }.isSuccess
+            val savedUri = withContext(Dispatchers.IO) {
+                runCatching { writeToMediaStore(bytes) }.getOrNull()
             }
-            if (ok) finishWithSaved() else showFailed()
+            if (savedUri != null) finishWithSaved(savedUri) else showFailed()
         }
     }
 
@@ -2359,10 +2660,10 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         hideSaving()
         Toast.makeText(this, R.string.editor_save_failed, Toast.LENGTH_LONG).show()
     }
-    private fun finishWithSaved() {
+    private fun finishWithSaved(savedUri: Uri? = sourceUri) {
         hideSaving()
         Toast.makeText(this, R.string.editor_saved, Toast.LENGTH_SHORT).show()
-        setResult(Activity.RESULT_OK)
+        setResult(Activity.RESULT_OK, Intent().setData(savedUri))
         finish()
     }
 
@@ -2391,35 +2692,48 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             android.graphics.BitmapFactory.decodeStream(it, null, opts)
         } ?: return null
 
-        val rotationDegrees = when (exifOrientation) {
-            ExifInterface.ORIENTATION_ROTATE_90 -> 90f
-            ExifInterface.ORIENTATION_ROTATE_180 -> 180f
-            ExifInterface.ORIENTATION_ROTATE_270 -> 270f
-            else -> 0f
+        val orientationMatrix = when (exifOrientation) {
+            ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> floatArrayOf(-1f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f)
+            ExifInterface.ORIENTATION_ROTATE_180 -> floatArrayOf(-1f, 0f, 0f, 0f, -1f, 0f, 0f, 0f, 1f)
+            ExifInterface.ORIENTATION_FLIP_VERTICAL -> floatArrayOf(1f, 0f, 0f, 0f, -1f, 0f, 0f, 0f, 1f)
+            ExifInterface.ORIENTATION_TRANSPOSE -> floatArrayOf(0f, 1f, 0f, 1f, 0f, 0f, 0f, 0f, 1f)
+            ExifInterface.ORIENTATION_ROTATE_90 -> floatArrayOf(0f, -1f, 0f, 1f, 0f, 0f, 0f, 0f, 1f)
+            ExifInterface.ORIENTATION_TRANSVERSE -> floatArrayOf(0f, -1f, 0f, -1f, 0f, 0f, 0f, 0f, 1f)
+            ExifInterface.ORIENTATION_ROTATE_270 -> floatArrayOf(0f, 1f, 0f, -1f, 0f, 0f, 0f, 0f, 1f)
+            else -> null
         }
-        val flipHorizontal = exifOrientation == ExifInterface.ORIENTATION_FLIP_HORIZONTAL ||
-                exifOrientation == ExifInterface.ORIENTATION_FLIP_VERTICAL
-
-        if (rotationDegrees != 0f || flipHorizontal) {
-            val matrix = Matrix().apply {
-                if (rotationDegrees != 0f) postRotate(rotationDegrees)
-                if (flipHorizontal) postScale(-1f, 1f)
-            }
-            val rotated = Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, matrix, true)
-            if (rotated !== decoded) decoded.recycle()
-            rotated
-        } else {
-            decoded
+        if (orientationMatrix == null) decoded else {
+            val normalized = renderBitmapTransform(decoded, Matrix().apply { setValues(orientationMatrix) }).first
+            if (normalized !== decoded) decoded.recycle()
+            normalized
         }
     }.getOrNull()
 
-    private fun transformBitmap(src: Bitmap, degrees: Float, flipHorizontal: Boolean): Bitmap {
-        if (abs(degrees % 360f) < 0.01f && !flipHorizontal) return src
-        val m = Matrix().apply {
+    /** Returns pixels and the exact matrix used to draw them, including translated bounds. */
+    private fun transformBitmapAndMatrix(src: Bitmap, degrees: Float, flipHorizontal: Boolean): Pair<Bitmap, Matrix> {
+        if (abs(degrees % 360f) < 0.01f && !flipHorizontal) return src to Matrix()
+        val matrix = Matrix().apply {
             if (abs(degrees % 360f) >= 0.01f) postRotate(degrees)
             if (flipHorizontal) postScale(-1f, 1f)
         }
-        return Bitmap.createBitmap(src, 0, 0, src.width, src.height, m, true)
+        return renderBitmapTransform(src, matrix)
+    }
+
+    /** Bounds and pixels are derived from the very same affine matrix. */
+    private fun renderBitmapTransform(src: Bitmap, matrix: Matrix): Pair<Bitmap, Matrix> {
+        val bounds = RectF(0f, 0f, src.width.toFloat(), src.height.toFloat())
+        matrix.mapRect(bounds)
+        matrix.postTranslate(-bounds.left, -bounds.top)
+        fun pixelExtent(value: Float): Int {
+            val nearest = kotlin.math.round(value)
+            return (if (abs(value - nearest) < 0.0001f) nearest.toInt()
+                else kotlin.math.ceil(value.toDouble()).toInt()).coerceAtLeast(1)
+        }
+        val w = pixelExtent(bounds.width())
+        val h = pixelExtent(bounds.height())
+        val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        Canvas(bitmap).drawBitmap(src, matrix, Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG))
+        return bitmap to matrix
     }
 
     private fun applyFilter(src: Bitmap, filter: ImageFilter): Bitmap {
