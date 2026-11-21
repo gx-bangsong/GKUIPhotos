@@ -413,6 +413,26 @@ class SelectionSheetInstrumentedTest {
 
     @Test fun selectionScrollWindowDiagnostics() {
         val trace = StringBuffer()
+        fun event(message: String, withStack: Boolean = false) {
+            val error = if (withStack) Throwable("Selection scroll diagnostic") else null
+            android.util.Log.d("SelectionScrollTrace", message, error)
+            trace.append("event t=${SystemClock.uptimeMillis()} $message\n")
+            if (error != null) trace.append(android.util.Log.getStackTraceString(error)).append('\n')
+        }
+        val dataProbe = object : RecyclerView.AdapterDataObserver() {
+            override fun onChanged() = event("adapter onChanged", true)
+            override fun onItemRangeChanged(positionStart: Int, itemCount: Int) =
+                event("adapter changed start=$positionStart count=$itemCount", true)
+            override fun onItemRangeChanged(positionStart: Int, itemCount: Int, payload: Any?) =
+                event("adapter changed start=$positionStart count=$itemCount payloadType=${payload?.javaClass?.name}", true)
+            override fun onItemRangeInserted(positionStart: Int, itemCount: Int) =
+                event("adapter inserted start=$positionStart count=$itemCount", true)
+            override fun onItemRangeRemoved(positionStart: Int, itemCount: Int) =
+                event("adapter removed start=$positionStart count=$itemCount", true)
+            override fun onItemRangeMoved(fromPosition: Int, toPosition: Int, itemCount: Int) =
+                event("adapter moved from=$fromPosition to=$toPosition count=$itemCount", true)
+        }
+        var observedAdapter: RecyclerView.Adapter<*>? = null
         fun sampleOnMain(label: String) {
                 val grid = requiredView("recyclerView") as RecyclerView
                 val lm = grid.layoutManager as androidx.recyclerview.widget.GridLayoutManager
@@ -447,7 +467,21 @@ class SelectionSheetInstrumentedTest {
                     trace.append("grid-disallow=$disallowIntercept\n")
                 }
             }
-            instrumentation.runOnMainSync { grid.addOnItemTouchListener(touchProbe); grid.scrollBy(0, 200) }
+            instrumentation.runOnMainSync {
+                val adapter = requireNotNull(grid.adapter)
+                observedAdapter = adapter
+                adapter.registerAdapterDataObserver(dataProbe)
+                grid.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+                    override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
+                        if (dy != 0) event("onScrolled dx=$dx dy=$dy state=${rv.scrollState} offset=${rv.computeVerticalScrollOffset()}", true)
+                    }
+                    override fun onScrollStateChanged(rv: RecyclerView, newState: Int) {
+                        event("scrollState=$newState offset=${rv.computeVerticalScrollOffset()}")
+                    }
+                })
+                grid.addOnItemTouchListener(touchProbe)
+                grid.scrollBy(0, 200)
+            }
             device.waitForIdle(1000); sample("before-selection-programmatic-scroll")
             instrumentation.runOnMainSync { grid.scrollToPosition(0) }
             device.waitForIdle(1000); sample("before-selection-reset")
@@ -456,16 +490,17 @@ class SelectionSheetInstrumentedTest {
             device.waitForIdle(1000); sample("after-long-press")
             val frames = java.util.concurrent.CountDownLatch(1)
             instrumentation.runOnMainSync {
-                grid.addOnScrollListener(object : RecyclerView.OnScrollListener() {
-                    override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
-                        trace.append("onScrolled dx=$dx dy=$dy offset=${rv.computeVerticalScrollOffset()}\n")
-                    }
-                })
+                var previousLayoutOffset = grid.computeVerticalScrollOffset()
                 grid.addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
-                    trace.append("layout old=$oldLeft,$oldTop,$oldRight,$oldBottom new=$left,$top,$right,$bottom\n")
+                    val offset = grid.computeVerticalScrollOffset()
+                    if (offset != previousLayoutOffset) {
+                        event("layout offset=$previousLayoutOffset->$offset old=$oldLeft,$oldTop,$oldRight,$oldBottom new=$left,$top,$right,$bottom", true)
+                        previousLayoutOffset = offset
+                    }
                 }
                 sampleOnMain("immediately-before-scroll")
                 grid.scrollBy(0, 200)
+                previousLayoutOffset = grid.computeVerticalScrollOffset()
                 sampleOnMain("immediately-after-scroll")
                 grid.postOnAnimation {
                     sampleOnMain("first-frame-after-scroll")
@@ -494,6 +529,7 @@ class SelectionSheetInstrumentedTest {
             }
             capture("selection-sheet-scroll-diagnostics")
         } finally {
+            instrumentation.runOnMainSync { observedAdapter?.unregisterAdapterDataObserver(dataProbe) }
             val file = File(context.cacheDir, "selection-trace-window-scroll.txt")
             file.writeText(trace.toString())
             pendingCaptures.add(file to "text/plain")
