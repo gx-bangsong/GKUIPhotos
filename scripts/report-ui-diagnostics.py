@@ -48,6 +48,11 @@ if args.tests:
             for failure in list(case.findall('failure')) + list(case.findall('error')):
                 msg = failure.get('message') or (failure.text or '').split('\n', 1)[0]
                 error(f"Test {case.get('classname', '')}.{case.get('name', '')}: {msg}")
+                # Include only local test/application frames, not full logs or URIs.
+                frames = [line.strip() for line in (failure.text or '').splitlines()
+                          if 'org.lineageos.glimpse.' in line and ('at ' in line or 'Caused by' in line)]
+                if frames:
+                    error("Test stack: " + " | ".join(frames[:8]))
                 count += 1
 if Path(args.log).exists():
     for line in Path(args.log).read_text(errors='replace').splitlines():
