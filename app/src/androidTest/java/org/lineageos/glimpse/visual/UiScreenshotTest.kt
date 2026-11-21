@@ -1387,30 +1387,39 @@ class UiScreenshotTest {
         assumeTrue("Collage divider changes are candidate-only", isCandidate())
         collage(4)
         val view = activity!!.findViewById<CollageView>(R.id.collagePreview)
-        val splitId = context.resources.getIdentifier("collageSplit", "id", context.packageName)
-        assertTrue("Missing divider control", splitId != 0)
-        val bounds = Rect()
+        val points = IntArray(4)
+        var before = 0f
         instrumentation.runOnMainSync {
             val save = activity!!.findViewById<View>(R.id.collageSave)
             val root = activity!!.findViewById<View>(R.id.collageRoot)
             val saveLoc = IntArray(2); val rootLoc = IntArray(2)
             save.getLocationOnScreen(saveLoc); root.getLocationOnScreen(rootLoc)
             assertTrue("Save not anchored near bottom", saveLoc[1] + save.height > rootLoc[1] + root.height * .85f)
-            val layoutModeId = context.resources.getIdentifier("collageModeLayout", "id", context.packageName)
-            activity!!.findViewById<View>(layoutModeId).performClick()
-            activity!!.findViewById<LinearLayout>(R.id.collageLayoutCards).getChildAt(1).performClick()
-            val slider = activity!!.findViewById<Slider>(splitId)
-            var parent = slider.parent
-            while (parent != null && parent !is ScrollView) parent = parent.parent
-            (parent as ScrollView).scrollTo(0, (parent as ScrollView).getChildAt(0).height)
-            assertTrue(slider.getGlobalVisibleRect(bounds))
+            val cards = activity!!.findViewById<LinearLayout>(R.id.collageLayoutCards)
+            assertTrue("Second collage layout is missing", cards.childCount > 1)
+            assertTrue("Could not select the second layout", cards.getChildAt(1).performClick())
+            assertEquals(1, view.layout)
+            val loc = IntArray(2); view.getLocationOnScreen(loc)
+            val edge = minOf(view.width, view.height)
+            assertTrue("Collage preview has no size", edge > 0)
+            val left = loc[0] + (view.width - edge) / 2
+            val top = loc[1] + (view.height - edge) / 2
+            before = CollageView::class.java.getDeclaredField("split").apply { isAccessible = true }.getFloat(view)
+            points[0] = left + (edge * before).toInt(); points[1] = top + edge / 4
+            points[2] = left + edge / 4; points[3] = points[1]
         }
         device.waitForIdle()
-        assertTrue(device.swipe(bounds.centerX(), bounds.centerY(), bounds.left + bounds.width() / 4, bounds.centerY(), 25))
+        // The divider is drawn in the preview and manipulated directly, not a Slider.
+        assertTrue("Divider swipe could not be injected", device.swipe(points[0], points[1], points[2], points[3], 25))
+        device.waitForIdle()
         instrumentation.runOnMainSync {
             val split = CollageView::class.java.getDeclaredField("split").apply { isAccessible = true }.getFloat(view)
-            assertTrue("Divider slider did not change proportion", split < .48f)
+            assertTrue("Divider drag did not change proportion", split < .48f && split < before - .05f)
             assertEquals(1, view.layout)
+            val geometry = Class.forName("org.lineageos.glimpse.collage.CollageLayoutKt")
+                .getDeclaredMethod("collageCells", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType, Float::class.javaPrimitiveType)
+                .apply { isAccessible = true }
+            assertTrue("Divider drag did not change layout geometry", geometry.invoke(null, 4, view.layout, before) != geometry.invoke(null, 4, view.layout, split))
         }
     }
 

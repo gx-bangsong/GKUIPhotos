@@ -99,7 +99,12 @@ jobs:
         run: |
           rm -rf app/src/main
           git archive 772071a44340323e7e43efc0b63471a8ae397244 app/src/main | tar -x
-          git diff --exit-code 772071a44340323e7e43efc0b63471a8ae397244 -- app/src/main
+          # Compare the restored worktree using the baseline's own index. The
+          # candidate index omits baseline-only paths and reports false deletions.
+          baseline_index="$(mktemp)"
+          trap 'rm -f "$baseline_index"' EXIT
+          GIT_INDEX_FILE="$baseline_index" git read-tree 772071a44340323e7e43efc0b63471a8ae397244
+          GIT_INDEX_FILE="$baseline_index" git diff --exit-code 772071a44340323e7e43efc0b63471a8ae397244 -- app/src/main
       - uses: actions/setup-java@v5
         with:
           distribution: zulu
