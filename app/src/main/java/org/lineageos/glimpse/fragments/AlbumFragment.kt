@@ -144,6 +144,8 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
     private var selectionParentAppBar: View? = null
     private var parentAppBarWasVisible = false
     private var bottomInset = 0
+    // TEMPORARY DEBUG-ONLY CAUSAL EXPERIMENT: removed after the comparison run.
+    private var diagnosticFixedBottom: Int? = null
     private var selectionPreDrawListener: android.view.ViewTreeObserver.OnPreDrawListener? = null
     private var selectionBackCallback: OnBackPressedCallback? = null
     private val selectionTopBar by getViewProperty<View>(R.id.selectionTopBar)
@@ -900,10 +902,26 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
                 (gridBounds.bottom - sheetBounds.top).coerceAtLeast(0) else 0
         } else 0
         val top = if (selectionActive) selectionTopBar.height else 0
-        val bottom = maxOf(bottomInset, covered)
-        // RecyclerView requests layout on setPadding even when values are the
-        // same; avoid an endless pre-draw/layout loop while selection is active.
+        val originalBottom = maxOf(bottomInset, covered)
+        val debugExperiment = (requireContext().applicationInfo.flags and
+            android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        val bottom = if (debugExperiment && selectionActive) {
+            // Hold one measured value for the entire selection session. The
+            // primary row excludes the inset; add it exactly once, as peek does.
+            val fixed = diagnosticFixedBottom
+            if (fixed != null) fixed else {
+                if (!selectionSheet.isVisible || !selectionPrimary.isLaidOut || selectionPrimary.height <= 0) return
+                val height = selectionPrimary.height +
+                    (if (selectionSheetHint.isVisible) selectionSheetHint.height else 0) +
+                    (if (selectionSheetReason.isVisible) selectionSheetReason.height else 0) + bottomInset
+                diagnosticFixedBottom = height
+                height
+            }
+        } else originalBottom
         if (recyclerView.paddingTop != top || recyclerView.paddingBottom != bottom) {
+            if (debugExperiment) {
+                Log.d("SelectionPaddingExperiment", "active=$selectionActive oldTop=${recyclerView.paddingTop} oldBottom=${recyclerView.paddingBottom} top=$top fixedBottom=$bottom originalBottom=$originalBottom covered=$covered inset=$bottomInset gridHeight=${recyclerView.height} sheetTop=${selectionSheet.top} sheetHeight=${selectionSheet.height} sheetLaidOut=${selectionSheet.isLaidOut} rowHeight=${selectionPrimary.height}", Throwable("Padding changed"))
+            }
             recyclerView.updatePadding(top = top, bottom = bottom)
         }
     }
@@ -911,6 +929,7 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
     private fun endSelectionMode() {
         if (!selectionActive) return
         selectionActive = false
+        diagnosticFixedBottom = null
         selectionBackCallback?.isEnabled = false
         selectionTopBar.isVisible = false
         selectionSheet.isVisible = false
