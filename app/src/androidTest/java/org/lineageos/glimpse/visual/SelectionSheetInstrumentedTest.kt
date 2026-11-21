@@ -264,6 +264,26 @@ class SelectionSheetInstrumentedTest {
         }
     }
 
+    private fun assertSelectionGridPaddingMatchesSheet() {
+        val grid = requiredView("recyclerView") as RecyclerView
+        val sheet = requiredView("selectionSheet")
+        val insets = requireNotNull(ViewCompat.getRootWindowInsets(sheet)).getInsets(
+            WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+        val behavior = BottomSheetBehavior.from(sheet)
+        val covered = if (behavior.state == BottomSheetBehavior.STATE_COLLAPSED)
+            minOf(sheet.height, behavior.peekHeight) else sheet.height
+        assertEquals("Grid padding must follow the measured sheet", maxOf(insets.bottom, covered), grid.paddingBottom)
+        assertEquals("Grid top padding must follow selection bar", requiredView("selectionTopBar").height, grid.paddingTop)
+    }
+
+    private fun assertSelectionGridPaddingRestored() {
+        val grid = requiredView("recyclerView") as RecyclerView
+        val inset = requireNotNull(ViewCompat.getRootWindowInsets(grid)).getInsets(
+            WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()).bottom
+        assertEquals("Grid bottom padding must restore the system inset", inset, grid.paddingBottom)
+        assertEquals("Grid top padding must reset", 0, grid.paddingTop)
+    }
+
     @Test fun selectionSheetNavigationInsets() {
         val overlays = device.executeShellCommand("cmd overlay list --user current")
         val enabled = overlays.lineSequence().map { it.trim() }
@@ -325,6 +345,7 @@ class SelectionSheetInstrumentedTest {
                     assertEquals("$mode sheet margin duplicates inset", 0, (sheet.layoutParams as ViewGroup.MarginLayoutParams).bottomMargin)
                     assertEquals("$mode content does not own inset", nav, requiredView("selectionSheetContent").paddingBottom)
                     val behavior = BottomSheetBehavior.from(sheet)
+                    assertSelectionGridPaddingMatchesSheet()
                     assertEquals(BottomSheetBehavior.STATE_COLLAPSED, behavior.state)
                     assertTrue("$mode peek is zero", behavior.peekHeight > 0)
                     val root = sheet.rootView; val rootPos = IntArray(2); root.getLocationOnScreen(rootPos)
@@ -370,6 +391,7 @@ class SelectionSheetInstrumentedTest {
                     assertTrue("$mode sheet remained visible after cancel", !requiredView("selectionSheet").isShown)
                     assertTrue("$mode selection toolbar remained visible after cancel", !requiredView("selectionTopBar").isShown)
                     assertTrue("$mode tracker remained selected after cancel", !(grid.adapter as ThumbnailAdapter).selectionTracker!!.hasSelection())
+                    assertSelectionGridPaddingRestored()
                 }
                 capture("selection-sheet-nav-$mode-closed")
             }
@@ -546,6 +568,7 @@ class SelectionSheetInstrumentedTest {
         device.waitForIdle()
         // Capture even when an assertion fails so the actual interaction can be diagnosed.
         capture("selection-sheet-initial")
+        var oneSelectionSheetHeight = 0
         instrumentation.runOnMainSync {
             val pill = requiredView("selectionPill") as ViewGroup
             val close = requiredView("selectionCancel")
@@ -567,6 +590,9 @@ class SelectionSheetInstrumentedTest {
             val behavior = BottomSheetBehavior.from(sheet)
             assertEquals(BottomSheetBehavior.STATE_COLLAPSED, behavior.state)
             assertTrue("Sheet peek must be positive", behavior.peekHeight > 0)
+            assertSelectionGridPaddingMatchesSheet()
+            assertTrue("Single selection should show the count reason", requiredView("selectionSheetReason").isShown)
+            oneSelectionSheetHeight = sheet.height
             val navInset = ViewCompat.getRootWindowInsets(sheet)!!.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
             assertEquals("Sheet margin must not duplicate the navigation inset", 0,
                 (sheet.layoutParams as ViewGroup.MarginLayoutParams).bottomMargin)
@@ -709,6 +735,9 @@ class SelectionSheetInstrumentedTest {
             assertEquals(java.text.NumberFormat.getIntegerInstance().format(2),
                 (requiredView("selectionCount") as TextView).text.toString())
             assertTrue("Sheet disappeared after another selection", requiredView("selectionSheet").isShown)
+            assertTrue("Count reason should disappear with two photos", !requiredView("selectionSheetReason").isShown)
+            assertTrue("Sheet should shrink when count reason disappears", requiredView("selectionSheet").height < oneSelectionSheetHeight)
+            assertSelectionGridPaddingMatchesSheet()
         }
         capture("selection-sheet-two")
         try {
@@ -718,6 +747,7 @@ class SelectionSheetInstrumentedTest {
                 assertEquals(java.text.NumberFormat.getIntegerInstance().format(2),
                     (requiredView("selectionCount") as TextView).text.toString())
                 assertTrue("Rotated peek must remain positive", BottomSheetBehavior.from(requiredView("selectionSheet")).peekHeight > 0)
+                assertSelectionGridPaddingMatchesSheet()
             }
             capture("selection-sheet-landscape")
         } finally {
@@ -831,6 +861,7 @@ class SelectionSheetInstrumentedTest {
             assertTrue("Sheet still visible after cancel", !requiredView("selectionSheet").isShown)
             assertTrue("Selection toolbar still visible after cancel", !requiredView("selectionTopBar").isShown)
             assertTrue("Ordinary navigation not restored", requiredView("navigationBarView").isShown)
+            assertSelectionGridPaddingRestored()
         }
         capture("selection-sheet-closed")
     }
