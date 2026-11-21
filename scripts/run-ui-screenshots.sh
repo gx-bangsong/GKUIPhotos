@@ -44,18 +44,8 @@ if [[ "$UI_VERSION" == candidate ]]; then
   adb push "$font" /sdcard/Android/data/org.lineageos.glimpse.dev/files/markup-test-source-sans.otf
 fi
 set +e
-# TEMPORARY STABILITY RUN: three independent complete selection-class executions.
-# Other instrumentation classes are not run in this scoped measurement.
-status=0
-: > "${RUNNER_TEMP}/ui-gradle.log"
-for run in 1 2 3; do
-  echo "Selection repetition $run of 3 ($UI_MODE)" | tee -a "${RUNNER_TEMP}/ui-gradle.log"
-  ./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=org.lineageos.glimpse.visual.SelectionSheetInstrumentedTest -Pandroid.testInstrumentationRunnerArguments.expectedTheme="$UI_MODE" -Pandroid.testInstrumentationRunnerArguments.uiVersion="$UI_VERSION" -Pandroid.testInstrumentationRunnerArguments.sourceSha="$(git rev-parse HEAD)" --stacktrace 2>&1 | tee -a "${RUNNER_TEMP}/ui-gradle.log"
-  run_status=${PIPESTATUS[0]}
-  echo "exit=$run_status" > "ui-evidence/selection-trace-repeat-$run.txt"
-  find app/build/outputs/androidTest-results/connected -name '*.xml' -type f -exec cat {} + >> "ui-evidence/selection-trace-repeat-$run.txt"
-  if (( run_status != 0 )); then status=1; fi
-done
+./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.expectedTheme="$UI_MODE" -Pandroid.testInstrumentationRunnerArguments.uiVersion="$UI_VERSION" -Pandroid.testInstrumentationRunnerArguments.sourceSha="$(git rev-parse HEAD)" --stacktrace 2>&1 | tee "${RUNNER_TEMP}/ui-gradle.log"
+status=${PIPESTATUS[0]}
 set -e
 python3 scripts/ui-safe-tail.py "${RUNNER_TEMP}/ui-gradle.log" > ui-evidence/failure-tail.txt
 if (( status != 0 )); then
@@ -74,8 +64,7 @@ if (( pull_status != 0 )); then
   echo 'Screenshot collection from emulator failed.' >> ui-evidence/failure-tail.txt
   status=1
 fi
-execution_scope=selection_only
-if (( status == 0 )) && [[ "$execution_scope" == full ]]; then
+if (( status == 0 )); then
   for name in markup-idle markup-idle-zh markup-shapes markup-density markup-brush markup-brush-scroll markup-brush-small markup-brush-small-scroll markup-mosaic markup-text-selected markup-text-black markup-sticker collage-two collage-four collage-four-layouts collage-six collage-selected collage-small collage-landscape markup-brush-zh markup-shapes-zh markup-text-zh markup-mosaic-zh markup-sticker-zh collage-four-zh collage-four-layouts-zh collage-two-layouts collage-six-layouts; do
     for extension in png xml; do
       if [[ ! -s "ui-evidence/$name.$extension" ]]; then
@@ -86,7 +75,7 @@ if (( status == 0 )) && [[ "$execution_scope" == full ]]; then
     done
   done
 fi
-if (( status == 0 )) && [[ "$execution_scope" == full ]] && [[ "$UI_VERSION" == candidate ]]; then
+if (( status == 0 )) && [[ "$UI_VERSION" == candidate ]]; then
   for name in markup-dock-text-edit markup-dock-text-color markup-dock-text-background markup-dock-brush markup-dock-shapes markup-dock-mosaic-effect markup-dock-mosaic-width markup-dock-sticker markup-dock-text-restored markup-dock-non-markup markup-dock-categories markup-dock-undo markup-dock-redo markup-dock-close markup-dock-done markup-dock-narrow-large-font; do
     for extension in png xml; do
       if [[ ! -s "ui-evidence/$name.$extension" ]]; then
