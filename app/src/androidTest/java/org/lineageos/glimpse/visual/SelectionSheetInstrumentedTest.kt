@@ -62,124 +62,6 @@ class SelectionSheetInstrumentedTest {
     private var activity: Activity? = null
     private var oldDialogPreference = false
     private val pendingCaptures = mutableListOf<Pair<File, String>>()
-    private var frameProbe: SelectionFrameProbe? = null
-
-    // Test-only observers; never replace the application's insets listener.
-    private inner class SelectionFrameProbe(private val grid: RecyclerView, private val name: String) {
-        private val log = StringBuffer()
-        private val layoutListeners = mutableListOf<Pair<View, View.OnLayoutChangeListener>>()
-        private val root = activity!!.window.decorView
-        private val appBars = mutableListOf<View>()
-        private var lastY: Float? = null
-        private var lastAction = -1
-        private var adapter: RecyclerView.Adapter<*>? = null
-        private var originalCallback: android.view.Window.Callback? = null
-        private var wrappedCallback: android.view.Window.Callback? = null
-        private var frame = 0
-        private fun record(text: String, stack: Boolean = false) {
-            val error = if (stack) Throwable("Selection frame diagnostic") else null
-            if (stack) android.util.Log.d("SelectionScrollTrace", text, error)
-            log.append("t=${SystemClock.uptimeMillis()} $text\n")
-            if (error != null) log.append(android.util.Log.getStackTraceString(error)).append('\n')
-        }
-        private fun bounds(v: View) = "${v.left},${v.top},${v.right},${v.bottom};padding=${v.paddingLeft},${v.paddingTop},${v.paddingRight},${v.paddingBottom}"
-        private fun label(v: View) = "${v.javaClass.simpleName}#${v.id}"
-        private fun collectBars(v: View) {
-            if (v is com.google.android.material.appbar.AppBarLayout) appBars.add(v)
-            if (v is ViewGroup) for (i in 0 until v.childCount) collectBars(v.getChildAt(i))
-        }
-        private val data = object : RecyclerView.AdapterDataObserver() {
-            override fun onChanged() = record("adapter onChanged", true)
-            override fun onItemRangeChanged(positionStart: Int, itemCount: Int) = record("adapter changed start=$positionStart count=$itemCount", true)
-            override fun onItemRangeChanged(positionStart: Int, itemCount: Int, payload: Any?) = record("adapter changed start=$positionStart count=$itemCount payloadType=${payload?.javaClass?.name}", true)
-            override fun onItemRangeInserted(positionStart: Int, itemCount: Int) = record("adapter inserted start=$positionStart count=$itemCount", true)
-            override fun onItemRangeRemoved(positionStart: Int, itemCount: Int) = record("adapter removed start=$positionStart count=$itemCount", true)
-            override fun onItemRangeMoved(fromPosition: Int, toPosition: Int, itemCount: Int) = record("adapter moved from=$fromPosition to=$toPosition count=$itemCount", true)
-        }
-        private val scroll = object : RecyclerView.OnScrollListener() {
-            override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
-                if (dy != 0) record("scroll dx=$dx dy=$dy state=${rv.scrollState} offset=${rv.computeVerticalScrollOffset()} lastAction=$lastAction lastY=$lastY gridHeight=${rv.height}", true)
-            }
-            override fun onScrollStateChanged(rv: RecyclerView, newState: Int) = record("scrollState=$newState offset=${rv.computeVerticalScrollOffset()}")
-        }
-        private val preDraw = android.view.ViewTreeObserver.OnPreDrawListener {
-            val lm = grid.layoutManager as? androidx.recyclerview.widget.GridLayoutManager
-            val first = lm?.findFirstVisibleItemPosition() ?: -1
-            val firstTop = lm?.findViewByPosition(first)?.top
-            val insets = ViewCompat.getRootWindowInsets(root)
-            val bars = insets?.getInsets(WindowInsetsCompat.Type.systemBars())
-            val ime = insets?.getInsets(WindowInsetsCompat.Type.ime())
-            val barStates = appBars.joinToString("|") { "${label(it)}:visibility=${it.visibility}:shown=${it.isShown}:height=${it.height}:translationY=${it.translationY}:bounds=${bounds(it)}" }
-            record("frame=${frame++} offset=${grid.computeVerticalScrollOffset()} first=$first firstTop=$firstTop gridHeight=${grid.height} padding=${grid.paddingTop},${grid.paddingBottom} clip=${grid.clipToPadding} sysTop=${bars?.top} sysBottom=${bars?.bottom} imeTop=${ime?.top} imeBottom=${ime?.bottom} lastAction=$lastAction lastY=$lastY appBars=[$barStates]")
-            true
-        }
-        fun start() {
-            collectBars(root)
-            val observed = mutableListOf<View>()
-            var current: View? = grid
-            while (current != null) {
-                observed.add(current)
-                current = current.parent as? View
-            }
-            appBars.forEach { if (it !in observed) observed.add(it) }
-            observed.forEach { view ->
-                var previous = bounds(view)
-                record("layout-initial ${label(view)} $previous")
-                val listener = View.OnLayoutChangeListener { v, _, _, _, _, _, _, _, _ ->
-                    val next = bounds(v)
-                    if (next != previous) {
-                        record("layout-change ${label(v)} old=[$previous] new=[$next]", true)
-                        previous = next
-                    }
-                }
-                view.addOnLayoutChangeListener(listener)
-                layoutListeners.add(view to listener)
-            }
-            adapter = grid.adapter
-            adapter?.registerAdapterDataObserver(data)
-            grid.addOnScrollListener(scroll)
-            val window = activity!!.window
-            val original = window.callback
-            originalCallback = original
-            val wrapper = object : android.view.Window.Callback by original {
-                override fun dispatchTouchEvent(event: MotionEvent): Boolean {
-                    val location = IntArray(2)
-                    grid.getLocationOnScreen(location)
-                    lastY = event.rawY - location[1]
-                    lastAction = event.actionMasked
-                    return original.dispatchTouchEvent(event)
-                }
-            }
-            wrappedCallback = wrapper
-            window.callback = wrapper
-            root.viewTreeObserver.addOnPreDrawListener(preDraw)
-            record("probe-start $name")
-        }
-        fun stop() {
-            if (root.viewTreeObserver.isAlive) root.viewTreeObserver.removeOnPreDrawListener(preDraw)
-            layoutListeners.forEach { (view, listener) -> view.removeOnLayoutChangeListener(listener) }
-            adapter?.unregisterAdapterDataObserver(data)
-            grid.removeOnScrollListener(scroll)
-            val window = activity?.window
-            if (window != null && window.callback === wrappedCallback) window.callback = originalCallback
-            record("probe-stop frames=$frame")
-            val file = File(context.cacheDir, "selection-trace-frames-$name.txt")
-            file.writeText(log.toString())
-            pendingCaptures.add(file to "text/plain")
-        }
-    }
-    private fun startFrameProbe(grid: RecyclerView, name: String) {
-        instrumentation.runOnMainSync {
-            check(frameProbe == null)
-            frameProbe = SelectionFrameProbe(grid, name).also { it.start() }
-        }
-    }
-    private fun stopFrameProbe() {
-        instrumentation.runOnMainSync {
-            frameProbe?.stop()
-            frameProbe = null
-        }
-    }
 
     private fun id(name: String): Int = context.resources.getIdentifier(name, "id", context.packageName)
     private fun requiredView(name: String): View {
@@ -218,7 +100,6 @@ class SelectionSheetInstrumentedTest {
     }
 
     @After fun tearDown() {
-        stopFrameProbe()
         device.unfreezeRotation()
         activity?.finish()
         instrumentation.waitForIdleSync()
@@ -531,28 +412,9 @@ class SelectionSheetInstrumentedTest {
     }
 
     @Test fun selectionScrollWindowDiagnostics() {
-        val trace = StringBuffer()
-        fun event(message: String, withStack: Boolean = false) {
-            val error = if (withStack) Throwable("Selection scroll diagnostic") else null
-            android.util.Log.d("SelectionScrollTrace", message, error)
-            trace.append("event t=${SystemClock.uptimeMillis()} $message\n")
-            if (error != null) trace.append(android.util.Log.getStackTraceString(error)).append('\n')
-        }
-        val dataProbe = object : RecyclerView.AdapterDataObserver() {
-            override fun onChanged() = event("adapter onChanged", true)
-            override fun onItemRangeChanged(positionStart: Int, itemCount: Int) =
-                event("adapter changed start=$positionStart count=$itemCount", true)
-            override fun onItemRangeChanged(positionStart: Int, itemCount: Int, payload: Any?) =
-                event("adapter changed start=$positionStart count=$itemCount payloadType=${payload?.javaClass?.name}", true)
-            override fun onItemRangeInserted(positionStart: Int, itemCount: Int) =
-                event("adapter inserted start=$positionStart count=$itemCount", true)
-            override fun onItemRangeRemoved(positionStart: Int, itemCount: Int) =
-                event("adapter removed start=$positionStart count=$itemCount", true)
-            override fun onItemRangeMoved(fromPosition: Int, toPosition: Int, itemCount: Int) =
-                event("adapter moved from=$fromPosition to=$toPosition count=$itemCount", true)
-        }
-        var observedAdapter: RecyclerView.Adapter<*>? = null
-        fun sampleOnMain(label: String) {
+        val trace = StringBuilder()
+        fun sample(label: String) {
+            instrumentation.runOnMainSync {
                 val grid = requiredView("recyclerView") as RecyclerView
                 val lm = grid.layoutManager as androidx.recyclerview.widget.GridLayoutManager
                 val first = lm.findFirstVisibleItemPosition()
@@ -560,11 +422,9 @@ class SelectionSheetInstrumentedTest {
                 val child = lm.findViewByPosition(first)
                 val tracker = (grid.adapter as ThumbnailAdapter).selectionTracker!!
                 val sheet = Rect(); requiredView("selectionSheet").getGlobalVisibleRect(sheet)
-                val lastChild = lm.findViewByPosition(last)
-                val location = IntArray(2); grid.getLocationOnScreen(location)
-                trace.append("$label first=$first last=$last firstTop=${child?.top} lastBottom=${lastChild?.bottom} itemCount=${lm.itemCount} gridSize=${grid.width}x${grid.height} gridLocation=${location.toList()} clip=${grid.clipToPadding} suppressed=${grid.isLayoutSuppressed} lmCanScroll=${lm.canScrollVertically()} state=${grid.scrollState} extent=${grid.computeVerticalScrollExtent()} range=${grid.computeVerticalScrollRange()} offset=${grid.computeVerticalScrollOffset()} canDown=${grid.canScrollVertically(1)} canUp=${grid.canScrollVertically(-1)} selected=${tracker.selection.count()} padding=${grid.paddingTop},${grid.paddingBottom} sheet=$sheet\n")
+                trace.append("$label first=$first last=$last firstTop=${child?.top} offset=${grid.computeVerticalScrollOffset()} canDown=${grid.canScrollVertically(1)} canUp=${grid.canScrollVertically(-1)} selected=${tracker.selection.count()} padding=${grid.paddingTop},${grid.paddingBottom} sheet=$sheet\n")
+            }
         }
-        fun sample(label: String) = instrumentation.runOnMainSync { sampleOnMain(label) }
         try {
             device.executeShellCommand("wm size 360x720"); device.waitForIdle()
             activity?.finish()
@@ -573,71 +433,9 @@ class SelectionSheetInstrumentedTest {
             val thumb = device.wait(Until.findObject(By.res(context.packageName, "thumbnailImageView")), 30000)
             assertNotNull("Diagnostic fixture missing", thumb)
             sample("before-selection")
-            val grid = requiredView("recyclerView") as RecyclerView
-            val touchProbe = object : RecyclerView.OnItemTouchListener {
-                override fun onInterceptTouchEvent(rv: RecyclerView, e: MotionEvent): Boolean {
-                    if (e.actionMasked != MotionEvent.ACTION_MOVE || e.historySize == 0) {
-                        trace.append("grid-touch action=${e.actionMasked} x=${e.x.toInt()} y=${e.y.toInt()}\n")
-                    }
-                    return false
-                }
-                override fun onTouchEvent(rv: RecyclerView, e: MotionEvent) = Unit
-                override fun onRequestDisallowInterceptTouchEvent(disallowIntercept: Boolean) {
-                    trace.append("grid-disallow=$disallowIntercept\n")
-                }
-            }
-            instrumentation.runOnMainSync {
-                val adapter = requireNotNull(grid.adapter)
-                observedAdapter = adapter
-                adapter.registerAdapterDataObserver(dataProbe)
-                grid.addOnScrollListener(object : RecyclerView.OnScrollListener() {
-                    override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
-                        if (dy != 0) event("onScrolled dx=$dx dy=$dy state=${rv.scrollState} offset=${rv.computeVerticalScrollOffset()}", true)
-                    }
-                    override fun onScrollStateChanged(rv: RecyclerView, newState: Int) {
-                        event("scrollState=$newState offset=${rv.computeVerticalScrollOffset()}")
-                    }
-                })
-                grid.addOnItemTouchListener(touchProbe)
-                grid.scrollBy(0, 200)
-            }
-            device.waitForIdle(1000); sample("before-selection-programmatic-scroll")
-            instrumentation.runOnMainSync { grid.scrollToPosition(0) }
-            device.waitForIdle(1000); sample("before-selection-reset")
-            startFrameProbe(grid, "short")
-            requireNotNull(device.findObject(By.res(context.packageName, "thumbnailImageView"))).longClick()
+            thumb!!.longClick()
             assertTrue(device.wait(Until.hasObject(By.res(context.packageName, "selectionSheet")), 10000))
             device.waitForIdle(1000); sample("after-long-press")
-            val frames = java.util.concurrent.CountDownLatch(1)
-            instrumentation.runOnMainSync {
-                var previousLayoutOffset = grid.computeVerticalScrollOffset()
-                grid.addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
-                    val offset = grid.computeVerticalScrollOffset()
-                    if (offset != previousLayoutOffset) {
-                        event("layout offset=$previousLayoutOffset->$offset old=$oldLeft,$oldTop,$oldRight,$oldBottom new=$left,$top,$right,$bottom", true)
-                        previousLayoutOffset = offset
-                    }
-                }
-                sampleOnMain("immediately-before-scroll")
-                grid.scrollBy(0, 200)
-                previousLayoutOffset = grid.computeVerticalScrollOffset()
-                sampleOnMain("immediately-after-scroll")
-                grid.postOnAnimation {
-                    sampleOnMain("first-frame-after-scroll")
-                    grid.postOnAnimation {
-                        sampleOnMain("second-frame-after-scroll")
-                        frames.countDown()
-                    }
-                }
-            }
-            trace.append("frames-completed=${frames.await(5, java.util.concurrent.TimeUnit.SECONDS)}\n")
-            device.waitForIdle(1000); sample("after-programmatic-scroll")
-            instrumentation.runOnMainSync { grid.scrollToPosition(0) }
-            device.waitForIdle(1000); sample("after-reset-to-first")
-            val check = requireNotNull(device.findObject(By.res(context.packageName, "dateCheckImageView"))).visibleBounds
-            trace.append("date-check bounds=$check\n")
-            trace.append("date-swipe injected=${device.swipe(check.centerX(), check.centerY(), check.centerX(), check.centerY() - 60, 20)}\n")
-            device.waitForIdle(1000); sample("after-date-swipe")
             val top = device.findObject(By.res(context.packageName, "selectionTopBar"))!!.visibleBounds
             val sheet = device.findObject(By.res(context.packageName, "selectionSheet"))!!.visibleBounds
             val x = 180; val start = sheet.top - 35; val end = top.bottom + 35
@@ -649,8 +447,6 @@ class SelectionSheetInstrumentedTest {
             }
             capture("selection-sheet-scroll-diagnostics")
         } finally {
-            stopFrameProbe()
-            instrumentation.runOnMainSync { observedAdapter?.unregisterAdapterDataObserver(dataProbe) }
             val file = File(context.cacheDir, "selection-trace-window-scroll.txt")
             file.writeText(trace.toString())
             pendingCaptures.add(file to "text/plain")
@@ -957,7 +753,6 @@ class SelectionSheetInstrumentedTest {
             swipeArea.set(grid.left, maxOf(grid.top, top.bottom), grid.right, minOf(grid.bottom, sheet.top))
             assertTrue("Grid has no interactive area above the sheet", swipeArea.height() > 80)
         }
-        startFrameProbe(grid, "last-row")
         // Keep using window-level swipes until the grid really reaches its end.
         // A fixed swipe count is insufficient when the emulator has more fixtures.
         for (attempt in 0 until 20) {
