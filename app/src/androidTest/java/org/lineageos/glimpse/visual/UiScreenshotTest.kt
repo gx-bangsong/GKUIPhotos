@@ -857,12 +857,17 @@ class UiScreenshotTest {
         val overlay = activity!!.findViewById<AnnotationOverlayView>(R.id.annotationOverlayView)
         val crop = activity!!.findViewById<CropImageView>(R.id.cropImageView)
         instrumentation.runOnMainSync { overlay.addTextItem("Window gesture", crop.width / 2f, crop.height / 2f) }
+        // This candidate-only test still has to compile against baseline sources,
+        // where the text rotation API and conversion method do not exist.
+        fun textRotation(item: Any): Float = item.javaClass.getMethod("getRotation").invoke(item) as Float
+        fun viewLengthToBase(length: Float): Float =
+            overlay.javaClass.getMethod("viewLengthToBase", Float::class.javaPrimitiveType).invoke(overlay, length) as Float
         fun point(rotate: Boolean): IntArray {
             val result = IntArray(2)
             instrumentation.runOnMainSync {
                 val item = requireNotNull(overlay.activeText)
                 val bounds = android.graphics.RectF().also { item.computeBounds(it) }
-                val coords = if (rotate) floatArrayOf(bounds.centerX(), bounds.top - overlay.viewLengthToBase(36f * context.resources.displayMetrics.density))
+                val coords = if (rotate) floatArrayOf(bounds.centerX(), bounds.top - viewLengthToBase(36f * context.resources.displayMetrics.density))
                     else floatArrayOf(bounds.right, bounds.bottom)
                 requireNotNull(overlay.imageMatrixProvider).invoke().mapPoints(coords)
                 val loc = IntArray(2); overlay.getLocationOnScreen(loc)
@@ -876,13 +881,13 @@ class UiScreenshotTest {
         instrumentation.runOnMainSync {
             val item = requireNotNull(overlay.activeText)
             assertTrue("Resize did not change scale", item.scale > 1f)
-            assertEquals("Resize rotated text", 0f, item.rotation, .01f)
+            assertEquals("Resize rotated text", 0f, textRotation(item), .01f)
         }
         val rotate = point(true)
         assertTrue(device.swipe(rotate[0], rotate[1], rotate[0] + 55, rotate[1] + 25, 20))
         device.waitForIdle()
         instrumentation.runOnMainSync {
-            assertTrue("Rotate handle did not rotate text", kotlin.math.abs(requireNotNull(overlay.activeText).rotation) > 1f)
+            assertTrue("Rotate handle did not rotate text", kotlin.math.abs(textRotation(requireNotNull(overlay.activeText))) > 1f)
         }
         capture("markup-text-separate-handles")
     }

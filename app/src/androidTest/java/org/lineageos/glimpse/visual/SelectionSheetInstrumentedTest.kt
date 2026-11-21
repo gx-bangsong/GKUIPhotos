@@ -410,7 +410,10 @@ class SelectionSheetInstrumentedTest {
         assertEquals(context.getString(R.string.delete), delete!!.text)
         assertEquals(context.getString(R.string.file_action_move_to_trash), delete.contentDescription)
         val favorite = requireNotNull(device.findObject(By.res(context.packageName, "favoriteButton")))
-        assertEquals(context.getString(R.string.favorite_add_short), favorite.text)
+        // Candidate-only resource is not present when compiling the baseline.
+        val shortFavorite = context.resources.getIdentifier("favorite_add_short", "string", context.packageName)
+        assertTrue("Short favorite label missing", shortFavorite != 0)
+        assertEquals(context.getString(shortFavorite), favorite.text)
         assertEquals(context.getString(R.string.file_action_add_to_favorites), favorite.contentDescription)
         capture("selection-sheet-viewer-delete")
         for ((button, visible, hidden) in listOf(
