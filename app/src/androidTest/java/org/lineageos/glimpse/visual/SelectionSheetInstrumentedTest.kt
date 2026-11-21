@@ -412,9 +412,8 @@ class SelectionSheetInstrumentedTest {
     }
 
     @Test fun selectionScrollWindowDiagnostics() {
-        val trace = StringBuilder()
-        fun sample(label: String) {
-            instrumentation.runOnMainSync {
+        val trace = StringBuffer()
+        fun sampleOnMain(label: String) {
                 val grid = requiredView("recyclerView") as RecyclerView
                 val lm = grid.layoutManager as androidx.recyclerview.widget.GridLayoutManager
                 val first = lm.findFirstVisibleItemPosition()
@@ -425,8 +424,8 @@ class SelectionSheetInstrumentedTest {
                 val lastChild = lm.findViewByPosition(last)
                 val location = IntArray(2); grid.getLocationOnScreen(location)
                 trace.append("$label first=$first last=$last firstTop=${child?.top} lastBottom=${lastChild?.bottom} itemCount=${lm.itemCount} gridSize=${grid.width}x${grid.height} gridLocation=${location.toList()} clip=${grid.clipToPadding} suppressed=${grid.isLayoutSuppressed} lmCanScroll=${lm.canScrollVertically()} state=${grid.scrollState} extent=${grid.computeVerticalScrollExtent()} range=${grid.computeVerticalScrollRange()} offset=${grid.computeVerticalScrollOffset()} canDown=${grid.canScrollVertically(1)} canUp=${grid.canScrollVertically(-1)} selected=${tracker.selection.count()} padding=${grid.paddingTop},${grid.paddingBottom} sheet=$sheet\n")
-            }
         }
+        fun sample(label: String) = instrumentation.runOnMainSync { sampleOnMain(label) }
         try {
             device.executeShellCommand("wm size 360x720"); device.waitForIdle()
             activity?.finish()
@@ -455,7 +454,28 @@ class SelectionSheetInstrumentedTest {
             requireNotNull(device.findObject(By.res(context.packageName, "thumbnailImageView"))).longClick()
             assertTrue(device.wait(Until.hasObject(By.res(context.packageName, "selectionSheet")), 10000))
             device.waitForIdle(1000); sample("after-long-press")
-            instrumentation.runOnMainSync { grid.scrollBy(0, 200) }
+            val frames = java.util.concurrent.CountDownLatch(1)
+            instrumentation.runOnMainSync {
+                grid.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+                    override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
+                        trace.append("onScrolled dx=$dx dy=$dy offset=${rv.computeVerticalScrollOffset()}\n")
+                    }
+                })
+                grid.addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
+                    trace.append("layout old=$oldLeft,$oldTop,$oldRight,$oldBottom new=$left,$top,$right,$bottom\n")
+                }
+                sampleOnMain("immediately-before-scroll")
+                grid.scrollBy(0, 200)
+                sampleOnMain("immediately-after-scroll")
+                grid.postOnAnimation {
+                    sampleOnMain("first-frame-after-scroll")
+                    grid.postOnAnimation {
+                        sampleOnMain("second-frame-after-scroll")
+                        frames.countDown()
+                    }
+                }
+            }
+            trace.append("frames-completed=${frames.await(5, java.util.concurrent.TimeUnit.SECONDS)}\n")
             device.waitForIdle(1000); sample("after-programmatic-scroll")
             instrumentation.runOnMainSync { grid.scrollToPosition(0) }
             device.waitForIdle(1000); sample("after-reset-to-first")

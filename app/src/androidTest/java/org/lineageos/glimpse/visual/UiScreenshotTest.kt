@@ -830,8 +830,11 @@ class UiScreenshotTest {
             assertNotNull(device.wait(Until.findObject(By.text(context.getString(R.string.editor_shape_delete_title))), 5000))
             capture("markup-shape-import-$mode-delete-dialog")
             device.findObject(By.text(context.getString(R.string.delete)))!!.click()
-            device.waitForIdle()
-            val afterDelete = manager.getCustomShapes(context)
+            assertTrue("Delete confirmation did not close", device.wait(
+                Until.gone(By.text(context.getString(R.string.editor_shape_delete_title))), 5000))
+            instrumentation.waitForIdleSync()
+            var afterDelete = emptyList<org.lineageos.glimpse.models.CustomShape>()
+            instrumentation.runOnMainSync { afterDelete = manager.getCustomShapes(context) }
             if (afterDelete.any { it.name == "arena_custom_shape" }) capture("markup-shape-import-$mode-delete-result")
             assertTrue("Custom shape was not deleted; activeId=$activeId before=${beforeDelete.map { it.id to it.name }} after=${afterDelete.map { it.id to it.name }} original=${original.map { it.id to it.name }}", afterDelete.none { it.name == "arena_custom_shape" })
         } finally {
