@@ -49,6 +49,8 @@ status=${PIPESTATUS[0]}
 set -e
 python3 scripts/ui-safe-tail.py "${RUNNER_TEMP}/ui-gradle.log" > ui-evidence/failure-tail.txt
 if (( status != 0 )); then
+  python3 scripts/ui-failure-stacks.py --log "${RUNNER_TEMP}/ui-gradle.log" \
+    --tests 'app/build/outputs/androidTest-results/connected/**/*.xml' > ui-evidence/failure-stacks.txt
   python3 scripts/report-ui-diagnostics.py --log "${RUNNER_TEMP}/ui-gradle.log" \
     --tests 'app/build/outputs/androidTest-results/connected/**/*.xml'
 fi
