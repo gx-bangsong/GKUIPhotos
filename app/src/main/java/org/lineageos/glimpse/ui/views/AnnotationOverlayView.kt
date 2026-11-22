@@ -115,7 +115,7 @@ sealed interface AnnotationItem {
                     canvas.drawPath(path, p)
                 }
                 BrushType.HIGHLIGHTER -> {
-                    p.color = Color.argb(100, Color.red(color), Color.green(color), Color.blue(color))
+                    p.color = Color.argb(100 * Color.alpha(color) / 255, Color.red(color), Color.green(color), Color.blue(color))
                     p.strokeCap = Paint.Cap.SQUARE
                     p.strokeJoin = Paint.Join.BEVEL
                     canvas.drawPath(path, p)
@@ -126,10 +126,10 @@ sealed interface AnnotationItem {
                     gp.strokeCap = Paint.Cap.ROUND
                     gp.strokeJoin = Paint.Join.ROUND
                     gp.strokeWidth = strokeWidth * 2.2f
-                    gp.color = Color.argb(90, Color.red(color), Color.green(color), Color.blue(color))
+                    gp.color = Color.argb(90 * Color.alpha(color) / 255, Color.red(color), Color.green(color), Color.blue(color))
                     canvas.drawPath(path, gp)
 
-                    p.color = Color.WHITE
+                    p.color = Color.argb(Color.alpha(color), 255, 255, 255)
                     p.strokeCap = Paint.Cap.ROUND
                     p.strokeJoin = Paint.Join.ROUND
                     canvas.drawPath(path, p)
@@ -144,6 +144,7 @@ sealed interface AnnotationItem {
                 BrushType.CUSTOM_TEXTURE -> {
                     if (customTexture != null && !customTexture.isRecycled) {
                         p.shader = BitmapShader(customTexture, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
+                        p.alpha = Color.alpha(color)
                     } else {
                         p.color = color
                     }
@@ -189,7 +190,7 @@ sealed interface AnnotationItem {
             sPaint.color = color
             sPaint.strokeWidth = strokeWidth
             fPaint.color = color
-            tPaint.color = Color.argb(90, Color.red(color), Color.green(color), Color.blue(color))
+            tPaint.color = Color.argb(90 * Color.alpha(color) / 255, Color.red(color), Color.green(color), Color.blue(color))
 
             val l = min(startX, endX)
             val t = min(startY, endY)
@@ -375,6 +376,8 @@ sealed interface AnnotationItem {
         var scale: Float = 1.0f,
         var color: Int = Color.WHITE,
         var hasBackgroundPill: Boolean = true,
+        // null preserves the original automatic contrast background.
+        var backgroundColor: Int? = null,
         var fontId: String = "sans",
         var alignment: TextAlignment = TextAlignment.CENTER,
         var boxWidth: Float = baseTextSize * 8f,
@@ -429,7 +432,7 @@ sealed interface AnnotationItem {
             canvas.rotate(rotation, centerX, centerY)
             if (hasBackgroundPill) {
                 val pillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                    color = if (this@Text.color == Color.WHITE) Color.argb(160, 0, 0, 0) else Color.argb(160, 255, 255, 255)
+                    color = backgroundColor ?: if (this@Text.color == Color.WHITE) Color.argb(160, 0, 0, 0) else Color.argb(160, 255, 255, 255)
                     style = Paint.Style.FILL
                 }
                 val radius = bounds.height() * 0.25f
@@ -611,6 +614,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
     var activeColor: Int = Color.parseColor("#F44336")
     var activeStrokeWidth: Float = 8f
     var hasTextBackgroundPill: Boolean = true
+    var activeTextBackgroundColor: Int? = null
     var activeMosaicCellSize: Int = 16
     var activeMosaicBrushSize: Float = 32f
 
@@ -985,8 +989,9 @@ class AnnotationOverlayView @JvmOverloads constructor(
             centerX = point[0],
             centerY = point[1],
             baseTextSize = viewLengthToBase(32f),
-            color = activeColor,
+            color = activeColor or 0xFF000000.toInt(),
             hasBackgroundPill = hasTextBackgroundPill,
+            backgroundColor = activeTextBackgroundColor,
             fontId = activeTextFontId, alignment = activeTextAlignment,
         )
         activeText = item
@@ -1073,7 +1078,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
             is AnnotationItem.Text -> (target as AnnotationItem.Text).apply {
                 text = saved.text; centerX = saved.centerX; centerY = saved.centerY
                 baseTextSize = saved.baseTextSize; scale = saved.scale
-                color = saved.color; hasBackgroundPill = saved.hasBackgroundPill
+                color = saved.color; hasBackgroundPill = saved.hasBackgroundPill; backgroundColor = saved.backgroundColor
                 fontId = saved.fontId; alignment = saved.alignment; boxWidth = saved.boxWidth
                 rotation = saved.rotation
             }
@@ -1109,7 +1114,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
             activeShapeStyle = it.style
             activeStrokeWidth = it.strokeWidth * getMatrixScale(imageMatrixProvider?.invoke())
         }
-        activeText?.let { activeColor = it.color; hasTextBackgroundPill = it.hasBackgroundPill; activeTextFontId = it.fontId; activeTextAlignment = it.alignment }
+        activeText?.let { activeColor = it.color; hasTextBackgroundPill = it.hasBackgroundPill; activeTextBackgroundColor = it.backgroundColor; activeTextFontId = it.fontId; activeTextAlignment = it.alignment }
         draggedHandle = -1; isMovingShape = false
         isMovingText = false; isDraggingTextHandle = false; isRotatingTextHandle = false
         isMovingSticker = false; isDraggingStickerHandle = false
@@ -1737,6 +1742,8 @@ class AnnotationOverlayView @JvmOverloads constructor(
                         }
                         if (index >= 0) {
                             activeText = annotations[index] as AnnotationItem.Text
+                            activeTextBackgroundColor = activeText!!.backgroundColor
+                            hasTextBackgroundPill = activeText!!.hasBackgroundPill
                             activeTextFontId = activeText!!.fontId
                             activeTextAlignment = activeText!!.alignment
                             onTextSelectionChanged?.invoke()
@@ -1757,8 +1764,9 @@ class AnnotationOverlayView @JvmOverloads constructor(
                             centerX = x,
                             centerY = y,
                             baseTextSize = viewLengthToBase(32f),
-                            color = activeColor,
+                            color = activeColor or 0xFF000000.toInt(),
                             hasBackgroundPill = hasTextBackgroundPill,
+                            backgroundColor = activeTextBackgroundColor,
                             fontId = activeTextFontId, alignment = activeTextAlignment,
                         )
                         activeText = newItem

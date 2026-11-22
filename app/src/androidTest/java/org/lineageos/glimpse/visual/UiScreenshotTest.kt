@@ -975,6 +975,24 @@ class UiScreenshotTest {
                 .invoke(overlay, android.graphics.Canvas(exported), android.graphics.Matrix())
             setBounds.invoke(overlay, oldBounds)
             assertTrue("Direct text layout differs from export", direct.sameAs(exported))
+            val background = item.javaClass.getDeclaredField("backgroundColor").apply { isAccessible = true }
+            val savedBackground = background.get(item)
+            item.hasBackgroundPill = true
+            background.set(item, 0x804080C0.toInt())
+            val withBackground = Bitmap.createBitmap(512, 512, Bitmap.Config.ARGB_8888)
+            item.draw(android.graphics.Canvas(withBackground))
+            val sampleX = bounds.centerX().toInt()
+            val sampleY = (bounds.top + 3f).toInt()
+            assertEquals("Background alpha differs", 128, Color.alpha(withBackground.getPixel(sampleX, sampleY)))
+            assertEquals("No-background preview retained fill", 0, Color.alpha(right.getPixel(sampleX, sampleY)))
+            val backgroundExport = Bitmap.createBitmap(512, 512, Bitmap.Config.ARGB_8888)
+            setBounds.invoke(overlay, exportBounds)
+            overlay.javaClass.getMethod("rasterize", android.graphics.Canvas::class.java, android.graphics.Matrix::class.java)
+                .invoke(overlay, android.graphics.Canvas(backgroundExport), android.graphics.Matrix())
+            setBounds.invoke(overlay, oldBounds)
+            assertTrue("Background preview differs from export", withBackground.sameAs(backgroundExport))
+            background.set(item, savedBackground)
+            withBackground.recycle(); backgroundExport.recycle()
             left.recycle(); center.recycle(); right.recycle(); exported.recycle()
             item.text = original.text; item.centerX = original.centerX; item.centerY = original.centerY
             item.scale = original.scale; item.baseTextSize = original.baseTextSize
@@ -1328,6 +1346,59 @@ class UiScreenshotTest {
         }
         subtool(R.string.markup_color_section)
         assertNotNull("Text color choices missing", device.findObject(By.desc(context.getString(R.string.markup_color_black))))
+
+        val overlay = activity!!.findViewById<AnnotationOverlayView>(R.id.annotationOverlayView)
+        val crop = activity!!.findViewById<CropImageView>(R.id.cropImageView)
+        instrumentation.runOnMainSync {
+            val subtoolsId = context.resources.getIdentifier("markupSubtoolsScroll", "id", context.packageName)
+            assertTrue("Missing subtool scroller", subtoolsId != 0)
+            val subtools = activity!!.findViewById<View>(subtoolsId)
+            val undo = activity!!.findViewById<View>(R.id.subEditUndoButton)
+            val cancel = activity!!.findViewById<View>(R.id.subEditCancelButton)
+            val done = activity!!.findViewById<View>(R.id.subEditDoneButton)
+            val a = IntArray(2); val b = IntArray(2); val c = IntArray(2); val d = IntArray(2)
+            subtools.getLocationOnScreen(a); undo.getLocationOnScreen(b)
+            cancel.getLocationOnScreen(c); done.getLocationOnScreen(d)
+            assertTrue("Subtools must be above history controls", a[1] < b[1])
+            assertTrue("Close and Done must remain on either side", c[0] < b[0] && b[0] < d[0])
+            overlay.addTextItem("Background test", crop.width / 2f, crop.height / 2f)
+        }
+        subtool(R.string.editor_markup_text_bg)
+        fun newString(name: String): String {
+            val id = context.resources.getIdentifier(name, "string", context.packageName)
+            assertTrue("Missing $name", id != 0)
+            return context.getString(id)
+        }
+        val noBackground = device.wait(Until.findObject(By.desc(newString("markup_no_background"))), 5000)
+        assertNotNull("No-background control missing", noBackground)
+        noBackground!!.click(); device.waitForIdle()
+        instrumentation.runOnMainSync { assertTrue("No background was not applied", !requireNotNull(overlay.activeText).hasBackgroundPill) }
+        val custom = device.wait(Until.findObject(By.desc(newString("markup_custom_color"))), 5000)
+        assertNotNull("Custom background control missing", custom)
+        custom!!.click()
+        val opacity = device.wait(Until.findObject(By.desc(newString("markup_color_opacity"))), 5000)
+        assertNotNull("Background opacity control missing", opacity)
+        val sliderBounds = opacity!!.visibleBounds
+        assertTrue("Opacity tap failed", device.click(sliderBounds.centerX(), sliderBounds.centerY()))
+        val ok = device.wait(Until.findObject(By.text(context.getString(android.R.string.ok))), 5000)
+        assertNotNull("Color confirmation missing", ok)
+        ok!!.click(); device.waitForIdle()
+        instrumentation.runOnMainSync {
+            val item = requireNotNull(overlay.activeText)
+            val colorField = item.javaClass.getDeclaredField("backgroundColor").apply { isAccessible = true }
+            val chosen = colorField.get(item) as Int
+            assertTrue("Custom background must be enabled", item.hasBackgroundPill)
+            assertTrue("Background opacity was not applied", Color.alpha(chosen) in 1..254)
+            assertTrue("Background undo unavailable", overlay.undo())
+            assertTrue("Undo must restore no background", !requireNotNull(overlay.activeText).hasBackgroundPill)
+            assertTrue("Background redo unavailable", overlay.javaClass.getMethod("redo").invoke(overlay) as Boolean)
+            assertEquals("Redo must restore custom color", chosen, colorField.get(requireNotNull(overlay.activeText)))
+        }
+        capture("markup-custom-background")
+        subtool(R.string.markup_color_section)
+        requireNotNull(device.findObject(By.desc(newString("markup_custom_color")))).click()
+        assertTrue("Text color must not offer opacity", !device.hasObject(By.desc(newString("markup_color_opacity"))))
+        device.pressBack()
     }
 
     @Test fun collagePreviewGesturesStayOnTheirStartingPhoto() {

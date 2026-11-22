@@ -161,6 +161,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
     private val markupSubtoolsScroll by lazy { findViewById<View>(R.id.markupSubtoolsScroll) }
     private val markupSubtoolsRow by lazy { findViewById<LinearLayout>(R.id.markupSubtoolsRow) }
     private val markupHistoryBar by lazy { findViewById<View>(R.id.markupHistoryBar) }
+    private var markupHistoryControls: View? = null
     private val subEditSpacer by lazy { findViewById<View>(R.id.subEditSpacer) }
     private var activeCustomMosaicId: String? = null
     private val markupToolsRow by lazy { findViewById<LinearLayout>(R.id.markupToolsRow) }
@@ -387,6 +388,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         MarkupFonts.initialize(this)
+        swapMarkupToolbarGroups()
 
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.editorRootLayout)) { _, insets ->
             val status = insets.getInsets(WindowInsetsCompat.Type.statusBars())
@@ -634,6 +636,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         regularActionBar.isVisible = true
         subEditActionBar.isVisible = false
         markupHistoryBar.isVisible = false
+        markupHistoryControls?.isVisible = false
         subEditSpacer.isVisible = true
     }
 
@@ -1282,6 +1285,28 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         subEditClearButton.alpha = if (clear) 1f else 0.4f
     }
 
+    /** Keep Close/Done fixed; exchange the middle subtool and history groups. */
+    private fun swapMarkupToolbarGroups() {
+        val top = markupHistoryBar as LinearLayout
+        val bottom = subEditActionBar as LinearLayout
+        val controls = markupSubtoolsScroll
+        val index = bottom.indexOfChild(controls)
+        check(index >= 0)
+        bottom.removeView(controls)
+        val history = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+        }
+        for (button in listOf(subEditUndoButton, subEditRedoButton, subEditClearButton)) {
+            top.removeView(button)
+            history.addView(button)
+        }
+        history.isVisible = false
+        markupHistoryControls = history
+        bottom.addView(history, index, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f))
+        top.addView(controls, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT))
+    }
+
     private fun selectMarkupTool(tool: MarkupTool) {
 
         annotationOverlayView.activeTool = tool
@@ -1294,6 +1319,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             regularActionBar.isVisible = false
             subEditActionBar.isVisible = true
             markupHistoryBar.isVisible = true
+            markupHistoryControls?.isVisible = true
             subEditSpacer.isVisible = false
 
             subEditCancelButton.setText(R.string.editor_markup_close)
@@ -1328,6 +1354,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         regularActionBar.isVisible = true
         subEditActionBar.isVisible = false
         markupHistoryBar.isVisible = false
+        markupHistoryControls?.isVisible = false
         subEditSpacer.isVisible = true
     }
 
@@ -1593,8 +1620,16 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                         setOnCheckedChangeListener { _, checked ->
                             annotationOverlayView.hasTextBackgroundPill = checked
                             annotationOverlayView.editAnnotation { annotationOverlayView.activeText?.hasBackgroundPill = checked }
+                            showMarkupToolOptions(tool)
                         }
                     })
+                    addColorPalette(isTextBackground = true) { color ->
+                        annotationOverlayView.editAnnotation {
+                            annotationOverlayView.activeTextBackgroundColor = color
+                            annotationOverlayView.hasTextBackgroundPill = true
+                            annotationOverlayView.activeText?.apply { backgroundColor = color; hasBackgroundPill = true }
+                        }
+                    }
                 }
                 MarkupSubtool.COLOR -> addMarkupSection(R.string.markup_color_section, true, false) {
                     addColorPalette { c -> annotationOverlayView.editAnnotation { annotationOverlayView.activeText?.color = c } }
@@ -2222,7 +2257,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         markupOptionsContent.addView(sliderContainer)
     }
 
-    private fun addColorPalette(onColorChanged: ((Int) -> Unit)? = null) {
+    private fun addColorPalette(isTextBackground: Boolean = false, onColorChanged: ((Int) -> Unit)? = null) {
         val density = resources.displayMetrics.density
         val colors = listOf(
             Color.parseColor("#F44336") to R.string.markup_color_red,
@@ -2238,18 +2273,38 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         }
 
         val cards = mutableListOf<Pair<Int, MaterialCardView>>()
-        val selectedColor = when (annotationOverlayView.activeTool) {
+        val selectedColor = if (isTextBackground) {
+            annotationOverlayView.activeText?.backgroundColor ?: annotationOverlayView.activeTextBackgroundColor
+        } else when (annotationOverlayView.activeTool) {
             MarkupTool.SHAPES -> annotationOverlayView.activeShape?.color
             MarkupTool.TEXT -> annotationOverlayView.activeText?.color
             else -> null
-        } ?: annotationOverlayView.activeColor
+        } ?: if (isTextBackground) null else annotationOverlayView.activeColor
 
+        if (isTextBackground) {
+            paletteContainer.addView(MaterialButton(this).apply {
+                text = "⊘"
+                contentDescription = getString(R.string.markup_no_background)
+                isSelected = !(annotationOverlayView.activeText?.hasBackgroundPill ?: annotationOverlayView.hasTextBackgroundPill)
+                strokeWidth = if (isSelected) (2 * density).toInt() else 0
+                minWidth = (48 * density).toInt(); minHeight = (48 * density).toInt()
+                setOnClickListener {
+                    annotationOverlayView.editAnnotation {
+                        annotationOverlayView.hasTextBackgroundPill = false
+                        annotationOverlayView.activeText?.hasBackgroundPill = false
+                    }
+                    showMarkupToolOptions(MarkupTool.TEXT)
+                }
+            })
+        }
         colors.forEach { (c, label) ->
             val card = MaterialCardView(this).apply {
                 radius = 24f * density
                 cardElevation = 0f
-                strokeWidth = if (c == selectedColor) (3f * density).toInt() else if (c == Color.BLACK) (1.5f * density).toInt().coerceAtLeast(1) else 0
-                strokeColor = if (c == selectedColor) MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary) else Color.WHITE
+                val chosen = c == selectedColor && (!isTextBackground ||
+                    (annotationOverlayView.activeText?.hasBackgroundPill ?: annotationOverlayView.hasTextBackgroundPill))
+                strokeWidth = if (chosen) (3f * density).toInt() else if (c == Color.BLACK) (1.5f * density).toInt().coerceAtLeast(1) else 0
+                strokeColor = if (chosen) MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary) else Color.WHITE
                 setCardBackgroundColor(c)
                 val size = (48f * density).toInt()
                 val lp = LinearLayout.LayoutParams(size, size).apply {
@@ -2258,10 +2313,10 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                 layoutParams = lp
                 isClickable = true
                 isFocusable = true
-                isSelected = c == selectedColor
+                isSelected = chosen
                 contentDescription = getString(label)
                 setOnClickListener {
-                    annotationOverlayView.activeColor = c
+                    if (!isTextBackground) annotationOverlayView.activeColor = c
                     onColorChanged?.invoke(c)
                     // Update selection borders on existing cards in place without duplicating palette
                     cards.forEach { (cardColor, cardView) ->
@@ -2269,12 +2324,65 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                         cardView.strokeColor = if (cardColor == c) MaterialColors.getColor(cardView, androidx.appcompat.R.attr.colorPrimary) else Color.WHITE
                         cardView.isSelected = cardColor == c
                     }
+                    if (isTextBackground) showMarkupToolOptions(MarkupTool.TEXT)
                 }
             }
             cards.add(c to card)
             paletteContainer.addView(card)
         }
+        paletteContainer.addView(MaterialButton(this).apply {
+            text = "+"
+            contentDescription = getString(R.string.markup_custom_color)
+            isSelected = selectedColor != null && colors.none { it.first == selectedColor } &&
+                (!isTextBackground || (annotationOverlayView.activeText?.hasBackgroundPill ?: annotationOverlayView.hasTextBackgroundPill))
+            strokeWidth = if (isSelected) (2 * density).toInt() else 0
+            minWidth = (48 * density).toInt(); minHeight = (48 * density).toInt()
+            setOnClickListener {
+                val initial = selectedColor ?: Color.WHITE
+                val allowOpacity = isTextBackground || annotationOverlayView.activeTool != MarkupTool.TEXT
+                showCustomMarkupColor(initial, allowOpacity) { color ->
+                    if (!isTextBackground) annotationOverlayView.activeColor = color
+                    onColorChanged?.invoke(color)
+                    showMarkupToolOptions(annotationOverlayView.activeTool)
+                }
+            }
+        }, 0)
         markupOptionsContent.addView(paletteContainer)
+    }
+
+    /** Material dialog uses explicit channels, a live swatch and optional opacity. */
+    private fun showCustomMarkupColor(initial: Int, allowOpacity: Boolean, onApply: (Int) -> Unit) {
+        val density = resources.displayMetrics.density
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            val padding = (24 * density).toInt()
+            setPadding(padding, 0, padding, 0)
+        }
+        val preview = View(this).apply { minimumHeight = (48 * density).toInt() }
+        container.addView(preview, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, (48 * density).toInt()))
+        val values = intArrayOf(Color.red(initial), Color.green(initial), Color.blue(initial), if (allowOpacity) Color.alpha(initial) else 255)
+        fun color() = Color.argb(values[3], values[0], values[1], values[2])
+        fun updatePreview() { preview.setBackgroundColor(color()) }
+        val labels = listOf(R.string.markup_color_red_channel, R.string.markup_color_green_channel,
+            R.string.markup_color_blue_channel, R.string.markup_color_opacity)
+        for (i in 0 until if (allowOpacity) 4 else 3) {
+            val label = TextView(this).apply { text = getString(labels[i]) }
+            val slider = Slider(this).apply {
+                valueFrom = 0f; valueTo = 255f; stepSize = 1f; value = values[i].toFloat()
+                contentDescription = getString(labels[i]); id = View.generateViewId()
+                addOnChangeListener { _, v, _ -> values[i] = v.toInt(); updatePreview() }
+            }
+            label.labelFor = slider.id
+            container.addView(label)
+            container.addView(slider)
+        }
+        updatePreview()
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.markup_custom_color)
+            .setView(android.widget.ScrollView(this).apply { addView(container) })
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(android.R.string.ok) { _, _ -> onApply(color()) }
+            .show()
     }
 
     private fun showTextInputDialog(textItem: AnnotationItem.Text) {
