@@ -1621,6 +1621,26 @@ class UiScreenshotTest {
             assertTrue("Close and Done must remain on either side", c[0] < b[0] && b[0] < d[0])
             overlay.addTextItem("Background test", crop.width / 2f, crop.height / 2f)
         }
+        var lastConfirmationSnapshot: String? = null
+        var lastConfirmedColor: Int? = null
+        fun snapshotBackground() {
+            instrumentation.runOnMainSync {
+                val item = overlay.activeText
+                val itemColor = item?.javaClass?.getDeclaredField("backgroundColor")
+                    ?.apply { isAccessible = true }?.get(item) as? Int
+                val activeColor = overlay.javaClass.getMethod("getActiveTextBackgroundColor").invoke(overlay)
+                val history = overlay.javaClass.getDeclaredField("undoHistory").apply { isAccessible = true }
+                    .get(overlay) as List<*>
+                lastConfirmedColor = itemColor
+                // Text currently has no persisted item ID; identity and document index
+                // identify the selected object for this process only.
+                lastConfirmationSnapshot = "selected_identity=${item?.let { System.identityHashCode(it) }} " +
+                    "selected_index=${overlay.annotations.indexOfFirst { it === item }} " +
+                    "activeTextBackgroundColor=$activeColor " +
+                    "itemBackgroundColor=$itemColor undoHistoryCount=${history.size}"
+            }
+        }
+        try {
         subtool(R.string.editor_markup_text_bg)
         fun newString(name: String): String {
             val id = context.resources.getIdentifier(name, "string", context.packageName)
@@ -1666,11 +1686,17 @@ class UiScreenshotTest {
         val firstDragged = dragOpacityFromOpaque()
         val ok = device.wait(Until.findObject(By.text(context.getString(android.R.string.ok))), 5000)
         assertNotNull("Color confirmation missing", ok)
-        ok!!.click(); device.waitForIdle()
+        lastConfirmationSnapshot = null
+        lastConfirmedColor = null
+        ok!!.click()
+        assertTrue("Background color dialog did not close", device.wait(
+            Until.gone(By.text(context.getString(android.R.string.ok))), 5000))
+        instrumentation.waitForIdleSync()
+        snapshotBackground()
         instrumentation.runOnMainSync {
             val item = requireNotNull(overlay.activeText)
             val colorField = item.javaClass.getDeclaredField("backgroundColor").apply { isAccessible = true }
-            val chosen = colorField.get(item) as Int
+            val chosen = requireNotNull(lastConfirmedColor) { "Confirmed background color is null" }
             assertTrue("Custom background must be enabled", item.hasBackgroundPill)
             assertTrue("Background opacity was not applied", Color.alpha(chosen) in 1..254)
             assertEquals("Applied background alpha must match the slider", firstDragged, Color.alpha(chosen))
@@ -1715,14 +1741,19 @@ class UiScreenshotTest {
         assertEquals("Opaque background export alpha", 255, opaqueExportAlpha)
         requireNotNull(device.findObject(By.desc(newString("markup_custom_color")))).click()
         val dragged = dragOpacityFromOpaque()
+        lastConfirmationSnapshot = null
+        lastConfirmedColor = null
         requireNotNull(device.wait(Until.findObject(By.text(context.getString(android.R.string.ok))), 5000)).click()
-        device.waitForIdle()
+        assertTrue("Background color dialog did not close", device.wait(
+            Until.gone(By.text(context.getString(android.R.string.ok))), 5000))
+        instrumentation.waitForIdleSync()
+        snapshotBackground()
         val translucentExportAlpha = exportBackgroundAlpha()
         assertTrue("Export alpha must decrease by more than 32", opaqueExportAlpha - translucentExportAlpha > 32)
         instrumentation.runOnMainSync {
             val item = requireNotNull(overlay.activeText)
             val field = item.javaClass.getDeclaredField("backgroundColor").apply { isAccessible = true }
-            assertEquals("Applied alpha does not match drag", dragged, Color.alpha(field.get(item) as Int))
+            assertEquals("Applied alpha does not match drag", dragged, Color.alpha(requireNotNull(lastConfirmedColor)))
             assertTrue("Opaque-to-translucent undo unavailable", overlay.undo())
             assertEquals("Undo must restore opaque background", 255, Color.alpha(field.get(requireNotNull(overlay.activeText)) as Int))
         }
@@ -1739,6 +1770,22 @@ class UiScreenshotTest {
         requireNotNull(device.findObject(By.desc(newString("markup_custom_color")))).click()
         assertTrue("Text color must not offer opacity", !device.hasObject(By.desc(newString("markup_color_opacity"))))
         device.pressBack()
+        } catch (original: Throwable) {
+            try {
+                val afterClick = lastConfirmationSnapshot ?: "not captured"
+                snapshotBackground() // One failure-time diagnostic snapshot; never retry an assertion.
+                val dialogClosed = !device.hasObject(By.text(context.getString(android.R.string.ok)))
+                val trace = "test=${testName.methodName} dialogClosed=$dialogClosed\n" +
+                    "afterClick: $afterClick\natFailure: ${lastConfirmationSnapshot ?: "snapshot unavailable"}\n"
+                publishDiagnostic("selection-trace-background-confirm-failure.txt", "text/plain", trace.toByteArray())
+                val hierarchy = File(output, "selection-sheet-background-confirm-failure.xml")
+                device.dumpWindowHierarchy(hierarchy)
+                publishDiagnostic(hierarchy.name, "application/xml", hierarchy.readBytes())
+            } catch (diagnosticFailure: Throwable) {
+                original.addSuppressed(diagnosticFailure)
+            }
+            throw original
+        }
     }
 
     @Test fun collagePreviewGesturesStayOnTheirStartingPhoto() {
