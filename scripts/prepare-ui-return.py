@@ -119,6 +119,8 @@ else:
 (out / 'lint-errors.json').write_text(json.dumps(lint_errors, ensure_ascii=False, indent=2))
 
 with zipfile.ZipFile(out / 'ui-evidence.zip', 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+    for report in sorted((root / 'ui-unit-test-results').glob('*.xml')):
+        archive.write(report, f'ui-unit-test-results/{report.name}')
     for name in names:
         folder = root / name
         for item in expected_for(name):

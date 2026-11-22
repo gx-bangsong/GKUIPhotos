@@ -8,6 +8,25 @@ on:
 permissions:
   contents: read
 jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: '17'
+          cache: gradle
+      - name: Run Android unit tests
+        run: ./gradlew :app:testDebugUnitTest --stacktrace
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: ui-unit-test-results
+          path: app/build/test-results/testDebugUnitTest/*.xml
+          if-no-files-found: error
   lint:
     runs-on: ubuntu-latest
     steps:
@@ -135,7 +154,7 @@ jobs:
   return-evidence:
     # Never give PR code from a fork write access; only the approved repository PR can report.
     if: always() && github.event_name == 'pull_request' && github.event.pull_request.number == 4 && github.event.pull_request.head.repo.full_name == github.repository
-    needs: [lint, screenshots, apk]
+    needs: [lint, screenshots, apk, unit-tests]
     runs-on: ubuntu-latest
     concurrency:
       group: ui-evidence-pr-4
