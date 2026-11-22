@@ -76,9 +76,9 @@ class UiScreenshotTest {
     private val fixtureRunId = UUID.randomUUID().toString()
 
     private data class FixtureRecord(val id: Long, val data: String?, val displayName: String?,
-        val owner: String?, val pending: Int, val trashed: Int)
+        val owner: String?, val pending: Int, val trashed: Int, val dateAdded: Long)
 
-    // Shell identity is for observation only. All deletes use the app's own identity.
+    // Query with shell permissions so pending, trashed and foreign rows are visible.
     private fun queryFixtures(selection: String, args: Array<String>): List<FixtureRecord> {
         val rows = mutableListOf<FixtureRecord>()
         val query = Bundle().apply {
@@ -91,12 +91,13 @@ class UiScreenshotTest {
         try {
             val columns = arrayOf(MediaStore.Images.Media._ID, MediaStore.Images.Media.DATA,
                 MediaStore.Images.Media.DISPLAY_NAME, MediaStore.Images.Media.OWNER_PACKAGE_NAME,
-                MediaStore.Images.Media.IS_PENDING, MediaStore.Images.Media.IS_TRASHED)
+                MediaStore.Images.Media.IS_PENDING, MediaStore.Images.Media.IS_TRASHED,
+                MediaStore.Images.Media.DATE_ADDED)
             requireNotNull(context.contentResolver.query(MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
                 columns, query, null)).use { cursor ->
                 while (cursor.moveToNext()) {
                     rows.add(FixtureRecord(cursor.getLong(0), cursor.getString(1), cursor.getString(2),
-                        cursor.getString(3), cursor.getInt(4), cursor.getInt(5)))
+                        cursor.getString(3), cursor.getInt(4), cursor.getInt(5), cursor.getLong(6)))
                 }
             }
         } finally {
@@ -130,7 +131,61 @@ class UiScreenshotTest {
         }
     }
 
+    private fun shell(command: String): String = android.os.ParcelFileDescriptor.AutoCloseInputStream(
+        instrumentation.uiAutomation.executeShellCommand(command)).bufferedReader().use { it.readText().trim() }
+
+    private fun shellQuote(value: String): String = "'" + value.replace("'", "'\\''") + "'"
+
+    /** Remove only foreign-owner rows in the exact synthetic fixture directory. */
+    private fun cleanForeignFixtures() {
+        fun foreignRows() = queryFixtures("${MediaStore.Images.Media.RELATIVE_PATH} = ?", arrayOf(fixtureDirectory))
+            .filter { it.owner == null || it.owner != context.packageName }
+        val directory = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
+            "GlimpseUiTest").canonicalFile
+        val before = foreignRows()
+        val installed = context.packageManager.getPackageInfo(context.packageName, 0).firstInstallTime
+        fun exists(path: String?): String = if (path == null) "unknown" else
+            shell("if test -e ${shellQuote(path)}; then echo yes; else echo no; fi")
+        val beforeTrace = buildString {
+            append("test=${testName.methodName} directory=$fixtureDirectory found=${before.size} ")
+            append("firstInstallTimeMillis=$installed\n")
+            before.forEach { row -> append("id=${row.id} data=${row.data} date_added_seconds=${row.dateAdded} ")
+                .append("owner=${row.owner} is_pending=${row.pending} is_trashed=${row.trashed} ")
+                .append("file_exists=${exists(row.data)}\n") }
+        }
+        // Persist observations before attempting any delete.
+        publishDiagnostic("selection-trace-foreign-before-${testName.methodName}.txt", "text/plain", beforeTrace.toByteArray())
+        var deleted = 0
+        try {
+            before.forEach { row ->
+                val path = requireNotNull(row.data) { "Missing _data for foreign fixture ${row.id}" }
+                val file = File(path)
+                check(file.isAbsolute && file.canonicalFile.parentFile == directory && file.parentFile.canonicalFile == directory) {
+                    "Foreign fixture path outside exact directory: $path"
+                }
+                val where = "_id=${row.id} AND relative_path='$fixtureDirectory' AND " +
+                    "(owner_package_name IS NULL OR owner_package_name != '${context.packageName}')"
+                val result = shell("content delete --uri content://media/external/images/media --where ${shellQuote(where)}; " +
+                    "printf '\\nexit=%s\\n' \$?")
+                check(result.endsWith("exit=0")) { "Shell media delete failed for ${row.id}: $result" }
+                val remaining = queryFixtures("${MediaStore.Images.Media._ID} = ?", arrayOf(row.id.toString()))
+                check(remaining.isEmpty()) { "Fixture remained after deletion: $remaining" }
+                val removal = shell("rm -f -- ${shellQuote(file.canonicalPath)}; printf '\\nexit=%s\\n' \$?")
+                check(removal.endsWith("exit=0") && exists(path) == "no") { "Fixture file remained: $path; $removal" }
+                deleted++
+            }
+            val remaining = foreignRows()
+            check(remaining.isEmpty()) { "Foreign fixtures remain after cleanup: $remaining" }
+        } finally {
+            val remaining = foreignRows()
+            val afterTrace = "test=${testName.methodName} before=${before.size} deleted=$deleted " +
+                "remaining=${remaining.size}\n" + remaining.joinToString("\n", postfix = "\n")
+            publishDiagnostic("selection-trace-foreign-after-${testName.methodName}.txt", "text/plain", afterTrace.toByteArray())
+        }
+    }
+
     @Before fun createFixtures() {
+        cleanForeignFixtures()
         val leftovers = queryFixtures("${MediaStore.Images.Media.RELATIVE_PATH} = ?", arrayOf(fixtureDirectory))
             .filter { it.displayName?.startsWith("ui_fixture_") == true }
         var deleted = 0
