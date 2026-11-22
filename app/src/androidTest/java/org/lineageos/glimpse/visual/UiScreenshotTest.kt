@@ -131,8 +131,18 @@ class UiScreenshotTest {
         }
     }
 
-    private fun shell(command: String): String = android.os.ParcelFileDescriptor.AutoCloseInputStream(
-        instrumentation.uiAutomation.executeShellCommand(command)).bufferedReader().use { it.readText().trim() }
+    private fun shell(command: String): String {
+        // UiAutomation executes its argument with Runtime.exec(String), not a
+        // shell parser. Feed scripts to sh over stdin so quoting and exit checks
+        // work without treating metacharacters as ordinary command arguments.
+        val pipes = instrumentation.uiAutomation.executeShellCommandRw("sh")
+        android.os.ParcelFileDescriptor.AutoCloseOutputStream(pipes[1]).bufferedWriter().use {
+            it.write("exec 2>&1\n")
+            it.write(command)
+            it.write("\nexit\n")
+        }
+        return android.os.ParcelFileDescriptor.AutoCloseInputStream(pipes[0]).bufferedReader().use { it.readText().trim() }
+    }
 
     private fun shellQuote(value: String): String = "'" + value.replace("'", "'\\''") + "'"
 
@@ -254,8 +264,8 @@ class UiScreenshotTest {
             "GlimpseUiTest").canonicalFile
         val fixture = File(dir, "shell_fixture_${UUID.randomUUID()}.png")
         check(fixture.canonicalFile.parentFile == dir)
-        val png = instrumentation.context.assets.open("synthetic_portrait.png").use { it.readBytes() }
-        val encoded = android.util.Base64.encodeToString(png, android.util.Base64.NO_WRAP)
+        // Small synthetic 8x8 PNG; keep the shell command bounded.
+        val encoded = "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEklEQVR4nGP4z8CAFWEXHbQSACj/P8Fu7N9hAAAAAElFTkSuQmCC"
         val created = shell("mkdir -p ${shellQuote(dir.path)} && " +
             "printf %s ${shellQuote(encoded)} | base64 -d > ${shellQuote(fixture.path)}; printf '\\nexit=%s\\n' \$?")
         assertTrue("Shell fixture write failed: $created", created.endsWith("exit=0"))
