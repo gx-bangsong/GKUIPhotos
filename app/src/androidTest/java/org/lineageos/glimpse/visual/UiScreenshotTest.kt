@@ -45,6 +45,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assume.assumeTrue
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.Rule
+import org.junit.rules.TestName
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.lineageos.glimpse.ImageEditorActivity
@@ -63,6 +65,8 @@ class UiScreenshotTest {
     private val context = instrumentation.targetContext
     private val device = UiDevice.getInstance(instrumentation)
     private val images = mutableListOf<Uri>()
+    private val insertedImages = mutableSetOf<Uri>()
+    @get:Rule val testName = TestName()
     private var activity: Activity? = null
     private val output by lazy { File(context.getExternalFilesDir(null), "ui-screenshots").apply { mkdirs() } }
 
@@ -78,6 +82,7 @@ class UiScreenshotTest {
             }
             val uri = requireNotNull(context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values))
             images.add(uri)
+            insertedImages.add(uri)
             context.contentResolver.openOutputStream(uri)!!.use { bitmap.compress(Bitmap.CompressFormat.JPEG, 90, it) }
             bitmap.recycle()
             if (index == 1) context.contentResolver.openFileDescriptor(uri, "rw")!!.use {
@@ -91,7 +96,107 @@ class UiScreenshotTest {
 
     @After fun cleanup() {
         activity?.finish()
+        // Record before deleting any of the synthetic URIs, including when an
+        // ensuing delete throws. Shell is used for observation only, not cleanup.
+        val trace = StringBuilder("test=${testName.methodName} targetPackage=${context.packageName} " +
+            "targetUid=${context.applicationInfo.uid} processUid=${android.os.Process.myUid()} " +
+            "instrumentationPackage=${instrumentation.context.packageName}\n")
+        images.forEach { uri ->
+            val command = "content query --uri $uri --projection owner_package_name"
+            val response = android.os.ParcelFileDescriptor.AutoCloseInputStream(
+                instrumentation.uiAutomation.executeShellCommand(command)).bufferedReader().use { it.readText().trim() }
+            trace.append("uri=$uri insertedByThisTest=${uri in insertedImages} ownerQuery=$response\n")
+        }
+        publishDiagnostic("selection-trace-owner-${testName.methodName}.txt", "text/plain", trace.toString().toByteArray())
         images.forEach { context.contentResolver.delete(it, null, null) }
+    }
+
+    // Existing evidence packaging includes selection-trace text and
+    // markup-shape-import images; no CI/workflow changes are required.
+    private fun publishDiagnostic(name: String, mime: String, bytes: ByteArray) {
+        val values = ContentValues().apply {
+            put(MediaStore.Downloads.DISPLAY_NAME, name)
+            put(MediaStore.Downloads.MIME_TYPE, mime)
+            put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/GlimpseUiTest")
+            put(MediaStore.Downloads.IS_PENDING, 1)
+        }
+        val uri = requireNotNull(context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values))
+        requireNotNull(context.contentResolver.openOutputStream(uri, "w")).use { it.write(bytes) }
+        values.clear(); values.put(MediaStore.Downloads.IS_PENDING, 0)
+        check(context.contentResolver.update(uri, values, null, null) == 1)
+    }
+
+    private fun captureOpacityFailure() {
+        val prefix = "markup-shape-import-opacity-picker-failure"
+        val png = File(output, "$prefix.png")
+        val xml = File(output, "$prefix.xml")
+        val screenshotOk = device.takeScreenshot(png)
+        device.dumpWindowHierarchy(xml)
+        if (screenshotOk) publishDiagnostic("$prefix.png", "image/png", png.readBytes())
+        publishDiagnostic("$prefix.xml", "application/xml", xml.readBytes())
+        val trace = StringBuilder("screenshotCaptured=$screenshotOk\n")
+        instrumentation.runOnMainSync {
+            val rowId = context.resources.getIdentifier("markupSubtoolsRow", "id", context.packageName)
+            val row = activity?.findViewById<ViewGroup>(rowId)
+            val selected = row?.let { r -> (0 until r.childCount).map { r.getChildAt(it) }
+                .filter { it.isSelected }.map { it.contentDescription.toString() } }
+            trace.append("selectedSubtools=$selected\n")
+            val windowRoots = android.view.inspector.WindowInspector.getGlobalWindowViews()
+            val titleId = context.resources.getIdentifier("alertTitle", "id", context.packageName)
+            val actualSliders = mutableListOf<String>()
+            val actualScrolls = mutableListOf<String>()
+            val actualTitles = mutableListOf<String>()
+            fun visitView(view: View, rootIndex: Int) {
+                val visibleBounds = Rect()
+                val globallyVisible = view.getGlobalVisibleRect(visibleBounds)
+                val location = IntArray(2); view.getLocationOnScreen(location)
+                val screenBounds = Rect(location[0], location[1], location[0] + view.width, location[1] + view.height)
+                val info = view.createAccessibilityNodeInfo()
+                val details = "window=$rootIndex class=${view.javaClass.name} " +
+                    "text=${(view as? TextView)?.text} contentDescription=${view.contentDescription} " +
+                    "bounds=$screenBounds visibleBounds=$visibleBounds shown=${view.isShown} " +
+                    "globalVisible=$globallyVisible visibleToUser=${info.isVisibleToUser}"
+                if (view is Slider) actualSliders.add(details)
+                if (view is ScrollView) actualScrolls.add("$details canScrollDown=${view.canScrollVertically(1)}")
+                if (titleId != 0 && view.id == titleId) actualTitles.add(details)
+                if (view is ViewGroup) {
+                    for (i in 0 until view.childCount) visitView(view.getChildAt(i), rootIndex)
+                }
+            }
+            windowRoots.forEachIndexed { index, root ->
+                trace.append("window[$index] focused=${root.hasWindowFocus()} shown=${root.isShown}\n")
+                visitView(root, index)
+            }
+            trace.append("actualDialogTitles=$actualTitles\nactualSliderCount=${actualSliders.size}\n")
+            actualSliders.forEachIndexed { index, value -> trace.append("actualSlider[$index] $value\n") }
+            trace.append("actualScrollViewCount=${actualScrolls.size}\n")
+            actualScrolls.forEachIndexed { index, value -> trace.append("actualScroll[$index] $value\n") }
+        }
+        val sliders = mutableListOf<String>()
+        val scrolls = mutableListOf<String>()
+        val titles = mutableListOf<String>()
+        fun visit(node: android.view.accessibility.AccessibilityNodeInfo) {
+            val bounds = Rect(); node.getBoundsInScreen(bounds)
+            val cls = node.className?.toString().orEmpty()
+            val details = "class=$cls text=${node.text} contentDescription=${node.contentDescription} " +
+                "bounds=$bounds visibleToUser=${node.isVisibleToUser}"
+            if (cls.contains("Slider") || cls.contains("SeekBar")) sliders.add(details)
+            if (cls.contains("ScrollView")) {
+                val canScrollForward = node.actionList.any {
+                    it.id == android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
+                }
+                scrolls.add("$details scrollable=${node.isScrollable} canScrollForward=$canScrollForward")
+            }
+            if (node.viewIdResourceName?.endsWith("/alertTitle") == true) titles.add(details)
+            for (i in 0 until node.childCount) node.getChild(i)?.let(::visit)
+        }
+        val root = instrumentation.uiAutomation.rootInActiveWindow
+        if (root != null) visit(root) else trace.append("activeWindowRoot=null\n")
+        trace.append("dialogTitles=$titles\naccessibleSliderCount=${sliders.size}\n")
+        sliders.forEachIndexed { index, value -> trace.append("slider[$index] $value\n") }
+        trace.append("accessibleScrollViewCount=${scrolls.size}\n")
+        scrolls.forEachIndexed { index, value -> trace.append("scroll[$index] $value\n") }
+        publishDiagnostic("selection-trace-opacity-picker-failure.txt", "text/plain", trace.toString().toByteArray())
     }
 
     private fun start(intent: Intent) {
@@ -1377,6 +1482,7 @@ class UiScreenshotTest {
         assertNotNull("Custom background control missing", custom)
         custom!!.click()
         val opacity = device.wait(Until.findObject(By.desc(newString("markup_color_opacity"))), 5000)
+        if (opacity == null) captureOpacityFailure()
         assertNotNull("Background opacity control missing", opacity)
         val sliderBounds = opacity!!.visibleBounds
         assertTrue("Opacity tap failed", device.click(sliderBounds.centerX(), sliderBounds.centerY()))
