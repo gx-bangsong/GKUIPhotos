@@ -22,6 +22,7 @@ import android.app.LocaleManager
 import android.os.LocaleList
 import android.net.Uri
 import android.os.Environment
+import android.os.Bundle
 import android.provider.MediaStore
 import android.view.View
 import android.view.MotionEvent
@@ -58,6 +59,7 @@ import org.lineageos.glimpse.ui.views.AnnotationOverlayView
 import org.lineageos.glimpse.ui.views.MosaicEffect
 import java.io.File
 import java.security.MessageDigest
+import java.util.UUID
 
 @RunWith(AndroidJUnit4::class)
 class UiScreenshotTest {
@@ -70,17 +72,106 @@ class UiScreenshotTest {
     private var activity: Activity? = null
     private val output by lazy { File(context.getExternalFilesDir(null), "ui-screenshots").apply { mkdirs() } }
 
+    private val fixtureDirectory = Environment.DIRECTORY_PICTURES + "/GlimpseUiTest/"
+    private val fixtureRunId = UUID.randomUUID().toString()
+
+    private data class FixtureRecord(val id: Long, val data: String?, val displayName: String?,
+        val owner: String?, val pending: Int, val trashed: Int)
+
+    // Shell identity is for observation only. All deletes use the app's own identity.
+    private fun queryFixtures(selection: String, args: Array<String>): List<FixtureRecord> {
+        val rows = mutableListOf<FixtureRecord>()
+        val query = Bundle().apply {
+            putString(android.content.ContentResolver.QUERY_ARG_SQL_SELECTION, selection)
+            putStringArray(android.content.ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS, args)
+            putInt(MediaStore.QUERY_ARG_MATCH_PENDING, MediaStore.MATCH_INCLUDE)
+            putInt(MediaStore.QUERY_ARG_MATCH_TRASHED, MediaStore.MATCH_INCLUDE)
+        }
+        instrumentation.uiAutomation.adoptShellPermissionIdentity()
+        try {
+            val columns = arrayOf(MediaStore.Images.Media._ID, MediaStore.Images.Media.DATA,
+                MediaStore.Images.Media.DISPLAY_NAME, MediaStore.Images.Media.OWNER_PACKAGE_NAME,
+                MediaStore.Images.Media.IS_PENDING, MediaStore.Images.Media.IS_TRASHED)
+            requireNotNull(context.contentResolver.query(MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                columns, query, null)).use { cursor ->
+                while (cursor.moveToNext()) {
+                    rows.add(FixtureRecord(cursor.getLong(0), cursor.getString(1), cursor.getString(2),
+                        cursor.getString(3), cursor.getInt(4), cursor.getInt(5)))
+                }
+            }
+        } finally {
+            instrumentation.uiAutomation.dropShellPermissionIdentity()
+        }
+        return rows
+    }
+
+    private fun deleteWithDiagnostics(uri: Uri) {
+        try {
+            check(context.contentResolver.delete(uri, null, null) == 1) { "Delete did not remove $uri" }
+        } catch (original: SecurityException) {
+            try {
+                val command = "content query --uri $uri --projection owner_package_name"
+                val owner = android.os.ParcelFileDescriptor.AutoCloseInputStream(
+                    instrumentation.uiAutomation.executeShellCommand(command)).bufferedReader().use { it.readText().trim() }
+                val permissions = listOf("android.permission.READ_MEDIA_IMAGES", "android.permission.READ_MEDIA_VIDEO",
+                    "android.permission.READ_EXTERNAL_STORAGE", "android.permission.ACCESS_MEDIA_LOCATION",
+                    "android.permission.MANAGE_MEDIA").joinToString { permission ->
+                    "$permission=${context.checkSelfPermission(permission)}"
+                }
+                val trace = "test=${testName.methodName} uri=$uri insertedByThisTest=${uri in insertedImages} " +
+                    "targetPackage=${context.packageName} targetUid=${context.applicationInfo.uid} " +
+                    "processUid=${android.os.Process.myUid()} instrumentationPackage=${instrumentation.context.packageName}\n" +
+                    "ownerQuery=$owner\npermissions=$permissions\n"
+                publishDiagnostic("selection-trace-owner-failure-${testName.methodName}.txt", "text/plain", trace.toByteArray())
+            } catch (diagnosticFailure: Exception) {
+                original.addSuppressed(diagnosticFailure)
+            }
+            throw original
+        }
+    }
+
     @Before fun createFixtures() {
+        val leftovers = queryFixtures("${MediaStore.Images.Media.RELATIVE_PATH} = ?", arrayOf(fixtureDirectory))
+            .filter { it.displayName?.startsWith("ui_fixture_") == true }
+        var deleted = 0
+        try {
+            leftovers.forEach { row ->
+                deleteWithDiagnostics(ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, row.id))
+                deleted++
+            }
+        } catch (original: Exception) {
+            try {
+                publishDiagnostic("selection-trace-fixture-cleanup-${testName.methodName}.txt", "text/plain",
+                    "test=${testName.methodName} found=${leftovers.size} deleted=$deleted failure=${original.javaClass.name}\n".toByteArray())
+            } catch (diagnosticFailure: Exception) { original.addSuppressed(diagnosticFailure) }
+            throw original
+        }
+        publishDiagnostic("selection-trace-fixture-cleanup-${testName.methodName}.txt", "text/plain",
+            "test=${testName.methodName} found=${leftovers.size} deleted=$deleted\n".toByteArray())
         val assets = instrumentation.context.assets
         repeat(6) { index ->
             val name = if (index % 2 == 0) "synthetic_portrait.png" else "synthetic_landscape.png"
             val bitmap = assets.open(name).use { BitmapFactory.decodeStream(it) }
+            val displayName = "ui_fixture_${fixtureRunId}_${testName.methodName}_$index.jpg"
             val values = ContentValues().apply {
-                put(MediaStore.Images.Media.DISPLAY_NAME, "ui_fixture_$index.jpg")
+                put(MediaStore.Images.Media.DISPLAY_NAME, displayName)
                 put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
-                put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/GlimpseUiTest")
+                put(MediaStore.Images.Media.RELATIVE_PATH, fixtureDirectory)
             }
-            val uri = requireNotNull(context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values))
+            val uri = try {
+                requireNotNull(context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values))
+            } catch (original: Exception) {
+                try {
+                    val path = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
+                        "GlimpseUiTest/$displayName").absolutePath
+                    val rows = queryFixtures("${MediaStore.Images.Media.DATA} = ? OR (" +
+                        "${MediaStore.Images.Media.RELATIVE_PATH} = ? AND ${MediaStore.Images.Media.DISPLAY_NAME} = ?)",
+                        arrayOf(path, fixtureDirectory, displayName))
+                    val trace = "test=${testName.methodName} index=$index expected_data=$path\n" + rows.joinToString("\n", postfix = "\n")
+                    publishDiagnostic("selection-trace-fixture-insert-${testName.methodName}.txt", "text/plain", trace.toByteArray())
+                } catch (diagnosticFailure: Exception) { original.addSuppressed(diagnosticFailure) }
+                throw original
+            }
             images.add(uri)
             insertedImages.add(uri)
             context.contentResolver.openOutputStream(uri)!!.use { bitmap.compress(Bitmap.CompressFormat.JPEG, 90, it) }
@@ -96,31 +187,7 @@ class UiScreenshotTest {
 
     @After fun cleanup() {
         activity?.finish()
-        images.forEach { uri ->
-            try {
-                context.contentResolver.delete(uri, null, null)
-            } catch (original: SecurityException) {
-                // Preserve the original failure even if collecting diagnostics fails.
-                try {
-                    val command = "content query --uri $uri --projection owner_package_name"
-                    val owner = android.os.ParcelFileDescriptor.AutoCloseInputStream(
-                        instrumentation.uiAutomation.executeShellCommand(command)).bufferedReader().use { it.readText().trim() }
-                    val permissions = listOf("android.permission.READ_MEDIA_IMAGES", "android.permission.READ_MEDIA_VIDEO",
-                        "android.permission.READ_EXTERNAL_STORAGE", "android.permission.ACCESS_MEDIA_LOCATION",
-                        "android.permission.MANAGE_MEDIA").joinToString { permission ->
-                        "$permission=${context.checkSelfPermission(permission)}"
-                    }
-                    val trace = "test=${testName.methodName} uri=$uri insertedByThisTest=${uri in insertedImages} " +
-                        "targetPackage=${context.packageName} targetUid=${context.applicationInfo.uid} " +
-                        "processUid=${android.os.Process.myUid()} instrumentationPackage=${instrumentation.context.packageName}\n" +
-                        "ownerQuery=$owner\npermissions=$permissions\n"
-                    publishDiagnostic("selection-trace-owner-failure-${testName.methodName}.txt", "text/plain", trace.toByteArray())
-                } catch (diagnosticFailure: Exception) {
-                    original.addSuppressed(diagnosticFailure)
-                }
-                throw original
-            }
-        }
+        images.forEach(::deleteWithDiagnostics)
     }
 
     private fun publishDiagnostic(name: String, mime: String, bytes: ByteArray) {

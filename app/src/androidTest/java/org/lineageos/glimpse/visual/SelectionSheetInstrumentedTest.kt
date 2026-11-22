@@ -900,13 +900,63 @@ class SelectionSheetInstrumentedTest {
                 (requiredView("selectionCount") as TextView).text.toString())
             assertTrue("Sheet disappeared after deselection", requiredView("selectionSheet").isShown)
         }
-        device.findObject(By.res(context.packageName, "selectionCancel"))!!.click()
-        device.waitForIdle()
+        // Observe the actual click accessibility event without replacing the click listener.
+        val clickEvent = java.util.concurrent.atomic.AtomicBoolean(false)
+        lateinit var cancelView: View
+        var previousDelegate: androidx.core.view.AccessibilityDelegateCompat? = null
         instrumentation.runOnMainSync {
-            assertTrue("Sheet still visible after cancel", !requiredView("selectionSheet").isShown)
-            assertTrue("Selection toolbar still visible after cancel", !requiredView("selectionTopBar").isShown)
-            assertTrue("Ordinary navigation not restored", requiredView("navigationBarView").isShown)
-            assertSelectionGridPaddingRestored()
+            cancelView = requiredView("selectionCancel")
+            previousDelegate = ViewCompat.getAccessibilityDelegate(cancelView)
+            ViewCompat.setAccessibilityDelegate(cancelView, object : androidx.core.view.AccessibilityDelegateCompat() {
+                override fun sendAccessibilityEvent(host: View, eventType: Int) {
+                    if (eventType == android.view.accessibility.AccessibilityEvent.TYPE_VIEW_CLICKED) clickEvent.set(true)
+                    val delegate = previousDelegate
+                    if (delegate != null) delegate.sendAccessibilityEvent(host, eventType)
+                    else super.sendAccessibilityEvent(host, eventType)
+                }
+            })
+        }
+        try {
+            device.findObject(By.res(context.packageName, "selectionCancel"))!!.click()
+            device.waitForIdle()
+        } finally {
+            instrumentation.runOnMainSync { ViewCompat.setAccessibilityDelegate(cancelView, previousDelegate) }
+        }
+        var failureState = ""
+        try {
+            instrumentation.runOnMainSync {
+                val sheet = requiredView("selectionSheet")
+                if (sheet.isShown) {
+                    failureState = try {
+                        val fragment = androidx.fragment.app.FragmentManager.findFragment<androidx.fragment.app.Fragment>(sheet)
+                        val active = fragment.javaClass.getDeclaredField("selectionActive").apply { isAccessible = true }.get(fragment)
+                        "behaviorState=${BottomSheetBehavior.from(sheet).state} selectionActive=$active " +
+                            "visibility=${sheet.visibility} translationY=${sheet.translationY} isShown=${sheet.isShown} " +
+                            "cancelClickAccessibilityEvent=${clickEvent.get()}\n"
+                    } catch (e: Exception) {
+                        "stateObservationFailed=${e.javaClass.name}: ${e.message} " +
+                            "visibility=${sheet.visibility} translationY=${sheet.translationY} isShown=${sheet.isShown} " +
+                            "cancelClickAccessibilityEvent=${clickEvent.get()}\n"
+                    }
+                }
+                assertTrue("Sheet still visible after cancel", !requiredView("selectionSheet").isShown)
+                assertTrue("Selection toolbar still visible after cancel", !requiredView("selectionTopBar").isShown)
+                assertTrue("Ordinary navigation not restored", requiredView("navigationBarView").isShown)
+                assertSelectionGridPaddingRestored()
+            }
+        } catch (original: AssertionError) {
+            try {
+                val png = File(context.cacheDir, "selection-sheet-cancel-failure.png")
+                val xml = File(context.cacheDir, "selection-sheet-cancel-failure.xml")
+                val trace = File(context.cacheDir, "selection-trace-cancel-failure.txt")
+                check(device.takeScreenshot(png))
+                device.dumpWindowHierarchy(xml)
+                trace.writeText(failureState)
+                pendingCaptures.add(png to "application/octet-stream")
+                pendingCaptures.add(xml to "application/xml")
+                pendingCaptures.add(trace to "text/plain")
+            } catch (diagnosticFailure: Exception) { original.addSuppressed(diagnosticFailure) }
+            throw original
         }
         capture("selection-sheet-closed")
     }
