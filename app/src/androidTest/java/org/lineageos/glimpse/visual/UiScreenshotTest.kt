@@ -929,7 +929,7 @@ class UiScreenshotTest {
         val values = ContentValues().apply {
             put(MediaStore.Downloads.DISPLAY_NAME, "arena_custom_shape.svg")
             put(MediaStore.Downloads.MIME_TYPE, "image/svg+xml")
-            put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/GlimpseUiTest")
+            put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/GlimpseUiFixtures")
         }
         val uri = requireNotNull(context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values))
         try {
@@ -967,21 +967,46 @@ class UiScreenshotTest {
                 }
             } else {
                 button!!.click()
-                // Recents can be filled by our diagnostics. Navigate to the fixture
-                // directory in the real system picker rather than relying on it.
-                val roots = device.wait(Until.findObject(By.desc("Show roots")), 10000)
-                assertNotNull("System picker navigation unavailable", roots)
-                roots!!.click()
-                val downloads = device.wait(Until.findObject(By.text("Downloads")), 10000)
-                assertNotNull("Downloads root missing from system picker", downloads)
-                downloads!!.click()
-                val directory = device.wait(Until.findObject(By.text("GlimpseUiTest")), 10000)
-                assertNotNull("Synthetic fixture directory missing from Downloads", directory)
-                directory!!.click()
-                val file = device.wait(Until.findObject(By.text("arena_custom_shape.svg")), 10000)
-                if (file == null) capture("markup-shape-import-$mode-picker-missing")
-                assertNotNull("Synthetic SVG missing from system file picker", file)
-                file!!.click()
+                // Wait for the picker to stop loading before resolving each node.
+                // Never retain UiObject2 across transitions or retry a stale click.
+                var navigationComplete = false
+                try {
+                    fun waitLoaded() {
+                        assertTrue("System picker still loading", device.wait(
+                            Until.gone(By.clazz("android.widget.ProgressBar")), 10000))
+                        device.waitForIdle()
+                    }
+                    waitLoaded()
+                    assertTrue("System picker navigation unavailable", device.wait(
+                        Until.hasObject(By.desc("Show roots")), 10000))
+                    requireNotNull(device.findObject(By.desc("Show roots"))).click()
+                    waitLoaded()
+                    assertTrue("Downloads root missing from system picker", device.wait(
+                        Until.hasObject(By.text("Downloads")), 10000))
+                    requireNotNull(device.findObject(By.text("Downloads"))).click()
+                    waitLoaded()
+                    assertTrue("Synthetic fixture directory missing from Downloads", device.wait(
+                        Until.hasObject(By.text("GlimpseUiFixtures")), 10000))
+                    requireNotNull(device.findObject(By.text("GlimpseUiFixtures"))).click()
+                    waitLoaded()
+                    assertTrue("Synthetic SVG missing from system file picker", device.wait(
+                        Until.hasObject(By.text("arena_custom_shape.svg")), 10000))
+                    requireNotNull(device.findObject(By.text("arena_custom_shape.svg"))).click()
+                    navigationComplete = true
+                } finally {
+                    if (!navigationComplete) {
+                        // Preserve the original failure; capture before leaving DocumentsUI.
+                        runCatching {
+                            val hierarchy = File(output, "markup-shape-import-$mode-navigation-failure.xml")
+                            device.dumpWindowHierarchy(hierarchy)
+                            publishDiagnostic(hierarchy.name, "application/xml", hierarchy.readBytes())
+                            val screenshot = File(output, "markup-shape-import-$mode-picker-missing.png")
+                            if (device.takeScreenshot(screenshot)) {
+                                publishDiagnostic(screenshot.name, "image/png", screenshot.readBytes())
+                            }
+                        }
+                    }
+                }
             }
             assertTrue("Editor did not resume after file selection", device.wait(
                 Until.hasObject(By.res(context.packageName, "markupOptionsScroll")), 10000))
