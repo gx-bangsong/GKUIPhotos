@@ -967,6 +967,17 @@ class UiScreenshotTest {
                 }
             } else {
                 button!!.click()
+                // Recents can be filled by our diagnostics. Navigate to the fixture
+                // directory in the real system picker rather than relying on it.
+                val roots = device.wait(Until.findObject(By.desc("Show roots")), 10000)
+                assertNotNull("System picker navigation unavailable", roots)
+                roots!!.click()
+                val downloads = device.wait(Until.findObject(By.text("Downloads")), 10000)
+                assertNotNull("Downloads root missing from system picker", downloads)
+                downloads!!.click()
+                val directory = device.wait(Until.findObject(By.text("GlimpseUiTest")), 10000)
+                assertNotNull("Synthetic fixture directory missing from Downloads", directory)
+                directory!!.click()
                 val file = device.wait(Until.findObject(By.text("arena_custom_shape.svg")), 10000)
                 if (file == null) capture("markup-shape-import-$mode-picker-missing")
                 assertNotNull("Synthetic SVG missing from system file picker", file)
