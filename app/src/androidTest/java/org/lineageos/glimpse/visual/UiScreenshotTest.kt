@@ -1421,12 +1421,15 @@ class UiScreenshotTest {
         val opacityId = context.resources.getIdentifier("annotation_background_opacity", "id", context.packageName)
         assertTrue("Background opacity ID missing", opacityId != 0)
         fun dragOpacityFromOpaque(): Int {
+            // Wait for the dialog window, not the Slider's inaccessible host node.
+            assertNotNull("Color confirmation missing", device.wait(
+                Until.findObject(By.text(context.getString(android.R.string.ok))), 5000))
             val bounds = Rect()
             var initial = -1f
             var slider: Slider? = null
             instrumentation.runOnMainSync {
                 slider = android.view.inspector.WindowInspector.getGlobalWindowViews()
-                    .filter { it.hasWindowFocus() }.mapNotNull { it.findViewById<Slider>(opacityId) }.singleOrNull()
+                    .mapNotNull { it.findViewById<Slider>(opacityId) }.filter { it.isShown }.singleOrNull()
                 assertNotNull("Background opacity control missing", slider)
                 val control = requireNotNull(slider)
                 assertTrue("Background opacity control is not shown", control.isShown)
