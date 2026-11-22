@@ -2340,7 +2340,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             setOnClickListener {
                 val initial = selectedColor ?: Color.WHITE
                 val allowOpacity = isTextBackground || annotationOverlayView.activeTool != MarkupTool.TEXT
-                showCustomMarkupColor(initial, allowOpacity) { color ->
+                showCustomMarkupColor(initial, allowOpacity, isTextBackground) { color ->
                     if (!isTextBackground) annotationOverlayView.activeColor = color
                     onColorChanged?.invoke(color)
                     showMarkupToolOptions(annotationOverlayView.activeTool)
@@ -2351,7 +2351,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
     }
 
     /** Material dialog uses explicit channels, a live swatch and optional opacity. */
-    private fun showCustomMarkupColor(initial: Int, allowOpacity: Boolean, onApply: (Int) -> Unit) {
+    private fun showCustomMarkupColor(initial: Int, allowOpacity: Boolean, isTextBackground: Boolean, onApply: (Int) -> Unit) {
         val density = resources.displayMetrics.density
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -2369,7 +2369,8 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             val label = TextView(this).apply { text = getString(labels[i]) }
             val slider = Slider(this).apply {
                 valueFrom = 0f; valueTo = 255f; stepSize = 1f; value = values[i].toFloat()
-                contentDescription = getString(labels[i]); id = View.generateViewId()
+                contentDescription = getString(labels[i])
+                id = if (isTextBackground && i == 3) R.id.annotation_background_opacity else View.generateViewId()
                 addOnChangeListener { _, v, _ -> values[i] = v.toInt(); updatePreview() }
             }
             label.labelFor = slider.id

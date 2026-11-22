@@ -96,23 +96,33 @@ class UiScreenshotTest {
 
     @After fun cleanup() {
         activity?.finish()
-        // Record before deleting any of the synthetic URIs, including when an
-        // ensuing delete throws. Shell is used for observation only, not cleanup.
-        val trace = StringBuilder("test=${testName.methodName} targetPackage=${context.packageName} " +
-            "targetUid=${context.applicationInfo.uid} processUid=${android.os.Process.myUid()} " +
-            "instrumentationPackage=${instrumentation.context.packageName}\n")
         images.forEach { uri ->
-            val command = "content query --uri $uri --projection owner_package_name"
-            val response = android.os.ParcelFileDescriptor.AutoCloseInputStream(
-                instrumentation.uiAutomation.executeShellCommand(command)).bufferedReader().use { it.readText().trim() }
-            trace.append("uri=$uri insertedByThisTest=${uri in insertedImages} ownerQuery=$response\n")
+            try {
+                context.contentResolver.delete(uri, null, null)
+            } catch (original: SecurityException) {
+                // Preserve the original failure even if collecting diagnostics fails.
+                try {
+                    val command = "content query --uri $uri --projection owner_package_name"
+                    val owner = android.os.ParcelFileDescriptor.AutoCloseInputStream(
+                        instrumentation.uiAutomation.executeShellCommand(command)).bufferedReader().use { it.readText().trim() }
+                    val permissions = listOf("android.permission.READ_MEDIA_IMAGES", "android.permission.READ_MEDIA_VIDEO",
+                        "android.permission.READ_EXTERNAL_STORAGE", "android.permission.ACCESS_MEDIA_LOCATION",
+                        "android.permission.MANAGE_MEDIA").joinToString { permission ->
+                        "$permission=${context.checkSelfPermission(permission)}"
+                    }
+                    val trace = "test=${testName.methodName} uri=$uri insertedByThisTest=${uri in insertedImages} " +
+                        "targetPackage=${context.packageName} targetUid=${context.applicationInfo.uid} " +
+                        "processUid=${android.os.Process.myUid()} instrumentationPackage=${instrumentation.context.packageName}\n" +
+                        "ownerQuery=$owner\npermissions=$permissions\n"
+                    publishDiagnostic("selection-trace-owner-failure-${testName.methodName}.txt", "text/plain", trace.toByteArray())
+                } catch (diagnosticFailure: Exception) {
+                    original.addSuppressed(diagnosticFailure)
+                }
+                throw original
+            }
         }
-        publishDiagnostic("selection-trace-owner-${testName.methodName}.txt", "text/plain", trace.toString().toByteArray())
-        images.forEach { context.contentResolver.delete(it, null, null) }
     }
 
-    // Existing evidence packaging includes selection-trace text and
-    // markup-shape-import images; no CI/workflow changes are required.
     private fun publishDiagnostic(name: String, mime: String, bytes: ByteArray) {
         val values = ContentValues().apply {
             put(MediaStore.Downloads.DISPLAY_NAME, name)
@@ -124,79 +134,6 @@ class UiScreenshotTest {
         requireNotNull(context.contentResolver.openOutputStream(uri, "w")).use { it.write(bytes) }
         values.clear(); values.put(MediaStore.Downloads.IS_PENDING, 0)
         check(context.contentResolver.update(uri, values, null, null) == 1)
-    }
-
-    private fun captureOpacityFailure() {
-        val prefix = "markup-shape-import-opacity-picker-failure"
-        val png = File(output, "$prefix.png")
-        val xml = File(output, "$prefix.xml")
-        val screenshotOk = device.takeScreenshot(png)
-        device.dumpWindowHierarchy(xml)
-        if (screenshotOk) publishDiagnostic("$prefix.png", "image/png", png.readBytes())
-        publishDiagnostic("$prefix.xml", "application/xml", xml.readBytes())
-        val trace = StringBuilder("screenshotCaptured=$screenshotOk\n")
-        instrumentation.runOnMainSync {
-            val rowId = context.resources.getIdentifier("markupSubtoolsRow", "id", context.packageName)
-            val row = activity?.findViewById<ViewGroup>(rowId)
-            val selected = row?.let { r -> (0 until r.childCount).map { r.getChildAt(it) }
-                .filter { it.isSelected }.map { it.contentDescription.toString() } }
-            trace.append("selectedSubtools=$selected\n")
-            val windowRoots = android.view.inspector.WindowInspector.getGlobalWindowViews()
-            val titleId = context.resources.getIdentifier("alertTitle", "id", context.packageName)
-            val actualSliders = mutableListOf<String>()
-            val actualScrolls = mutableListOf<String>()
-            val actualTitles = mutableListOf<String>()
-            fun visitView(view: View, rootIndex: Int) {
-                val visibleBounds = Rect()
-                val globallyVisible = view.getGlobalVisibleRect(visibleBounds)
-                val location = IntArray(2); view.getLocationOnScreen(location)
-                val screenBounds = Rect(location[0], location[1], location[0] + view.width, location[1] + view.height)
-                val info = view.createAccessibilityNodeInfo()
-                val details = "window=$rootIndex class=${view.javaClass.name} " +
-                    "text=${(view as? TextView)?.text} contentDescription=${view.contentDescription} " +
-                    "bounds=$screenBounds visibleBounds=$visibleBounds shown=${view.isShown} " +
-                    "globalVisible=$globallyVisible visibleToUser=${info.isVisibleToUser}"
-                if (view is Slider) actualSliders.add(details)
-                if (view is ScrollView) actualScrolls.add("$details canScrollDown=${view.canScrollVertically(1)}")
-                if (titleId != 0 && view.id == titleId) actualTitles.add(details)
-                if (view is ViewGroup) {
-                    for (i in 0 until view.childCount) visitView(view.getChildAt(i), rootIndex)
-                }
-            }
-            windowRoots.forEachIndexed { index, root ->
-                trace.append("window[$index] focused=${root.hasWindowFocus()} shown=${root.isShown}\n")
-                visitView(root, index)
-            }
-            trace.append("actualDialogTitles=$actualTitles\nactualSliderCount=${actualSliders.size}\n")
-            actualSliders.forEachIndexed { index, value -> trace.append("actualSlider[$index] $value\n") }
-            trace.append("actualScrollViewCount=${actualScrolls.size}\n")
-            actualScrolls.forEachIndexed { index, value -> trace.append("actualScroll[$index] $value\n") }
-        }
-        val sliders = mutableListOf<String>()
-        val scrolls = mutableListOf<String>()
-        val titles = mutableListOf<String>()
-        fun visit(node: android.view.accessibility.AccessibilityNodeInfo) {
-            val bounds = Rect(); node.getBoundsInScreen(bounds)
-            val cls = node.className?.toString().orEmpty()
-            val details = "class=$cls text=${node.text} contentDescription=${node.contentDescription} " +
-                "bounds=$bounds visibleToUser=${node.isVisibleToUser}"
-            if (cls.contains("Slider") || cls.contains("SeekBar")) sliders.add(details)
-            if (cls.contains("ScrollView")) {
-                val canScrollForward = node.actionList.any {
-                    it.id == android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
-                }
-                scrolls.add("$details scrollable=${node.isScrollable} canScrollForward=$canScrollForward")
-            }
-            if (node.viewIdResourceName?.endsWith("/alertTitle") == true) titles.add(details)
-            for (i in 0 until node.childCount) node.getChild(i)?.let(::visit)
-        }
-        val root = instrumentation.uiAutomation.rootInActiveWindow
-        if (root != null) visit(root) else trace.append("activeWindowRoot=null\n")
-        trace.append("dialogTitles=$titles\naccessibleSliderCount=${sliders.size}\n")
-        sliders.forEachIndexed { index, value -> trace.append("slider[$index] $value\n") }
-        trace.append("accessibleScrollViewCount=${scrolls.size}\n")
-        scrolls.forEachIndexed { index, value -> trace.append("scroll[$index] $value\n") }
-        publishDiagnostic("selection-trace-opacity-picker-failure.txt", "text/plain", trace.toString().toByteArray())
     }
 
     private fun start(intent: Intent) {
@@ -1481,11 +1418,33 @@ class UiScreenshotTest {
         val custom = device.wait(Until.findObject(By.desc(newString("markup_custom_color"))), 5000)
         assertNotNull("Custom background control missing", custom)
         custom!!.click()
-        val opacity = device.wait(Until.findObject(By.desc(newString("markup_color_opacity"))), 5000)
-        if (opacity == null) captureOpacityFailure()
-        assertNotNull("Background opacity control missing", opacity)
-        val sliderBounds = opacity!!.visibleBounds
-        assertTrue("Opacity tap failed", device.click(sliderBounds.centerX(), sliderBounds.centerY()))
+        val opacityId = context.resources.getIdentifier("annotation_background_opacity", "id", context.packageName)
+        assertTrue("Background opacity ID missing", opacityId != 0)
+        fun dragOpacityFromOpaque(): Int {
+            val bounds = Rect()
+            var initial = -1f
+            var slider: Slider? = null
+            instrumentation.runOnMainSync {
+                slider = android.view.inspector.WindowInspector.getGlobalWindowViews()
+                    .filter { it.hasWindowFocus() }.mapNotNull { it.findViewById<Slider>(opacityId) }.singleOrNull()
+                assertNotNull("Background opacity control missing", slider)
+                val control = requireNotNull(slider)
+                assertTrue("Background opacity control is not shown", control.isShown)
+                initial = control.value
+                val location = IntArray(2); control.getLocationOnScreen(location)
+                bounds.set(location[0], location[1], location[0] + control.width, location[1] + control.height)
+            }
+            assertEquals("Background opacity should start opaque", 255f, initial, 0.01f)
+            val inset = (24 * context.resources.displayMetrics.density).toInt()
+            assertTrue("Opacity drag injection failed", device.swipe(bounds.right - inset, bounds.centerY(),
+                bounds.centerX(), bounds.centerY(), 20))
+            device.waitForIdle()
+            var after = -1f
+            instrumentation.runOnMainSync { after = requireNotNull(slider).value }
+            assertTrue("Opacity drag must lower value from 255", after > 0f && after < initial)
+            return after.toInt()
+        }
+        val firstDragged = dragOpacityFromOpaque()
         val ok = device.wait(Until.findObject(By.text(context.getString(android.R.string.ok))), 5000)
         assertNotNull("Color confirmation missing", ok)
         ok!!.click(); device.waitForIdle()
@@ -1495,11 +1454,67 @@ class UiScreenshotTest {
             val chosen = colorField.get(item) as Int
             assertTrue("Custom background must be enabled", item.hasBackgroundPill)
             assertTrue("Background opacity was not applied", Color.alpha(chosen) in 1..254)
+            assertEquals("Applied background alpha must match the slider", firstDragged, Color.alpha(chosen))
             assertTrue("Background undo unavailable", overlay.undo())
             assertTrue("Undo must restore no background", !requireNotNull(overlay.activeText).hasBackgroundPill)
             assertTrue("Background redo unavailable", overlay.javaClass.getMethod("redo").invoke(overlay) as Boolean)
             assertEquals("Redo must restore custom color", chosen, colorField.get(requireNotNull(overlay.activeText)))
         }
+        // Establish an opaque background, then perform a separate opacity edit so
+        // undo/redo can be checked against opaque and translucent export pixels.
+        val white = device.wait(Until.findObject(By.desc(newString("markup_color_white"))), 5000)
+        assertNotNull("Opaque background swatch missing", white)
+        white!!.click(); device.waitForIdle()
+        fun exportBackgroundAlpha(): Int {
+            var alpha = -1
+            instrumentation.runOnMainSync {
+                val item = requireNotNull(overlay.activeText)
+                val bounds = android.graphics.RectF().also { item.computeBounds(it) }
+                val matrix = android.graphics.Matrix().apply { setTranslate(256f - bounds.centerX(), 256f - bounds.centerY()) }
+                val sampleY = (256f - bounds.height() / 2f + 3f).toInt()
+                assertTrue("Background sample outside export", sampleY in 0 until 512)
+                val getBounds = overlay.javaClass.getMethod("getBaseBoundsProvider")
+                val setBounds = overlay.javaClass.getMethod("setBaseBoundsProvider", kotlin.jvm.functions.Function0::class.java)
+                val oldBounds = getBounds.invoke(overlay)
+                val doc = overlay.javaClass.getMethod("retainDocument").invoke(overlay)
+                val exportBounds: () -> android.graphics.RectF = { android.graphics.RectF(-100000f, -100000f, 100000f, 100000f) }
+                val bitmap = Bitmap.createBitmap(512, 512, Bitmap.Config.ARGB_8888)
+                try {
+                    setBounds.invoke(overlay, exportBounds)
+                    overlay.javaClass.getMethod("rasterize", android.graphics.Canvas::class.java, android.graphics.Matrix::class.java)
+                        .invoke(overlay, android.graphics.Canvas(bitmap), matrix)
+                    alpha = Color.alpha(bitmap.getPixel(256, sampleY))
+                } finally {
+                    setBounds.invoke(overlay, oldBounds)
+                    overlay.javaClass.getMethod("restoreRetainedDocument", Any::class.java).invoke(overlay, doc)
+                    bitmap.recycle()
+                }
+            }
+            return alpha
+        }
+        val opaqueExportAlpha = exportBackgroundAlpha()
+        assertEquals("Opaque background export alpha", 255, opaqueExportAlpha)
+        requireNotNull(device.findObject(By.desc(newString("markup_custom_color")))).click()
+        val dragged = dragOpacityFromOpaque()
+        requireNotNull(device.wait(Until.findObject(By.text(context.getString(android.R.string.ok))), 5000)).click()
+        device.waitForIdle()
+        val translucentExportAlpha = exportBackgroundAlpha()
+        assertTrue("Export alpha must decrease by more than 32", opaqueExportAlpha - translucentExportAlpha > 32)
+        instrumentation.runOnMainSync {
+            val item = requireNotNull(overlay.activeText)
+            val field = item.javaClass.getDeclaredField("backgroundColor").apply { isAccessible = true }
+            assertEquals("Applied alpha does not match drag", dragged, Color.alpha(field.get(item) as Int))
+            assertTrue("Opaque-to-translucent undo unavailable", overlay.undo())
+            assertEquals("Undo must restore opaque background", 255, Color.alpha(field.get(requireNotNull(overlay.activeText)) as Int))
+        }
+        assertEquals("Undo export must match opaque export", opaqueExportAlpha, exportBackgroundAlpha())
+        instrumentation.runOnMainSync {
+            assertTrue("Opaque-to-translucent redo unavailable", overlay.javaClass.getMethod("redo").invoke(overlay) as Boolean)
+            val item = requireNotNull(overlay.activeText)
+            val field = item.javaClass.getDeclaredField("backgroundColor").apply { isAccessible = true }
+            assertEquals("Redo must restore dragged opacity", dragged, Color.alpha(field.get(item) as Int))
+        }
+        assertEquals("Redo export must match translucent export", translucentExportAlpha, exportBackgroundAlpha())
         capture("markup-custom-background")
         subtool(R.string.markup_color_section)
         requireNotNull(device.findObject(By.desc(newString("markup_custom_color")))).click()
