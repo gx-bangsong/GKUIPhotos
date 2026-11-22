@@ -136,8 +136,10 @@ class UiScreenshotTest {
 
     private fun shellQuote(value: String): String = "'" + value.replace("'", "'\\''") + "'"
 
+    private data class ForeignCleanupEvidence(val before: Uri, val after: Uri)
+
     /** Remove only foreign-owner rows in the exact synthetic fixture directory. */
-    private fun cleanForeignFixtures() {
+    private fun cleanForeignFixtures(): ForeignCleanupEvidence {
         fun foreignRows() = queryFixtures("${MediaStore.Images.Media.RELATIVE_PATH} = ?", arrayOf(fixtureDirectory))
             .filter { it.owner == null || it.owner != context.packageName }
         val directory = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
@@ -154,7 +156,8 @@ class UiScreenshotTest {
                 .append("file_exists=${exists(row.data)}\n") }
         }
         // Persist observations before attempting any delete.
-        publishDiagnostic("selection-trace-foreign-before-${testName.methodName}.txt", "text/plain", beforeTrace.toByteArray())
+        val beforeEvidence = publishDiagnostic("selection-trace-foreign-before-${testName.methodName}.txt", "text/plain", beforeTrace.toByteArray())
+        var afterEvidence: Uri? = null
         var deleted = 0
         try {
             before.forEach { row ->
@@ -180,8 +183,9 @@ class UiScreenshotTest {
             val remaining = foreignRows()
             val afterTrace = "test=${testName.methodName} before=${before.size} deleted=$deleted " +
                 "remaining=${remaining.size}\n" + remaining.joinToString("\n", postfix = "\n")
-            publishDiagnostic("selection-trace-foreign-after-${testName.methodName}.txt", "text/plain", afterTrace.toByteArray())
+            afterEvidence = publishDiagnostic("selection-trace-foreign-after-${testName.methodName}.txt", "text/plain", afterTrace.toByteArray())
         }
+        return ForeignCleanupEvidence(beforeEvidence, requireNotNull(afterEvidence))
     }
 
     @Before fun createFixtures() {
@@ -245,7 +249,50 @@ class UiScreenshotTest {
         images.forEach(::deleteWithDiagnostics)
     }
 
-    private fun publishDiagnostic(name: String, mime: String, bytes: ByteArray) {
+    @Test fun shellOwnedFixtureIsRecordedAndRemoved() {
+        val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
+            "GlimpseUiTest").canonicalFile
+        val fixture = File(dir, "shell_fixture_${UUID.randomUUID()}.png")
+        check(fixture.canonicalFile.parentFile == dir)
+        val png = instrumentation.context.assets.open("synthetic_portrait.png").use { it.readBytes() }
+        val encoded = android.util.Base64.encodeToString(png, android.util.Base64.NO_WRAP)
+        val created = shell("mkdir -p ${shellQuote(dir.path)} && " +
+            "printf %s ${shellQuote(encoded)} | base64 -d > ${shellQuote(fixture.path)}; printf '\\nexit=%s\\n' \$?")
+        assertTrue("Shell fixture write failed: $created", created.endsWith("exit=0"))
+        assertEquals("Fixture file missing", "yes", shell("if test -f ${shellQuote(fixture.path)}; then echo yes; else echo no; fi"))
+
+        val changed = java.util.concurrent.CountDownLatch(1)
+        val observer = object : android.database.ContentObserver(null) {
+            override fun onChange(selfChange: Boolean) { changed.countDown() }
+        }
+        context.contentResolver.registerContentObserver(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, true, observer)
+        try {
+            val scanned = shell("am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d " +
+                shellQuote("file://${fixture.path}") + "; printf '\\nexit=%s\\n' \$?")
+            assertTrue("Media scan broadcast failed: $scanned", scanned.endsWith("exit=0"))
+            assertTrue("Media scan did not notify the image collection", changed.await(30, java.util.concurrent.TimeUnit.SECONDS))
+        } finally {
+            context.contentResolver.unregisterContentObserver(observer)
+        }
+        val rows = queryFixtures("${MediaStore.Images.Media.DATA} = ?", arrayOf(fixture.path))
+        assertEquals("Expected one scanned fixture", 1, rows.size)
+        val row = rows.single()
+        assertNull("Shell-scanned fixture must have a NULL owner", row.owner)
+        val evidence = cleanForeignFixtures()
+        fun read(uri: Uri) = requireNotNull(context.contentResolver.openInputStream(uri)).bufferedReader().use { it.readText() }
+        val before = read(evidence.before)
+        listOf("id=${row.id}", "data=${row.data}", "date_added_seconds=${row.dateAdded}",
+            "owner=null", "is_pending=${row.pending}", "is_trashed=${row.trashed}",
+            "file_exists=yes", "firstInstallTimeMillis=").forEach { field ->
+            assertTrue("Missing cleanup evidence field: $field", before.contains(field))
+        }
+        val after = read(evidence.after)
+        assertTrue("Cleanup counts missing: $after", after.contains("before=1 deleted=1 remaining=0"))
+        assertTrue("Scanned fixture row remains", queryFixtures("${MediaStore.Images.Media._ID} = ?", arrayOf(row.id.toString())).isEmpty())
+        assertEquals("Scanned fixture file remains", "no", shell("if test -e ${shellQuote(fixture.path)}; then echo yes; else echo no; fi"))
+    }
+
+    private fun publishDiagnostic(name: String, mime: String, bytes: ByteArray): Uri {
         val values = ContentValues().apply {
             put(MediaStore.Downloads.DISPLAY_NAME, name)
             put(MediaStore.Downloads.MIME_TYPE, mime)
@@ -256,6 +303,7 @@ class UiScreenshotTest {
         requireNotNull(context.contentResolver.openOutputStream(uri, "w")).use { it.write(bytes) }
         values.clear(); values.put(MediaStore.Downloads.IS_PENDING, 0)
         check(context.contentResolver.update(uri, values, null, null) == 1)
+        return uri
     }
 
     private fun start(intent: Intent) {
