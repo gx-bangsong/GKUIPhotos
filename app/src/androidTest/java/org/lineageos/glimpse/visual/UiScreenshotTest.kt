@@ -585,6 +585,64 @@ class UiScreenshotTest {
         capture("markup-mosaic")
     }
     @Test fun markupSticker() { editor(); tool(R.string.editor_markup_sticker); capture("markup-sticker") }
+    @Test fun markupInventoryImportEntrances() {
+        assumeTrue("Inventory entrances are candidate-only", isCandidate())
+        editor()
+        fun screenshot(name: String) {
+            device.waitForIdle()
+            val file = File(output, "$name.png")
+            assertTrue("Screenshot failed: $name", device.takeScreenshot(file))
+            // The existing evidence packer includes touch-*.png. These are UI
+            // inventory captures, not evidence of a multitouch test.
+            publishDiagnostic("$name.png", "image/png", file.readBytes())
+        }
+        fun resource(name: String): Int {
+            val id = context.resources.getIdentifier(name, "string", context.packageName)
+            assertTrue("Missing $name", id != 0)
+            return id
+        }
+        tool(R.string.editor_markup_sticker)
+        subtool(resource("markup_import_section"))
+        val sticker = device.wait(Until.findObject(By.text(context.getString(R.string.editor_sticker_import))), 5000)
+        assertNotNull("Sticker import entrance missing", sticker)
+        screenshot("touch-inventory-sticker-import")
+
+        tool(R.string.editor_markup_mosaic)
+        subtool(R.string.markup_effect_section)
+        val viewport = Rect()
+        instrumentation.runOnMainSync {
+            fun findScroll(view: View): android.widget.HorizontalScrollView? {
+                if (view is android.widget.HorizontalScrollView) return view
+                if (view is ViewGroup) for (i in 0 until view.childCount) {
+                    findScroll(view.getChildAt(i))?.let { return it }
+                }
+                return null
+            }
+            val scroll = requireNotNull(findScroll(activity!!.findViewById(R.id.markupOptionsContent)))
+            assertTrue("Mosaic effect scroller not visible", scroll.getGlobalVisibleRect(viewport))
+        }
+        assertTrue("Mosaic scroll injection failed", device.swipe(viewport.right - 12, viewport.centerY(),
+            viewport.left + 12, viewport.centerY(), 30))
+        device.waitForIdle()
+        val mosaic = device.wait(Until.findObject(By.text(context.getString(R.string.editor_mosaic_import))), 5000)
+        assertNotNull("Mosaic import entrance missing", mosaic)
+        instrumentation.runOnMainSync {
+            val root = activity!!.findViewById<ViewGroup>(R.id.markupOptionsContent)
+            fun findMosaicImport(view: View): TextView? {
+                if (view is TextView && view.text.toString() == context.getString(R.string.editor_mosaic_import)) return view
+                if (view is ViewGroup) for (i in 0 until view.childCount) {
+                    findMosaicImport(view.getChildAt(i))?.let { return it }
+                }
+                return null
+            }
+            val button = requireNotNull(findMosaicImport(root))
+            val visible = Rect()
+            assertTrue("Mosaic import entrance is clipped", button.getGlobalVisibleRect(visible) &&
+                visible.width() == button.width && visible.height() == button.height)
+        }
+        screenshot("touch-inventory-mosaic-import")
+    }
+
     @Test fun markupTextSelected() {
         editor(); tool(R.string.editor_markup_text)
         val overlay = device.findObject(By.res(context.packageName, "annotationOverlayView"))
