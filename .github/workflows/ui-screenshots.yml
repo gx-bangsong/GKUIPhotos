@@ -134,8 +134,11 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
+      - name: Set instrumentation diagnostic deadline
+        run: echo "UI_DIAGNOSTIC_DEADLINE=$(( $(date +%s) + 43 * 60 ))" >> "$GITHUB_ENV"
       - name: Run instrumentation on API 34
         uses: reactivecircus/android-emulator-runner@v2
+        timeout-minutes: 45
         env:
           UI_MODE: ${{ matrix.mode }}
           UI_VERSION: ${{ matrix.version }}
@@ -144,7 +147,19 @@ jobs:
           target: google_apis
           arch: x86_64
           disable-animations: true
-          script: scripts/run-ui-screenshots.sh
+          # This action splits multiline input into separate scripts; use one folded line.
+          # Leave two minutes for diagnostics before the action's 45-minute limit.
+          script: >-
+            remaining=$((UI_DIAGNOSTIC_DEADLINE - $(date +%s)));
+            if [ "$remaining" -gt 0 ]; then timeout --kill-after=5s "${remaining}s" bash scripts/run-ui-screenshots.sh; status=$?; else status=124; fi;
+            if [ "$status" -ne 0 ]; then mkdir -p ui-evidence;
+            { echo "instrumentation_exit=$status";
+            for process in org.lineageos.glimpse.dev org.lineageos.glimpse.dev.test; do
+            pids=$(timeout 5s adb shell pidof "$process" 2>&1 | tr -d '\r'); echo "process=$process pids=$pids";
+            for pid in $pids; do case "$pid" in *[!0-9]*|'') ;; *) timeout 5s adb shell kill -3 "$pid" 2>&1 || true ;; esac; done; done;
+            echo '--- dumpsys activity ---'; timeout 15s adb shell dumpsys activity 2>&1 || true;
+            echo '--- logcat ---'; timeout 20s adb logcat -d 2>&1 || true;
+            } > ui-evidence/selection-trace-instrumentation-diagnostics.txt; fi; exit "$status"
       - uses: actions/upload-artifact@v7
         if: always()
         with:
