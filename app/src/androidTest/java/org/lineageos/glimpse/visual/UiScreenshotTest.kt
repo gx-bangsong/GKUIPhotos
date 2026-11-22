@@ -1691,7 +1691,6 @@ class UiScreenshotTest {
         ok!!.click()
         assertTrue("Background color dialog did not close", device.wait(
             Until.gone(By.text(context.getString(android.R.string.ok))), 5000))
-        instrumentation.waitForIdleSync()
         snapshotBackground()
         instrumentation.runOnMainSync {
             val item = requireNotNull(overlay.activeText)
@@ -1746,7 +1745,6 @@ class UiScreenshotTest {
         requireNotNull(device.wait(Until.findObject(By.text(context.getString(android.R.string.ok))), 5000)).click()
         assertTrue("Background color dialog did not close", device.wait(
             Until.gone(By.text(context.getString(android.R.string.ok))), 5000))
-        instrumentation.waitForIdleSync()
         snapshotBackground()
         val translucentExportAlpha = exportBackgroundAlpha()
         assertTrue("Export alpha must decrease by more than 32", opaqueExportAlpha - translucentExportAlpha > 32)
