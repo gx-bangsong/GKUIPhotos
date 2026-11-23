@@ -27,6 +27,7 @@ import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.addCallback
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
@@ -873,9 +874,6 @@ class ViewActivity : AppCompatActivity(R.layout.activity_view) {
             appBarLayout.measuredHeight,
             bottomSheetLinearLayout.measuredHeight,
         )
-        // After sheets height changes, reposition toolbox to avoid covering
-        // progress bar for videos.
-        updateToolboxPosition()
     }
 
     /**
