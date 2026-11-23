@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Markup subtool icon. SPDX-License-Identifier: Apache-2.0 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <path android:fillColor="@android:color/transparent" android:strokeColor="?attr/colorOnSurface"
+        android:strokeWidth="1.8" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M12,3 C7,3 3,6.8 3,11.5 C3,16.2 6.8,20 11.5,20 H13 C14.1,20 14.8,19.2 14.8,18.2 C14.8,17.7 14.6,17.3 14.4,16.9 C14.1,16.4 14.4,15.8 15,15.8 H16.5 C19,15.8 21,13.8 21,11.3 C21,6.8 17,3 12,3 Z M7,10 L7.1,10 M10,6.9 L10.1,6.9 M14,6.9 L14.1,6.9 M17,10 L17.1,10" />
+</vector>

@@ -7,6 +7,12 @@
     xmlns:app="http://schemas.android.com/apk/res-auto">
 
     <item
+        android:id="@+id/collage"
+        android:icon="@drawable/ic_collage"
+        android:title="@string/collage_title"
+        app:showAsAction="never" />
+
+    <item
         android:id="@+id/toolbox"
         style="@style/Theme.Glimpse.TopAppBarOption"
         android:contentDescription="@string/toolbox_title"

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Shared editor tool dimensions.
+     SPDX-FileCopyrightText: The LineageOS Project
+     SPDX-License-Identifier: Apache-2.0
+-->
+<resources>
+    <dimen name="editor_tool_horizontal_padding">8dp</dimen>
+    <dimen name="editor_tool_icon_size">24dp</dimen>
+    <dimen name="editor_tool_item_min_width">64dp</dimen>
+    <dimen name="editor_tool_label_gap">4dp</dimen>
+    <dimen name="editor_tool_label_size">11sp</dimen>
+    <dimen name="editor_tool_touch_size">48dp</dimen>
+</resources>

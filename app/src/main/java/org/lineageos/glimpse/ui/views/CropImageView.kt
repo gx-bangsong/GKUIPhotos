@@ -50,6 +50,7 @@ class CropImageView @JvmOverloads constructor(
             computeCropRect()
             requestLayout()
             invalidate()
+            onPreviewGeometryChanged?.invoke()
         }
 
     /** When true the face-alignment oval is drawn inside the crop rectangle. Default is false. */
@@ -64,6 +65,9 @@ class CropImageView @JvmOverloads constructor(
 
     /** Callback invoked whenever the user modifies framing via pan, zoom, or handle drag gestures. */
     var onFramingModified: (() -> Unit)? = null
+
+    /** Redraw the sibling overlay when preview geometry changes. */
+    var onPreviewGeometryChanged: (() -> Unit)? = null
 
     /** Tracks whether the user has actively manipulated the crop rectangle, ratio, or pan/zoom. */
     var hasUserModifiedCrop: Boolean = false
@@ -90,6 +94,7 @@ class CropImageView @JvmOverloads constructor(
     }
 
     private var activeDragHandle = DragHandle.NONE
+    private var handleStartBounds: RectF? = null
 
     // Gesture state
     private var scaleFactor = 1f
@@ -97,6 +102,9 @@ class CropImageView @JvmOverloads constructor(
     private var translateY = 0f
     private var lastTouchX = 0f
     private var lastTouchY = 0f
+    // Once a second finger participates, do not resume a crop-handle drag or pan
+    // until a fresh DOWN. The scale detector still receives the entire stream.
+    private var hadMultiplePointers = false
 
     private val scaleDetector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
         override fun onScale(detector: ScaleGestureDetector): Boolean {
@@ -131,7 +139,50 @@ class CropImageView @JvmOverloads constructor(
         xfermode = PorterDuffXfermode(PorterDuff.Mode.CLEAR)
     }
     private val bitmapPaint = Paint(Paint.FILTER_BITMAP_FLAG)
+    // This dashed, two-tone target is informational: it has no resize handles.
+    private val recoveryTargetPaint = Paint().apply { color = Color.argb(60, 255, 255, 255) }
+    private val recoveryTargetOutline = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+    private val recoveryTargetHighlight = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
 
+    /** Editor preview clips to the same integer source pixels used by its export. */
+    var clipToOutputBounds: Boolean = false
+        set(value) { field = value; invalidate() }
+
+    /** The editor paints crop guides above its sibling annotation layer. */
+    var renderEditorGuidesOnOverlay: Boolean = false
+        set(value) { field = value; invalidate() }
+
+    fun drawEditorGuides(canvas: Canvas) {
+        if (renderEditorGuidesOnOverlay && showCropGuides) {
+            cropSnapshot()?.let { drawGuides(canvas, it.viewBounds) }
+        }
+    }
+
+    /** One coherent geometry/pixel snapshot. Rects and matrices are private copies. */
+    class CropSnapshot internal constructor(
+        val bitmap: Bitmap,
+        source: Rect,
+        displayToView: Matrix,
+        val isCropped: Boolean,
+    ) {
+        private val sourceRect = Rect(source)
+        private val viewMatrix = Matrix(displayToView)
+        val source: Rect get() = Rect(sourceRect)
+        val outputWidth: Int get() = sourceRect.width()
+        val outputHeight: Int get() = sourceRect.height()
+        val displayToView: Matrix get() = Matrix(viewMatrix)
+        val viewBounds: RectF get() = RectF(sourceRect).also { viewMatrix.mapRect(it) }
+        val displayToOutput: Matrix get() = Matrix().apply {
+            setTranslate(-sourceRect.left.toFloat(), -sourceRect.top.toFloat())
+        }
+        fun createOutputBitmap(): Bitmap = Bitmap.createBitmap(bitmap, sourceRect.left, sourceRect.top,
+            outputWidth, outputHeight)
+    }
+
+    private data class CropKey(val bitmap: Bitmap, val matrix: Matrix, val requested: RectF,
+        val cropped: Boolean)
+    private var cachedCropKey: CropKey? = null
+    private var cachedCropSnapshot: CropSnapshot? = null
     private val cropRect = RectF()
     private var initialized = false
 
@@ -149,6 +200,33 @@ class CropImageView @JvmOverloads constructor(
         cropRect.setEmpty()
         requestLayout()
         invalidate()
+        onPreviewGeometryChanged?.invoke()
+    }
+
+    /** Replace only pixel colors, preserving crop and viewport for adjustments/filters. */
+    fun replaceBitmapPreservingFraming(bmp: Bitmap): Boolean {
+        val old = bitmap ?: return false
+        if (old.width != bmp.width || old.height != bmp.height) return false
+        bitmap = bmp
+        invalidate()
+        onPreviewGeometryChanged?.invoke()
+        return true
+    }
+
+    /** A complete externally coordinated two-pointer gesture; coordinates are in this view. */
+    fun updatePreviewGesture(previousX: Float, previousY: Float, x: Float, y: Float, factor: Float) {
+        if (!factor.isFinite() || factor <= 0f) return
+        val old = scaleFactor
+        val next = (old * factor).coerceIn(0.3f, 8f)
+        val ratio = next / old
+        val cx = width / 2f
+        val cy = height / 2f
+        translateX = x - cx - (previousX - cx - translateX) * ratio
+        translateY = y - cy - (previousY - cy - translateY) * ratio
+        scaleFactor = next
+        hasUserModifiedCrop = true
+        onFramingModified?.invoke()
+        invalidate()
     }
 
     fun getTransformState(): Triple<Float, Float, Float> = Triple(scaleFactor, translateX, translateY)
@@ -159,6 +237,7 @@ class CropImageView @JvmOverloads constructor(
         translateY = ty
         initialized = true
         invalidate()
+        onPreviewGeometryChanged?.invoke()
     }
 
     fun reset() {
@@ -168,6 +247,7 @@ class CropImageView @JvmOverloads constructor(
         hasUserModifiedCrop = false
         computeCropRect()
         invalidate()
+        onPreviewGeometryChanged?.invoke()
     }
 
     fun getCropRect(): RectF {
@@ -219,7 +299,13 @@ class CropImageView @JvmOverloads constructor(
             scaleFactor = max(scaleFactor, fitScale())
             computeCropRect()
             invalidate()
+            onPreviewGeometryChanged?.invoke()
         }
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        onPreviewGeometryChanged?.invoke()
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
@@ -228,12 +314,21 @@ class CropImageView @JvmOverloads constructor(
             scaleFactor = fitScale()
             computeCropRect()
             initialized = true
+            onPreviewGeometryChanged?.invoke()
         }
     }
 
     private fun fitScale(): Float {
         val bmp = bitmap ?: return 1f
-        // Fit the bitmap to cover the whole view (center-crop) as the starting point.
+        if (clipToOutputBounds) {
+            // The unmodified output is the full image: keep its entire boundary
+            // visible inside the editor so the initial handles are reachable.
+            val padding = 24f * resources.displayMetrics.density
+            val availableWidth = (width - 2f * padding).coerceAtLeast(1f)
+            val availableHeight = (height - 2f * padding).coerceAtLeast(1f)
+            return min(availableWidth / bmp.width, availableHeight / bmp.height).coerceAtLeast(0.01f)
+        }
+        // ID-photo retains its existing center-crop starting point.
         val sx = width.toFloat() / bmp.width
         val sy = height.toFloat() / bmp.height
         return max(sx, sy).coerceAtLeast(0.01f)
@@ -243,29 +338,56 @@ class CropImageView @JvmOverloads constructor(
         super.onDraw(canvas)
         val bmp = bitmap ?: return
 
-        // Center the bitmap; apply current scale/translate.
-        val cx = width / 2f
-        val cy = height / 2f
-        drawMatrix.reset()
-        drawMatrix.postScale(scaleFactor, scaleFactor)
-        drawMatrix.postTranslate(
-            cx - bmp.width / 2f * scaleFactor + translateX,
-            cy - bmp.height / 2f * scaleFactor + translateY,
-        )
-        canvas.drawBitmap(bmp, drawMatrix, bitmapPaint)
-
-        // Compute the centered crop rectangle if not yet initialized.
-        if (cropRect.isEmpty) {
-            computeCropRect()
+        val snapshot = cropSnapshot()
+        if (snapshot == null) {
+            // With no export boundary, show the un-clipped photo (if it is still
+            // on screen) and a filled target, but no frame or draggable handles.
+            // Even an entirely off-screen image can be panned from anywhere.
+            if (clipToOutputBounds) {
+                canvas.drawBitmap(bmp, getImageMatrix(), bitmapPaint)
+                drawRecoveryTarget(canvas, getCropRect())
+            } else {
+                drawGuides(canvas, getCropRect())
+            }
+            return
         }
+        drawMatrix.set(snapshot.displayToView)
+        canvas.save()
+        // Crop mode shows the whole photo; the overlay paints the guides/scrim
+        // after annotations, so excluded photo and ink are dimmed together.
+        if (clipToOutputBounds && !(renderEditorGuidesOnOverlay && showCropGuides)) {
+            canvas.clipRect(snapshot.viewBounds)
+        }
+        canvas.drawBitmap(bmp, drawMatrix, bitmapPaint)
+        canvas.restore()
 
         // Draw live tiled privacy watermark inside cropRect if configured
         val watermark = watermarkText
         if (!watermark.isNullOrBlank()) {
-            drawWatermark(canvas, cropRect, watermark)
+            drawWatermark(canvas, if (clipToOutputBounds) snapshot.viewBounds else cropRect, watermark)
         }
 
-        drawGuides(canvas)
+        if (!renderEditorGuidesOnOverlay) {
+            drawGuides(canvas, if (clipToOutputBounds) snapshot.viewBounds else getCropRect())
+        }
+    }
+
+    private fun drawRecoveryTarget(canvas: Canvas, rect: RectF) {
+        val density = resources.displayMetrics.density
+        val dash = android.graphics.DashPathEffect(floatArrayOf(8f * density, 6f * density), 0f)
+        recoveryTargetOutline.apply {
+            color = Color.BLACK
+            strokeWidth = 5f * density
+            pathEffect = dash
+        }
+        recoveryTargetHighlight.apply {
+            color = Color.WHITE
+            strokeWidth = 2f * density
+            pathEffect = dash
+        }
+        canvas.drawRect(rect, recoveryTargetPaint)
+        canvas.drawRect(rect, recoveryTargetOutline)
+        canvas.drawRect(rect, recoveryTargetHighlight)
     }
 
     private fun drawWatermark(canvas: Canvas, rect: RectF, text: String) {
@@ -341,7 +463,7 @@ class CropImageView @JvmOverloads constructor(
         cropRect.set(left, top, left + w, top + h)
     }
 
-    private fun drawGuides(canvas: Canvas) {
+    private fun drawGuides(canvas: Canvas, cropRect: RectF) {
         if (!showCropGuides) return
 
         // Dim everything except the crop rectangle.
@@ -390,22 +512,38 @@ class CropImageView @JvmOverloads constructor(
 
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                hadMultiplePointers = false
                 lastTouchX = event.x
                 lastTouchY = event.y
 
+                val snapshot = if (clipToOutputBounds) cropSnapshot() else null
+                val touchRect = snapshot?.viewBounds ?: getCropRect()
                 activeDragHandle = when {
-                    hypot(event.x - cropRect.left, event.y - cropRect.top) <= handleRadius -> DragHandle.CORNER_TL
-                    hypot(event.x - cropRect.right, event.y - cropRect.top) <= handleRadius -> DragHandle.CORNER_TR
-                    hypot(event.x - cropRect.left, event.y - cropRect.bottom) <= handleRadius -> DragHandle.CORNER_BL
-                    hypot(event.x - cropRect.right, event.y - cropRect.bottom) <= handleRadius -> DragHandle.CORNER_BR
-                    aspectRatio <= 0.01f && abs(event.y - cropRect.top) <= handleRadius && event.x in cropRect.left..cropRect.right -> DragHandle.EDGE_TOP
-                    aspectRatio <= 0.01f && abs(event.y - cropRect.bottom) <= handleRadius && event.x in cropRect.left..cropRect.right -> DragHandle.EDGE_BOTTOM
-                    aspectRatio <= 0.01f && abs(event.x - cropRect.left) <= handleRadius && event.y in cropRect.top..cropRect.bottom -> DragHandle.EDGE_LEFT
-                    aspectRatio <= 0.01f && abs(event.x - cropRect.right) <= handleRadius && event.y in cropRect.top..cropRect.bottom -> DragHandle.EDGE_RIGHT
+                    // Invalid editor crops draw no handles: every drag pans until the
+                    // image and requested crop overlap again. Re-hit-test on next DOWN.
+                    !showCropGuides || (clipToOutputBounds && snapshot == null) -> DragHandle.PAN
+                    hypot(event.x - touchRect.left, event.y - touchRect.top) <= handleRadius -> DragHandle.CORNER_TL
+                    hypot(event.x - touchRect.right, event.y - touchRect.top) <= handleRadius -> DragHandle.CORNER_TR
+                    hypot(event.x - touchRect.left, event.y - touchRect.bottom) <= handleRadius -> DragHandle.CORNER_BL
+                    hypot(event.x - touchRect.right, event.y - touchRect.bottom) <= handleRadius -> DragHandle.CORNER_BR
+                    aspectRatio <= 0.01f && abs(event.y - touchRect.top) <= handleRadius && event.x in touchRect.left..touchRect.right -> DragHandle.EDGE_TOP
+                    aspectRatio <= 0.01f && abs(event.y - touchRect.bottom) <= handleRadius && event.x in touchRect.left..touchRect.right -> DragHandle.EDGE_BOTTOM
+                    aspectRatio <= 0.01f && abs(event.x - touchRect.left) <= handleRadius && event.y in touchRect.top..touchRect.bottom -> DragHandle.EDGE_LEFT
+                    aspectRatio <= 0.01f && abs(event.x - touchRect.right) <= handleRadius && event.y in touchRect.top..touchRect.bottom -> DragHandle.EDGE_RIGHT
                     else -> DragHandle.PAN
                 }
+                // Do not mutate the requested crop merely on a tap. If a handle
+                // moves, begin from the boundary the user actually saw.
+                handleStartBounds = if (clipToOutputBounds && activeDragHandle != DragHandle.PAN &&
+                    activeDragHandle != DragHandle.NONE) RectF(touchRect) else null
+            }
+            MotionEvent.ACTION_POINTER_DOWN -> {
+                hadMultiplePointers = true
+                activeDragHandle = DragHandle.NONE
+                handleStartBounds = null
             }
             MotionEvent.ACTION_MOVE -> {
+                if (hadMultiplePointers) return true
                 val dx = event.x - lastTouchX
                 val dy = event.y - lastTouchY
                 lastTouchX = event.x
@@ -414,6 +552,15 @@ class CropImageView @JvmOverloads constructor(
                 if (activeDragHandle != DragHandle.PAN && activeDragHandle != DragHandle.NONE) {
                     val maxR = width - padding
                     val maxB = height - padding
+                    handleStartBounds?.let { bounds ->
+                        if (maxR - padding >= minCropSize && maxB - padding >= minCropSize) {
+                            val left = bounds.left.coerceIn(padding, maxR - minCropSize)
+                            val top = bounds.top.coerceIn(padding, maxB - minCropSize)
+                            cropRect.set(left, top, bounds.right.coerceIn(left + minCropSize, maxR),
+                                bounds.bottom.coerceIn(top + minCropSize, maxB))
+                        }
+                        handleStartBounds = null
+                    }
 
                     when (activeDragHandle) {
                         DragHandle.CORNER_TL -> {
@@ -489,6 +636,8 @@ class CropImageView @JvmOverloads constructor(
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 activeDragHandle = DragHandle.NONE
+                handleStartBounds = null
+                hadMultiplePointers = false
             }
         }
         return true
@@ -499,21 +648,47 @@ class CropImageView @JvmOverloads constructor(
      * rectangle, returning a new (possibly filtered-elsewhere) [Bitmap].
      * Returns null if [hasUserModifiedCrop] is false and [force] is false.
      */
-    fun crop(force: Boolean = false): Bitmap? {
+    fun cropSnapshot(force: Boolean = false): CropSnapshot? {
         val bmp = bitmap ?: return null
-        if (!hasUserModifiedCrop && !force) return null
         if (cropRect.isEmpty) computeCropRect()
-        drawMatrix.invert(inverseMatrix)
-        val srcCorners = floatArrayOf(
-            cropRect.left, cropRect.top,
-            cropRect.right, cropRect.bottom,
-        )
-        inverseMatrix.mapPoints(srcCorners)
-        var left = min(srcCorners[0], srcCorners[2]).toInt().coerceIn(0, bmp.width - 1)
-        var top = min(srcCorners[1], srcCorners[3]).toInt().coerceIn(0, bmp.height - 1)
-        var right = max(srcCorners[0], srcCorners[2]).toInt().coerceIn(left + 1, bmp.width)
-        var bottom = max(srcCorners[1], srcCorners[3]).toInt().coerceIn(top + 1, bmp.height)
-        return Bitmap.createBitmap(bmp, left, top, right - left, bottom - top)
+        val matrix = getImageMatrix()
+        val cropped = hasUserModifiedCrop || force
+        val requested = if (cropped) RectF(cropRect) else RectF()
+        val key = CropKey(bmp, Matrix(matrix), requested, cropped)
+        if (key == cachedCropKey) return cachedCropSnapshot
+        val source = if (!cropped) Rect(0, 0, bmp.width, bmp.height) else {
+            val inverse = Matrix()
+            if (!matrix.invert(inverse)) return null
+            val corners = floatArrayOf(requested.left, requested.top, requested.right, requested.bottom)
+            inverse.mapPoints(corners)
+            // No intersecting pixels means no output; never manufacture an edge pixel.
+            if (max(corners[0], corners[2]) <= 0f || min(corners[0], corners[2]) >= bmp.width ||
+                max(corners[1], corners[3]) <= 0f || min(corners[1], corners[3]) >= bmp.height) {
+                cachedCropKey = key
+                cachedCropSnapshot = null
+                return null
+            }
+            val left = min(corners[0], corners[2]).toInt().coerceIn(0, bmp.width - 1)
+            val top = min(corners[1], corners[3]).toInt().coerceIn(0, bmp.height - 1)
+            val right = max(corners[0], corners[2]).toInt().coerceIn(left + 1, bmp.width)
+            val bottom = max(corners[1], corners[3]).toInt().coerceIn(top + 1, bmp.height)
+            Rect(left, top, right, bottom)
+        }
+        return CropSnapshot(bmp, source, matrix, cropped).also {
+            cachedCropKey = key
+            cachedCropSnapshot = it
+        }
+    }
+
+    /** Requested crop, rounded and clamped in display-bitmap coordinates. */
+    fun cropSourceRect(): Rect? = cropSnapshot(force = true)?.source
+
+    /** View-space bounds of the actual output, including the uncropped case. */
+    fun getCropOutputBounds(): RectF = cropSnapshot()?.viewBounds ?: RectF()
+
+    fun crop(force: Boolean = false): Bitmap? {
+        if (!hasUserModifiedCrop && !force) return null
+        return cropSnapshot(force)?.createOutputBitmap()
     }
 
     /**
@@ -523,7 +698,7 @@ class CropImageView @JvmOverloads constructor(
     fun getNormalizedCropRect(): RectF? {
         val bmp = bitmap ?: return null
         if (cropRect.isEmpty) computeCropRect()
-        drawMatrix.invert(inverseMatrix)
+        getImageMatrix().invert(inverseMatrix)
         val srcCorners = floatArrayOf(
             cropRect.left, cropRect.top,
             cropRect.right, cropRect.bottom,

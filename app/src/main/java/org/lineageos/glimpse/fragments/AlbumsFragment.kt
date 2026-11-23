@@ -22,6 +22,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.fragment.findNavController
+import androidx.preference.PreferenceManager
 import androidx.recyclerview.widget.RecyclerView
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.collectLatest
@@ -29,6 +30,7 @@ import kotlinx.coroutines.launch
 import org.lineageos.glimpse.R
 import org.lineageos.glimpse.ViewActivity
 import org.lineageos.glimpse.ext.getViewProperty
+import org.lineageos.glimpse.ext.pinnedAlbumUris
 import org.lineageos.glimpse.ext.updatePadding
 import org.lineageos.glimpse.models.Album
 import org.lineageos.glimpse.models.RequestStatus
@@ -71,12 +73,24 @@ class AlbumsFragment : Fragment(R.layout.fragment_albums) {
             onSourceAlbumClick = { sourceAlbum ->
                 openSourceAlbum(sourceAlbum)
             },
+            onPinToggle = { album ->
+                val prefs = PreferenceManager.getDefaultSharedPreferences(requireContext())
+                val key = album.uri.toString()
+                val pins = prefs.pinnedAlbumUris
+                prefs.pinnedAlbumUris = if (key in pins) pins - key else pins + key
+                updateAdapter()
+            },
         )
     }
 
     // Latest observed snapshots (module 3 merges them into one adapter).
     private var currentAlbums: List<Album> = emptyList()
     private var currentSourceAlbums: List<SourceAlbum> = emptyList()
+
+    private fun updateAdapter() {
+        val pins = PreferenceManager.getDefaultSharedPreferences(requireContext()).pinnedAlbumUris
+        adapter.submit(currentAlbums, currentSourceAlbums, pins)
+    }
 
     /**
      * Module 3: open a virtual source album in the viewer. The matched MediaStore
@@ -178,15 +192,25 @@ class AlbumsFragment : Fragment(R.layout.fragment_albums) {
             }
 
             launch {
-                albumsViewModel.albums.collectLatest {
-                    when (it) {
+                albumsViewModel.albums.collectLatest { result ->
+                    if (result.request != albumsViewModel.albumsRequest.value) return@collectLatest
+                    when (val it = result.status) {
                         is RequestStatus.Loading -> {
                             // Do nothing
                         }
 
                         is RequestStatus.Success -> {
                             currentAlbums = it.data
-                            adapter.submit(currentAlbums, currentSourceAlbums)
+                            // Only an unfiltered result can prove a pinned album has disappeared.
+                            // A picker result may omit albums because of its media/MIME filter.
+                            if (intentsViewModel.parsedIntent.value !is IntentsViewModel.ParsedIntent.PickIntent &&
+                                result.request == AlbumsViewModel.AlbumsRequest()) {
+                                val prefs = PreferenceManager.getDefaultSharedPreferences(requireContext())
+                                val present = currentAlbums.map { album -> album.uri.toString() }.toSet()
+                                val retained = prefs.pinnedAlbumUris intersect present
+                                if (retained != prefs.pinnedAlbumUris) prefs.pinnedAlbumUris = retained
+                            }
+                            updateAdapter()
 
                             val isEmpty = it.data.isEmpty() && currentSourceAlbums.isEmpty()
                             recyclerView.isVisible = !isEmpty
@@ -197,7 +221,7 @@ class AlbumsFragment : Fragment(R.layout.fragment_albums) {
                             Log.e(LOG_TAG, "Failed to load albums, error: ${it.error}")
 
                             currentAlbums = emptyList()
-                            adapter.submit(currentAlbums, currentSourceAlbums)
+                            updateAdapter()
 
                             recyclerView.isVisible = false
                             noMediaLinearLayout.isVisible = currentSourceAlbums.isEmpty()
@@ -210,7 +234,7 @@ class AlbumsFragment : Fragment(R.layout.fragment_albums) {
             launch {
                 albumsViewModel.sourceAlbums.collectLatest { sourceAlbums ->
                     currentSourceAlbums = sourceAlbums
-                    adapter.submit(currentAlbums, currentSourceAlbums)
+                    updateAdapter()
                 }
             }
         }

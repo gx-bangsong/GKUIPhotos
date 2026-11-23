@@ -54,6 +54,7 @@ class MediaViewerAdapter(
         super.onViewDetachedFromWindow(holder)
     }
 
+    @OptIn(androidx.media3.common.util.UnstableApi::class)
     inner class MediaViewHolder(view: View) : RecyclerView.ViewHolder(view) {
         // Views
         private val imageView = view.findViewById<GlideZoomImageView>(R.id.imageView)

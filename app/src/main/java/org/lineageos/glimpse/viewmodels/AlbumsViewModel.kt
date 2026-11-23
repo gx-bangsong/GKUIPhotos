@@ -16,8 +16,11 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.mapLatest
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import org.lineageos.glimpse.ext.applicationContext
+import org.lineageos.glimpse.datasources.MediaRequestStatus
+import org.lineageos.glimpse.models.Album
 import org.lineageos.glimpse.models.MediaType
 import org.lineageos.glimpse.models.RequestStatus
 import org.lineageos.glimpse.utils.media.SourceAlbum
@@ -29,6 +32,8 @@ class AlbumsViewModel(application: Application) : GlimpseViewModel(application) 
         val mimeType: String? = null,
     )
 
+    data class AlbumsResult(val request: AlbumsRequest?, val status: MediaRequestStatus<List<Album>>)
+
     private val _albumsRequest = MutableStateFlow<AlbumsRequest?>(null)
     val albumsRequest = _albumsRequest.asStateFlow()
 
@@ -39,13 +44,13 @@ class AlbumsViewModel(application: Application) : GlimpseViewModel(application) 
             mediaRepository.albums(
                 albumsRequest.mediaType,
                 albumsRequest.mimeType,
-            )
+            ).map { AlbumsResult(albumsRequest, it) }
         }
         .flowOn(Dispatchers.IO)
         .stateIn(
             viewModelScope,
             started = SharingStarted.WhileSubscribed(),
-            initialValue = RequestStatus.Loading()
+            initialValue = AlbumsResult(null, RequestStatus.Loading())
         )
 
     /**

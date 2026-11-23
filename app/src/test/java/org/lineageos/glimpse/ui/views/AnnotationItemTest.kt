@@ -14,6 +14,17 @@ import org.junit.Test
 class AnnotationItemTest {
 
     @Test
+    fun textBackgroundColorIsPartOfSnapshot() {
+        val text = AnnotationItem.Text(text = "Example", centerX = 1f, centerY = 2f,
+            color = 0xFFFFFFFF.toInt(), backgroundColor = 0x804080C0.toInt())
+        val snapshot = text.copy()
+        text.backgroundColor = 0x20112233
+        assertEquals(0x804080C0.toInt(), snapshot.backgroundColor)
+        assertTrue(text != snapshot)
+        assertNull(text.copy(backgroundColor = null).backgroundColor)
+    }
+
+    @Test
     fun testShapeTypeEnum() {
         assertEquals(10, ShapeType.values().size)
         assertTrue(ShapeType.values().contains(ShapeType.ARROW))

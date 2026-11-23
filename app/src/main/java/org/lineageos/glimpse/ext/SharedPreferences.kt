@@ -147,3 +147,8 @@ var SharedPreferences.longPressSpeed: Float
     set(value) = edit {
         putString(LONG_PRESS_SPEED_KEY, value.toString())
     }
+
+// Ordinary albums pinned by their MediaStore album URI, not by display name.
+var SharedPreferences.pinnedAlbumUris: Set<String>
+    get() = getStringSet("pinned_album_uris", emptySet())?.toSet() ?: emptySet()
+    set(value) = edit { putStringSet("pinned_album_uris", value.toSet()) }

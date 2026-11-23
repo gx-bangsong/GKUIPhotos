@@ -22,55 +22,55 @@
         <item quantity="other">%d predmetov</item>
     </plurals>
     <plurals name="delete_file_forever_confirm_message">
-        <item quantity="one">Ali ste prepričani, da želite trajno izbrisati to datoteko?</item>
+        <item quantity="one">Ali ste prepričani, da želite trajno izbrisati %d datoteko?</item>
         <item quantity="two">Ali ste prepričani, da želite trajno izbrisati %d datoteki?</item>
         <item quantity="few">Ali ste prepričani, da želite trajno izbrisati %d datoteke?</item>
         <item quantity="other">Ali ste prepričani, da želite trajno izbrisati %d datotek?</item>
     </plurals>
     <plurals name="delete_file_forever_successful">
-        <item quantity="one">Datoteka trajno izbrisana</item>
+        <item quantity="one">%d datoteka trajno izbrisana</item>
         <item quantity="two">%d datoteki trajno izbrisani</item>
         <item quantity="few">%d datoteke trajno izbrisane</item>
         <item quantity="other">%d datotek trajno izbrisanih</item>
     </plurals>
     <plurals name="delete_file_forever_unsuccessful">
-        <item quantity="one">Datoteke ni bilo mogoče izbrisati.</item>
+        <item quantity="one">%d datoteke ni bilo mogoče izbrisati.</item>
         <item quantity="two">%d datotek ni bilo mogoče izbrisati.</item>
         <item quantity="few">%d datotek ni bilo mogoče izbrisati.</item>
         <item quantity="other">%d datotek ni bilo mogoče izbrisati.</item>
     </plurals>
     <plurals name="move_file_to_trash_confirm_message">
-        <item quantity="one">Ali ste prepričani, da želite premakniti eno datoteko v smetnjak?</item>
+        <item quantity="one">Ali ste prepričani, da želite premakniti %d datoteko v smetnjak?</item>
         <item quantity="two">Ali ste prepričani, da želite premakniti %d datoteki v smetnjak?</item>
         <item quantity="few">Ali ste prepričani, da želite premakniti %d datoteke v smetnjak?</item>
         <item quantity="other">Ali ste prepričani, da želite premakniti %d datotek v smetnjak?</item>
     </plurals>
     <plurals name="move_file_to_trash_successful">
-        <item quantity="one">Datoteka premaknjena v smetnjak</item>
+        <item quantity="one">%d datoteka premaknjena v smetnjak</item>
         <item quantity="two">%d datoteki premaknjeni v smetnjak</item>
         <item quantity="few">%d datoteke premaknjene v smetnjak</item>
         <item quantity="other">%d datotek premaknjenih v smetnjak</item>
     </plurals>
     <plurals name="move_file_to_trash_unsuccessful">
-        <item quantity="one">Datoteke ni bilo mogoče premakniti v koš</item>
+        <item quantity="one">%d datoteke ni bilo mogoče premakniti v koš</item>
         <item quantity="two">%d datotek ni bilo mogoče premakniti v koš</item>
         <item quantity="few">%d datotek ni bilo mogoče premakniti v koš</item>
         <item quantity="other">%d datotek ni bilo mogoče premakniti v koš</item>
     </plurals>
     <plurals name="restore_file_from_trash_confirm_message">
-        <item quantity="one">Ali ste prepričani, da želite obnoviti eno datoteko iz smetnjaka?</item>
+        <item quantity="one">Ali ste prepričani, da želite obnoviti %d datoteko iz smetnjaka?</item>
         <item quantity="two">Ali ste prepričani, da želite obnoviti %d datoteki iz smetnjaka?</item>
         <item quantity="few">Ali ste prepričani, da želite obnoviti %d datoteke iz smetnjaka?</item>
         <item quantity="other">Ali ste prepričani, da želite obnoviti %d datotek iz smetnjaka?</item>
     </plurals>
     <plurals name="restore_file_from_trash_successful">
-        <item quantity="one">Datoteka obnovljena iz smetnjaka</item>
+        <item quantity="one">%d datoteka obnovljena iz smetnjaka</item>
         <item quantity="two">%d datoteki obnovljeni iz smetnjaka</item>
         <item quantity="few">%d datoteke obnovljene iz smetnjaka</item>
         <item quantity="other">%d datotek obnovljenih iz smetnjaka</item>
     </plurals>
     <plurals name="restore_file_from_trash_unsuccessful">
-        <item quantity="one">Datoteke ni bilo mogoče obnoviti iz smetnjaka</item>
+        <item quantity="one">%d datoteke ni bilo mogoče obnoviti iz smetnjaka</item>
         <item quantity="two">%d datotek ni bilo mogoče obnoviti iz smetnjaka</item>
         <item quantity="few">%d datotek ni bilo mogoče obnoviti iz smetnjaka</item>
         <item quantity="other">%d datotek ni bilo mogoče obnoviti iz smetnjaka</item>

@@ -22,55 +22,55 @@
         <item quantity="other">%d элемента</item>
     </plurals>
     <plurals name="delete_file_forever_confirm_message">
-        <item quantity="one">Вы уверены, что хотите навсегда удалить этот файл?</item>
+        <item quantity="one">Вы уверены, что хотите навсегда удалить %d файл?</item>
         <item quantity="few">Вы уверены, что хотите навсегда удалить %d файла?</item>
         <item quantity="many">Вы уверены, что хотите навсегда удалить %d файлов?</item>
         <item quantity="other">Вы уверены, что хотите навсегда удалить %d файла?</item>
     </plurals>
     <plurals name="delete_file_forever_successful">
-        <item quantity="one">Файл удален навсегда</item>
+        <item quantity="one">%d файл удален навсегда</item>
         <item quantity="few">%d файла удалены навсегда</item>
         <item quantity="many">%d файлов удалены навсегда</item>
         <item quantity="other">%d файла удалены навсегда</item>
     </plurals>
     <plurals name="delete_file_forever_unsuccessful">
-        <item quantity="one">Не удалось удалить файл навсегда</item>
+        <item quantity="one">Не удалось удалить %d файл навсегда</item>
         <item quantity="few">Не удалось удалить %d файла навсегда</item>
         <item quantity="many">Не удалось удалить %d файлов навсегда</item>
         <item quantity="other">Не удалось удалить %d файла навсегда</item>
     </plurals>
     <plurals name="move_file_to_trash_confirm_message">
-        <item quantity="one">Вы уверены, что хотите переместить один файл в корзину?</item>
+        <item quantity="one">Вы уверены, что хотите переместить %d файл в корзину?</item>
         <item quantity="few">Вы уверены, что хотите переместить %d файла в корзину?</item>
         <item quantity="many">Вы уверены, что хотите переместить %d файлов в корзину?</item>
         <item quantity="other">Вы уверены, что хотите переместить %d файла в корзину?</item>
     </plurals>
     <plurals name="move_file_to_trash_successful">
-        <item quantity="one">Файл перемещен в корзину</item>
+        <item quantity="one">%d файл перемещен в корзину</item>
         <item quantity="few">%d файла перемещены в корзину</item>
         <item quantity="many">%d файлов перемещены в корзину</item>
         <item quantity="other">%d файла перемещены в корзину</item>
     </plurals>
     <plurals name="move_file_to_trash_unsuccessful">
-        <item quantity="one">Не удалось переместить файл в корзину</item>
+        <item quantity="one">Не удалось переместить %d файл в корзину</item>
         <item quantity="few">Не удалось переместить %d файла в корзину</item>
         <item quantity="many">Не удалось переместить %d файлов в корзину</item>
         <item quantity="other">Не удалось переместить %d файла в корзину</item>
     </plurals>
     <plurals name="restore_file_from_trash_confirm_message">
-        <item quantity="one">Вы уверены, что хотите восстановить один файл из корзины?</item>
+        <item quantity="one">Вы уверены, что хотите восстановить %d файл из корзины?</item>
         <item quantity="few">Вы уверены, что хотите восстановить %d файла из корзины?</item>
         <item quantity="many">Вы уверены, что хотите восстановить %d файлов из корзины?</item>
         <item quantity="other">Вы уверены, что хотите восстановить %d файла из корзины?</item>
     </plurals>
     <plurals name="restore_file_from_trash_successful">
-        <item quantity="one">Файл восстановлен из корзины</item>
+        <item quantity="one">%d файл восстановлен из корзины</item>
         <item quantity="few">%d файла восстановлены из корзины</item>
         <item quantity="many">%d файлов восстановлены из корзины</item>
         <item quantity="other">%d файла восстановлены из корзины</item>
     </plurals>
     <plurals name="restore_file_from_trash_unsuccessful">
-        <item quantity="one">Не удалось восстановить файл из корзины</item>
+        <item quantity="one">Не удалось восстановить %d файл из корзины</item>
         <item quantity="few">Не удалось восстановить %d файла из корзины</item>
         <item quantity="many">Не удалось восстановить %d файлов из корзины</item>
         <item quantity="other">Не удалось восстановить %d файла из корзины</item>

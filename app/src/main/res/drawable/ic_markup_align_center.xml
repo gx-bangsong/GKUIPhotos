@@ -1,0 +1,5 @@
+<!-- Markup text controls. SPDX-License-Identifier: Apache-2.0 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+    <path android:fillColor="#FFFFFFFF" android:pathData="M3,4 L21,4 L21,6 L3,6 Z M6,9 L18,9 L18,11 L6,11 Z M3,14 L21,14 L21,16 L3,16 Z M6,19 L18,19 L18,21 L6,21 Z" />
+</vector>
