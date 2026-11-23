@@ -39,6 +39,9 @@ object GifCodec {
      */
     private const val PALETTE_SAMPLE_SIZE = 20000
 
+    /** Shortest frame delay written, in 1/100 s. */
+    private const val MIN_DELAY_CS = 2L
+
     // ----------------------------------------------------------------------
     // Decoder
     // ----------------------------------------------------------------------
@@ -390,13 +393,14 @@ object GifCodec {
         out.write(loopCount and 0xFF); out.write(loopCount shr 8)
         out.write(0x00)
 
-        for (frame in normalized) {
-            // Graphic Control Extension.
+        val delaysCs = centisecondDelays(normalized.map { it.delayMs })
+        for ((index, frame) in normalized.withIndex()) {
+            // Graphic Control Extension. The delay field is in 1/100 s, not ms.
             out.write(0x21); out.write(0xF9)
             out.write(0x04)
             out.write(0x00)
-            val d100 = frame.delayMs.coerceIn(20, 10000)
-            out.write(d100 and 0xFF); out.write(d100 shr 8)
+            val delayCs = delaysCs[index]
+            out.write(delayCs and 0xFF); out.write(delayCs shr 8)
             out.write(0)
             out.write(0x00)
 
@@ -430,6 +434,28 @@ object GifCodec {
 
         out.write(0x3B)
         out.flush()
+    }
+
+    /**
+     * Converts per-frame delays in milliseconds to GIF delays in 1/100 s, rounding the cumulative
+     * start times instead of each frame, so the total stays within 1 cs of the input unless the
+     * 2 cs floor below has not caught up yet:
+     * C[i] = round(T[i] / 10) with T[i] the start of frame i in ms, B[0] = 0,
+     * B[i + 1] = max(C[i + 1], B[i] + 2), and frame i gets B[i + 1] - B[i] (at least 2 cs, because
+     * many viewers replace 0-1 cs with ~10 cs). Runs of very short frames therefore play longer
+     * and the following frames shorten until the schedule catches up.
+     */
+    internal fun centisecondDelays(delaysMs: List<Int>): IntArray {
+        val result = IntArray(delaysMs.size)
+        var startMs = 0L
+        var previous = 0L
+        for (i in delaysMs.indices) {
+            startMs += delaysMs[i].coerceAtLeast(0)
+            val next = maxOf((startMs + 5) / 10, previous + MIN_DELAY_CS)
+            result[i] = (next - previous).coerceAtMost(0xFFFF).toInt()
+            previous = next
+        }
+        return result
     }
 
     private fun writeSubBlocks(out: OutputStream, data: ByteArray) {

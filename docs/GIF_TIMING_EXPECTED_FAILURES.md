@@ -121,3 +121,63 @@ SPDX-License-Identifier: Apache-2.0
 - 2a 之后，如果出现 `identicalNeighbours`、`first#`、`undecodable`、`dup`、`n=`、`size=`、`aspect=`、`platform=`，或者非 rot 用例的 `red=`，都算非预期红，必须先停下分析。
 - `lzw_decoderEvidence` 在 candidate 上所有用例都会变成 `observed=conformant`。修复前规则判为 breaks 的用例会显示 `ruleMatches=false`。这是预期的：这条规则描述的是修复前的编码器，这个测试只记录证据。
 - baseline、lint、unit-tests 必须全绿。
+
+### 2a 实际结果（`cffd36b`，run 45227746844）
+
+与上面的清单逐字一致：#6 和 step2a 在四个截图 job 上都为绿，`last#` 实际值为 70/292、131/146、420/1050。step2a 在 baseline 上检出 25628 个问题，在 candidate 上为 0；两边比较的像素都是 26377/26377。
+
+## 第 2 步（编码器延迟单位，只改 `GifCodec.encode` 写 GCE 延迟的地方）
+
+产品改动：
+- `GifCodec.encode`（`:396–404`）原来把毫秒值直接写进单位为 1/100 s 的字段（`d100 = frame.delayMs.coerceIn(20, 10000)`），改为写 `centisecondDelays(...)` 算出的值。
+- 新函数 `GifCodec.centisecondDelays`（`:448`）：C[i] = round(T[i]/10)，B[0] = 0，B[i+1] = max(C[i+1], B[i] + 2)，第 i 帧 = B[i+1] − B[i]，上限 65535。
+- 公开签名不变：`GifFrame(bitmap, delayMs)` 在 baseline `772071a` 里就叫 `delayMs`，所以不需要保留旧签名的重载。
+- 编辑器的 20 ms 下限（`GifEditorActivity.kt:233`）保持不动。取帧逻辑也不动（第 3 步再改）。
+
+新单元测试 `GifCodecDelayTest`（JVM）：
+- 66.67 ms 间隔连续 15 帧：总误差 ≤ 1 cs，每帧的起点误差 ≤ 1 cs；
+- 连续多帧 10 ms：每帧 2 cs，之后的帧把多出的时间补回来；
+- 编辑器 20 ms 下限 → 正好 2 cs；
+- 往返：100/70/20 ms → 10/7/2 cs；
+- 负值和超出范围的值。
+
+unit-tests job 必须为绿。
+
+### 预期转绿
+
+- #1 `:254` `step2_encoderWritesCentisecondDelays`（candidate light/dark）
+- #2 `:282` `step2_editorRoundTripPreservesRawDelays`（candidate light/dark）
+
+### #3 `:345` 逐项变化
+
+旧取帧逻辑传给编码器的延迟值：s30/rot 100 ms，s60/d30 125 ms，r30 66 ms，r60/hd 200 ms。帧数不变（30/32/36/36/36/20/5），所以 `last#` 不变。
+
+| 消息项（2a 后） | 第 2 步之后 |
+|---|---|
+| `ToolboxResult lacks syncFallbackFrames` | 保留 |
+| `s30 raw=100..100 exp=10.0`、`s30 sum=3000/300cs` | 消失（10 cs × 30 = 300） |
+| `s60 raw=125..125 exp=12.5`、`s60 sum=4000/400cs` | 消失（12/13 cs 交替，合计 400） |
+| `r30 raw=66..66 exp=27.8` | 变为 `r30 raw=6..7 exp=27.8` |
+| `r30 sum=2376/1000cs` | 变为 `r30 sum=238/1000cs` |
+| `r30 last#70/292` | 保留 |
+| `d30 raw=125..125 exp=13.9` | 变为 `d30 raw=12..13 exp=13.9` |
+| `d30 sum=4500/500cs` | 变为 `d30 sum=450/500cs` |
+| `d30 last#131/146` | 保留 |
+| `r60 raw=200..200 exp=50.0` | 变为 `r60 raw=20..20 exp=50.0` |
+| `r60 sum=7200/1800cs` | 变为 `r60 sum=720/1800cs` |
+| `r60 last#420/1050` | 保留 |
+| `rot raw=100..100 exp=10.0`、`rot sum=2000/200cs` | 消失 |
+| `hd raw=200..200 exp=20.0`、`hd sum=1000/100cs` | 消失 |
+
+### 预期仍红（candidate，消息逐字）
+
+| # | 位置 | 消息 |
+|---|------|------|
+| 3 | `:345` | `Video GIF plan violations: ToolboxResult lacks syncFallbackFrames; r30 raw=6..7 exp=27.8; r30 sum=238/1000cs; r30 last#70/292; d30 raw=12..13 exp=13.9; d30 sum=450/500cs; d30 last#131/146; r60 raw=20..20 exp=50.0; r60 sum=720/1800cs; r60 last#420/1050` |
+| 4 | `:398` | 不变：`Estimate violations: sliderMax=15.0/18; reduced='~10s • 15fps • 480p • ~36 frames' exp='<missing resource>'; normal='~3s • 10fps • 480p • ~30 frames' exp='<missing resource>'` |
+| 5 | `:469` | 不变：`Rows left after a failed write: land60_320x180_5s_gif_<n>.gif is_pending=1` |
+
+判定补充：
+- 其他测试（包括 #6、step2a、lzw_*、harness、gallery）必须保持绿。
+- #3 中只要出现上表以外的项，比如 `n=`、`fps=`、`identicalNeighbours`、`first#`、`dup`、`size=`、`aspect=`、`lzw=`，或者 `last#` 的值和上表不同，都算非预期红。
+- baseline、lint、unit-tests 必须全绿。
