@@ -38,7 +38,7 @@ class SourceAlbumAggregatorTest {
                 .joinToString(": ")
                 .replace(Regex("[\\r\\n]+"), " ")
                 .replace("::", "")
-            println("::error title=smart-album-test::${description.methodName}: $detail")
+            System.err.println("error: smart-album-test ${description.methodName}: $detail")
         }
     }
 
