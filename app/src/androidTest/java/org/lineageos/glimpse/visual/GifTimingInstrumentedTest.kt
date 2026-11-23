@@ -396,14 +396,15 @@ class GifTimingInstrumentedTest {
         fun outputs() = ownRows("${MediaStore.Images.Media.RELATIVE_PATH} = ? AND ${MediaStore.Images.Media.DISPLAY_NAME} LIKE ?",
             arrayOf("Pictures/Glimpse/", "$prefix%"))
         val before = outputs().map { it.uri }.toSet()
-        val failing = object : ContextWrapper(context) {
-            private val wrapped = ContentResolver.wrap(FailingWriteProvider(context.contentResolver).apply {
-                // attachInfo records this process' uid, so in-process calls pass the permission checks.
-                attachInfo(context, ProviderInfo().apply {
-                    authority = context.packageName + ".gif-timing-failing-writes"
-                    exported = false
-                })
-            })
+        val appContext = context
+        val provider = FailingWriteProvider(appContext.contentResolver)
+        // attachInfo records this process' uid, so in-process calls pass the permission checks.
+        provider.attachInfo(appContext, ProviderInfo().apply {
+            authority = appContext.packageName + ".gif-timing-failing-writes"
+            exported = false
+        })
+        val failing = object : ContextWrapper(appContext) {
+            private val wrapped = ContentResolver.wrap(provider)
             override fun getContentResolver(): ContentResolver = wrapped
         }
         val convertWithFailingWrites = {
