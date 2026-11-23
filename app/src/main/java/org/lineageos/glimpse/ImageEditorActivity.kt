@@ -53,9 +53,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.slider.Slider
 import com.google.android.material.textfield.TextInputEditText
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
@@ -2414,23 +2412,6 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             .show()
     }
 
-    /** Debug builds may provide a non-blocking, instrumentation-controlled gate.
-     * Release and AOSP sources contain no gate implementation or installable callback.
-     */
-    private suspend fun awaitRefreshTestGate(bitmap: Bitmap) {
-        if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE == 0) return
-        val gateClass = try {
-            Class.forName("org.lineageos.glimpse.testing.EditorRefreshTestGate")
-        } catch (_: ClassNotFoundException) {
-            return
-        }
-        val gate = gateClass.getMethod("onCandidate", Bitmap::class.java).invoke(null, bitmap) as? Deferred<*>
-            ?: return
-        // Keep the worker suspended until the test releases it, including after
-        // cancellation, so the cancellation/publication race is deterministic.
-        withContext(NonCancellable) { gate.await() }
-    }
-
     /** Rebuild the displayed (rotated + flipped + filtered + adjusted) bitmap on the crop view. */
     private fun refreshBaseBitmap(debounceMs: Long = 0) {
         if (encodingFrame != null) {
@@ -2471,7 +2452,6 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                             working = adjusted
                         }
                         produced = working
-                        awaitRefreshTestGate(working)
                         ensureActive()
                         working to matrix
                     } finally {
