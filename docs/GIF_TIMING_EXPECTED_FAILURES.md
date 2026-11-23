@@ -50,6 +50,36 @@ SPDX-License-Identifier: Apache-2.0
 
 预期在第 1 步为绿：`harness_parserSelfCheck`、`harness_syntheticVideosAreValid`、`step4_galleryAnimatesGif`（两种 uiVersion）。baseline 上所有测试都只记录数值（ui-evidence `gif-baseline-*.txt`），只断言测试工具本身。
 
+## 第 1 步补充：2a 前证据（仅测试，失败清单不变）
+
+新增两个测试，放在图库测试之后，用全限定名，没有新增 import。上面所有断言行号不变。
+
+| 测试 | 断言 | 预期 |
+|------|------|------|
+| `lzw_decoderEvidence` | 无断言，两种 uiVersion 只写 `gif-<ver>-lzw-decoders.txt` | 绿。任何异常（编码抛错、超时）都是非预期红 |
+| `lzw_externalGifImportDecodesExactly` | candidate：`GifTimingInstrumentedTest.kt:585`；baseline 只记录 | 绿。外部 GIF 用测试自带的标准编码器写出，`GifCodec.decode` 必须逐像素一致，延迟 = 原始值 × 10 ms |
+
+三方比较函数 `threeWayCompare`：
+- 比较对象：独立解析器、平台 `ImageDecoder`、`GifCodec.decode`，三者都和源像素逐一比较。
+- 返回内容：
+  - 不一致项列表，每项含帧号、x、y，以及源像素和三方各自的值；
+  - 解码器层面的问题列表：LZW 错误、缺少结束码、平台部分解码、异常、帧数或尺寸不符；
+  - 实际比较的像素数，必须等于宽 × 高 × 帧数。
+- 用例都是单帧，因为 `ImageDecoder` 只能取到第一帧；GifCodec 对每一帧都用同一个 `lzwEncode`。
+- 只用 baseline 和 candidate 都存在的 API。
+- 本次只写入证据。2a 提交时改为断言：candidate 两个列表都必须为空；baseline 用同一个函数处理旧代码的输出，断言列表不为空并写入证据。
+- 失败清单不增加条目。
+
+测试工具新增字段 `MinimalGif.Frame.endCode`：记录最后一个像素之后是否紧跟结束码。只记录，不改变 `lzwError`，所以已有断言的结果不变。
+
+证据预测（来自 Python 模型，只用于和实测对照，不作为断言）。修复前规则：一帧需要 ≥ 2^m − 1 个 LZW 数据码时出错，m 为最小码长：
+- `solid_codes2`、`walk254`：conformant，即 0 个不一致项、0 个解码器问题。
+- `solid_codes3`、`walk255`：像素正确，但 `endCode` 不是结束码，所以判为 breaks。
+- 其余用例为 breaks，会有像素不一致。`solid64` 模型预测会读到一个“看似合法”的结束码，但像素是错的。
+- 所有用例都应 `ruleMatches=true`，`compared` 都应等于宽 × 高。
+
+补充说明：`step4_galleryAnimatesGif` 播放的是测试自带编码器写的 fixture，不是 GifCodec 的输出。GifCodec 输出经 Glide 解码的情况，由 `lzw_decoderEvidence` 的 `glide=` 字段记录，同样只是证据。
+
 ## 第 2a 步（只改 LZW 码宽增长时机）
 
 清单 = 第 1 步删去所有 `lzw=` 与 `pixels undecodable` 消息项。

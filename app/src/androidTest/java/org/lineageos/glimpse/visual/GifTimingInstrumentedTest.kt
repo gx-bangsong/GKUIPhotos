@@ -500,6 +500,271 @@ class GifTimingInstrumentedTest {
     }
 
     // ------------------------------------------------------------------
+    // Pre-2a LZW evidence (tests only). New code uses fully qualified names so that the
+    // import block, and with it every assertion line listed in the expected-failure doc, stays put.
+    // ------------------------------------------------------------------
+
+    /**
+     * Evidence only, on both uiVersions, never asserted (2a turns threeWayCompare into assertions):
+     * how GifCodec output reads in the independent parser, ImageDecoder, GifCodec.decode and Glide,
+     * and whether the pre-fix rule (a frame breaks once it needs 2^m - 1 or more data codes) holds.
+     */
+    @Test fun lzw_decoderEvidence() {
+        val lines = ArrayList<String>()
+        lzwCases().forEach { c ->
+            val source = Bitmap.createBitmap(c.width, c.height, Bitmap.Config.ARGB_8888)
+            source.setPixels(c.argb, 0, c.width, 0, 0, c.width, c.height)
+            val bytes = ByteArrayOutputStream().also { GifCodec.encode(listOf(GifCodec.GifFrame(source, 100)), it) }.toByteArray()
+            source.recycle()
+            val gif = MinimalGif.parse(bytes)
+            val m = gif.frames.first().minCodeSize
+            val codes = lzwDataCodes(c.argb, m)
+            val predictedOk = codes <= (1 shl m) - 2
+            val check = threeWayCompare(bytes, c.width, c.height, listOf(c.argb))
+            val observedOk = check.disagreements.isEmpty() && check.decoderIssues.isEmpty()
+            val glide = try {
+                glideFirstFrame(bytes)?.let { bitmap ->
+                    try {
+                        if (bitmap.width != c.width || bitmap.height != c.height) "size:${bitmap.width}x${bitmap.height}"
+                        else comparePixels(c.argb, IntArray(c.width * c.height).also {
+                            bitmap.getPixels(it, 0, c.width, 0, 0, c.width, c.height)
+                        })
+                    } finally {
+                        bitmap.recycle()
+                    }
+                } ?: "null"
+            } catch (e: Exception) {
+                "error:${e.javaClass.simpleName}"
+            }
+            lines.add("${c.name} size=${c.width}x${c.height} colours=${c.argb.distinct().size} m=$m dataCodes=$codes " +
+                "rule=${if (predictedOk) "conformant" else "breaks"} observed=${if (observedOk) "conformant" else "breaks"} " +
+                "ruleMatches=${predictedOk == observedOk} maxCodeWidth=${gif.frames.first().maxCodeWidth} " +
+                "clearCodes=${gif.frames.first().clearCodes} endCode=${gif.frames.first().endCode} " +
+                "compared=${check.compared}/${check.expectedCompared} disagreements=${check.disagreements.size} " +
+                "first=${check.disagreements.take(3)} issues=${check.decoderIssues} glide=$glide")
+        }
+        publish("lzw-decoders", lines.joinToString("\n", postfix = "\n"))
+    }
+
+    /**
+     * Import path of external GIFs: GifEditorActivity reads them with GifCodec.decode. Known-good
+     * files from the test's own standard writer (never GifCodec) must decode to the exact source
+     * pixels and raw delay x 10 ms. Baseline records only; candidate asserts.
+     */
+    @Test fun lzw_externalGifImportDecodesExactly() {
+        val violations = ArrayList<String>()
+        val lines = ArrayList<String>()
+        val inputs = compressedFixtures().map { f ->
+            Triple(f, listOf(f.indices to 4, f.indices.reversedArray() to 6), true)
+        } + listOf(Triple(
+            Fixture("literal3", 64, 48, FIXTURE_PALETTE,
+                ByteArray(64 * 48) { p -> (if (p / 64 < 8) 3 else 0).toByte() }, null, false),
+            (0 until 3).map { i -> ByteArray(64 * 48) { p -> (if (p / 64 < 8) 3 else i % 3).toByte() } to listOf(10, 7, 2)[i] },
+            false,
+        ))
+        inputs.forEach { (f, frames, compress) ->
+            val bytes = MinimalGif.write(f.width, f.height, f.palette, frames, compress = compress)
+            val parsed = MinimalGif.parse(bytes)
+            val decoded = GifCodec.decode(java.io.ByteArrayInputStream(bytes))
+            val delaysMs = decoded.map { it.delayMs }
+            val expectedMs = frames.map { it.second * 10 }
+            val wrong = frames.mapIndexed { i, (indices, _) ->
+                val bitmap = decoded.getOrNull(i)?.bitmap ?: return@mapIndexed indices.size
+                if (bitmap.width != f.width || bitmap.height != f.height) return@mapIndexed indices.size
+                val px = IntArray(f.width * f.height).also { bitmap.getPixels(it, 0, f.width, 0, 0, f.width, f.height) }
+                indices.indices.count { px[it] != f.palette[indices[it].toInt() and 0xFF] }
+            }
+            lines.add("${f.name} ${parsed.structure()} ${parsed.pixelLayer()} decodedFrames=${decoded.size} " +
+                "endCodes=${parsed.frames.map { it.endCode }} delaysMs=$delaysMs expectedMs=$expectedMs wrongPixels=$wrong")
+            if (decoded.size != frames.size) violations.add("${f.name} frames=${decoded.size}/${frames.size}")
+            if (delaysMs != expectedMs) violations.add("${f.name} delays=$delaysMs/$expectedMs")
+            wrong.forEachIndexed { i, n -> if (n != 0) violations.add("${f.name} f$i pixels=$n/${f.width * f.height}") }
+        }
+        publish("lzw-external-import", lines.joinToString("\n", postfix = "\n"))
+        if (isBaseline) return
+        assertTrue("External GIF import violations: ${violations.joinToString("; ")}", violations.isEmpty())
+    }
+
+    private class LzwCase(val name: String, val width: Int, val height: Int, val argb: IntArray)
+
+    /** 256 colours that stay distinct in GifCodec's 5-5-5 lookup cache (GifCodec.kt:364, 413-423). */
+    private fun binSafeColour(i: Int): Int = ALPHA or
+        ((((i and 7) shl 5) + 8) shl 16) or (((((i shr 3) and 7) shl 5) + 8) shl 8) or (((i shr 6) shl 6) + 8)
+
+    /**
+     * Single-frame GifCodec inputs: 1-colour runs whose data-code count sits just below, at and
+     * above 2^2 - 1; a 2-colour frame; walks that never repeat a colour pair (one data code per
+     * pixel) at both sides of every 9→10→11→12 boundary; and a 256-colour random frame that needs
+     * 12-bit codes and table clears.
+     */
+    private fun lzwCases(): List<LzwCase> {
+        var seed = 0x5DEECE66DL
+        fun nextInt(bound: Int): Int {
+            seed = (seed * 6364136223846793005L + 1442695040888963407L)
+            return ((seed ushr 33) % bound).toInt()
+        }
+        fun walk(n: Int): IntArray {
+            var x = 0
+            var stride = 1
+            return IntArray(n) { i ->
+                val colour = binSafeColour(x)
+                if ((i + 1) % 256 == 0) stride += 2
+                x = (x + stride) and 0xFF
+                colour
+            }
+        }
+        val solid = binSafeColour(77)
+        return listOf(
+            LzwCase("solid_codes2", 3, 1, IntArray(3) { solid }),
+            LzwCase("solid_codes3", 4, 1, IntArray(4) { solid }),
+            LzwCase("solid_codes4", 7, 1, IntArray(7) { solid }),
+            LzwCase("solid64", 64, 64, IntArray(64 * 64) { solid }),
+            LzwCase("two64", 64, 64, IntArray(64 * 64) { binSafeColour(if (nextInt(2) == 0) 10 else 200) }),
+        ) + listOf(254, 255, 256, 767, 768, 1791, 1792).map { n -> LzwCase("walk$n", n, 1, walk(n)) } +
+            LzwCase("random256", 128, 96, IntArray(128 * 96) { binSafeColour(nextInt(256)) })
+    }
+
+    /** Data codes (excluding clear/end) of a greedy LZW parse; independent of code widths. */
+    private fun lzwDataCodes(argb: IntArray, minCodeSize: Int): Int {
+        val dense = HashMap<Int, Int>()
+        val symbols = IntArray(argb.size) { dense.getOrPut(argb[it]) { dense.size } }
+        val first = (1 shl minCodeSize) + 2
+        val table = HashMap<Long, Int>()
+        var free = first
+        var prefix = symbols[0]
+        var codes = 0
+        for (i in 1 until symbols.size) {
+            val key = (prefix.toLong() shl 16) or symbols[i].toLong()
+            val hit = table[key]
+            if (hit != null) {
+                prefix = hit
+                continue
+            }
+            codes++
+            if (free < 4096) {
+                table[key] = free++
+            } else {
+                table.clear()
+                free = first
+            }
+            prefix = symbols[i]
+        }
+        return codes + 1
+    }
+
+    private fun comparePixels(expected: IntArray, actual: IntArray): String {
+        val wrong = expected.indices.filter { expected[it] != actual[it] }
+        if (wrong.isEmpty()) return "ok"
+        val i = wrong.first()
+        return "mismatch:${wrong.size}/${expected.size}(first:$i got:%08x exp:%08x)".format(actual[i], expected[i])
+    }
+
+    /** First frame exactly as the gallery's Glide GIF pipeline decodes it, with a bounded wait. */
+    private fun glideFirstFrame(bytes: ByteArray): Bitmap? {
+        val target = com.bumptech.glide.Glide.with(context).asGif().load(bytes)
+            .diskCacheStrategy(com.bumptech.glide.load.engine.DiskCacheStrategy.NONE)
+            .skipMemoryCache(true)
+            .submit()
+        return try {
+            target.get(10, TimeUnit.SECONDS).firstFrame?.let { it.copy(Bitmap.Config.ARGB_8888, false) }
+        } finally {
+            com.bumptech.glide.Glide.with(context).clear(target)
+        }
+    }
+
+    /** One pixel where source, independent parser, platform and GifCodec do not all agree (null = no pixel). */
+    private class PixelDisagreement(
+        val frame: Int, val x: Int, val y: Int, val source: Int,
+        val independent: Int?, val platform: Int?, val gifCodec: Int?,
+    ) {
+        override fun toString() = "f$frame($x,$y) src=${hex(source)} independent=${hex(independent)} " +
+            "platform=${hex(platform)} gifCodec=${hex(gifCodec)}"
+    }
+
+    /** [compared] counts every visited pixel; it must equal [expectedCompared] = width x height x frames. */
+    private class ThreeWay(
+        val compared: Int, val expectedCompared: Int,
+        val disagreements: List<PixelDisagreement>, val decoderIssues: List<String>,
+    )
+
+    /**
+     * Pixel-exact comparison of one GIF across the independent parser (MinimalGif), the platform
+     * decoder (ImageDecoder) and GifCodec.decode, each against the source pixels. Every pixel of
+     * every frame is visited and counted. ImageDecoder exposes only the first frame, so inputs are
+     * single-frame; GifCodec compresses every frame with the same lzwEncode (GifCodec.kt:426).
+     * Stream-level problems (independent LZW error, missing end code, platform partial decode,
+     * exceptions, frame counts, sizes) go to [ThreeWay.decoderIssues]. Only APIs present in both
+     * 772071a and the candidate are used, so baseline and candidate run the same check.
+     */
+    private fun threeWayCompare(bytes: ByteArray, width: Int, height: Int, sourceFrames: List<IntArray>): ThreeWay {
+        require(sourceFrames.size == 1) { "ImageDecoder only exposes frame 0; got ${sourceFrames.size} frames" }
+        val issues = ArrayList<String>()
+        val independent: IntArray? = try {
+            val gif = MinimalGif.parse(bytes)
+            if (gif.frames.size != 1) issues.add("independent frames=${gif.frames.size}")
+            if (gif.width != width || gif.height != height) issues.add("independent size=${gif.width}x${gif.height}")
+            gif.frames.forEachIndexed { i, frame -> if (frame.endCode != "end") issues.add("independent f$i endCode=${frame.endCode}") }
+            gif.lzwError?.let { issues.add("independent lzw:$it") }
+            gif.frames.firstOrNull()?.pixels
+        } catch (e: Exception) {
+            issues.add("independent error:${e.javaClass.simpleName}")
+            null
+        }
+        fun pixelsOf(name: String, bitmap: Bitmap?): IntArray? {
+            if (bitmap == null) {
+                issues.add("$name null")
+                return null
+            }
+            try {
+                if (bitmap.width != width || bitmap.height != height) {
+                    issues.add("$name size=${bitmap.width}x${bitmap.height}")
+                    return null
+                }
+                return IntArray(width * height).also { bitmap.getPixels(it, 0, width, 0, 0, width, height) }
+            } finally {
+                bitmap.recycle()
+            }
+        }
+        val platform: IntArray? = try {
+            val bitmap = android.graphics.ImageDecoder.decodeBitmap(
+                android.graphics.ImageDecoder.createSource(java.nio.ByteBuffer.wrap(bytes))
+            ) { decoder, _, _ ->
+                decoder.allocator = android.graphics.ImageDecoder.ALLOCATOR_SOFTWARE
+                decoder.setOnPartialImageListener { e -> issues.add("platform partial:error${e.error}"); true }
+            }
+            pixelsOf("platform", bitmap)
+        } catch (e: Exception) {
+            issues.add("platform error:${e.javaClass.simpleName}")
+            null
+        }
+        val gifCodec: IntArray? = try {
+            val frames = GifCodec.decode(java.io.ByteArrayInputStream(bytes))
+            if (frames.size != 1) issues.add("gifCodec frames=${frames.size}")
+            pixelsOf("gifCodec", frames.firstOrNull()?.bitmap)
+        } catch (e: Exception) {
+            issues.add("gifCodec error:${e.javaClass.simpleName}")
+            null
+        }
+        val disagreements = ArrayList<PixelDisagreement>()
+        var compared = 0
+        sourceFrames.forEachIndexed { f, src ->
+            for (y in 0 until height) {
+                for (x in 0 until width) {
+                    val i = y * width + x
+                    compared++
+                    val a = independent?.get(i)
+                    val b = platform?.get(i)
+                    val c = gifCodec?.get(i)
+                    if (a != src[i] || b != src[i] || c != src[i]) {
+                        disagreements.add(PixelDisagreement(f, x, y, src[i], a, b, c))
+                    }
+                }
+            }
+        }
+        return ThreeWay(compared, width * height * sourceFrames.size, disagreements, issues)
+    }
+
+    // ------------------------------------------------------------------
     // Helpers
     // ------------------------------------------------------------------
 
@@ -840,6 +1105,8 @@ class GifTimingInstrumentedTest {
     }
 
     companion object {
+        private fun hex(value: Int?): String = value?.let { "%08x".format(it) } ?: "none"
+
         private const val FIXTURE_DIR = "Pictures/GlimpseGifTest/"
         private const val MAX_FRAMES = 36
         private const val ALPHA = 0xFF shl 24

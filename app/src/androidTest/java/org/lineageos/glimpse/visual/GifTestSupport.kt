@@ -50,6 +50,11 @@ internal object MinimalGif {
         val clearCodes: Int,
         /** Composited logical screen after this frame (ARGB), or null once the pixel layer failed. */
         val pixels: IntArray?,
+        /**
+         * What follows the last pixel's code: "end" for a conformant stream, otherwise the reason.
+         * Recorded only; it never sets [Parsed.lzwError], so existing pixel-layer results are unchanged.
+         */
+        val endCode: String = "not reached",
     )
 
     class Parsed(
@@ -87,6 +92,7 @@ internal object MinimalGif {
     private class Lzw(
         val indices: IntArray, val decoded: Int, val maxWidth: Int, val clears: Int,
         val errorDataOffset: Int, val errorWidth: Int, val errorDict: Int, val error: String?,
+        val endCode: String = "not reached",
     )
 
     /**
@@ -225,7 +231,7 @@ internal object MinimalGif {
                     }
                     canvas = current
                     frames.add(Frame(delay, disposal, left, top, frameWidth, frameHeight, minCodeSize,
-                        lzw.maxWidth, lzw.clears, framePixels))
+                        lzw.maxWidth, lzw.clears, framePixels, lzw.endCode))
                     delay = 0
                     disposal = 0
                     transparent = -1
@@ -345,7 +351,26 @@ internal object MinimalGif {
             }
             old = inCode
         }
-        return Lzw(out, n, maxWidth, clears, -1, 0, 0, null)
+        // All pixels are decoded; a conformant stream now carries the end code (clear codes may precede it).
+        var endCode = "missing (data exhausted)"
+        while (true) {
+            while (bits < codeSize && pos < data.size) {
+                buffer = buffer or ((data[pos].toInt() and 0xFF) shl bits)
+                bits += 8
+                pos++
+            }
+            if (bits < codeSize) break
+            val code = buffer and ((1 shl codeSize) - 1)
+            buffer = buffer ushr codeSize
+            bits -= codeSize
+            if (code == clear) {
+                codeSize = minCodeSize + 1
+                continue
+            }
+            endCode = if (code == end) "end" else "code $code at width $codeSize where the end code ($end) belongs"
+            break
+        }
+        return Lzw(out, n, maxWidth, clears, -1, 0, 0, null, endCode)
     }
 
     /**
