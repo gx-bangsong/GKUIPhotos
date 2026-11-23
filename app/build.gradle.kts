@@ -170,6 +170,13 @@ dependencies {
     testImplementation("org.robolectric:robolectric:4.14.1")
 }
 
+// Temporary diagnostic output for the smart-album test harness; remove after the failing tests are identified.
+tasks.withType<Test>().configureEach {
+    testLogging {
+        showStandardStreams = true
+    }
+}
+
 generateBp {
     targetSdk = android.defaultConfig.targetSdk!!
     minSdk = android.defaultConfig.minSdk!!
