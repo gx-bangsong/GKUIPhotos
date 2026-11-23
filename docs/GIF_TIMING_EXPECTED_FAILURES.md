@@ -82,6 +82,42 @@ SPDX-License-Identifier: Apache-2.0
 
 ## 第 2a 步（只改 LZW 码宽增长时机）
 
-清单 = 第 1 步删去所有 `lzw=` 与 `pixels undecodable` 消息项。
-- 预期消息消失：#1/#2/#3 的 `lzw=`，#6 的 `pixels undecodable`。
-- 预期转绿：#6（前提是方向项没有出现）。
+产品改动只有一处：`GifCodec.kt:526`（改后因为加了两行注释，位于 `:528`），`freeCode == (1 shl codeSize)` 改为 `freeCode > (1 shl codeSize)`。加入码表后，编码器的 freeCode 总比解码器的码表大小多 1，所以要等 freeCode 超过 2^width 才加宽，这样才和标准解码器同步。延迟和取帧都不动。
+
+同一提交新增 `step2a_lzwOutputIsPixelIdenticalAcrossDecoders`（放在外部导入测试之后，上面的断言行号都不变）。它对 13 个单帧用例调用 `threeWayCompare`：
+- 两种 uiVersion 都断言（`:618`）：实际比较的像素总数 = 各用例宽 × 高之和（独立算出，不取函数的返回值）。
+- candidate 断言（`:624`）：不一致项和解码器问题合计为 0；`random256` 的最大码宽为 12，且 clear code ≥ 2（含开头那个）。
+- baseline 断言（`:620`）：同一函数处理旧编码器的输出，问题列表**不为空**，并写入证据。
+
+### 预期消息消失
+
+| # | 消失的消息项 |
+|---|--------------|
+| 1 | `in0 lzw=frame:0 offset:66 width:4`、`in1 lzw=frame:0 offset:66 width:4` |
+| 2 | `rt lzw=frame:0 offset:66 width:4` |
+| 3 | 7 项 `<t> lzw=…`（s30/s60/r30/d30/r60/rot/hd） |
+| 6 | 7 项 `<t> pixels undecodable` |
+
+### 预期新出现（都在 #3 原有的允许格式内）
+
+`r30 last#<约 70>/292`、`d30 last#<约 131>/146`、`r60 last#<约 420>/1050`。这是旧取帧逻辑的覆盖不足，第 3 步修复。
+
+### 预期转绿
+
+- #6 `step4_orientationIsUpright`（candidate light/dark）。
+- 新测试 `step2a_lzwOutputIsPixelIdenticalAcrossDecoders`：四个截图 job 都为绿（candidate 列表为空；baseline 断言列表不为空并通过）。
+
+### 预期仍红（candidate，消息逐字）
+
+| # | 位置 | 消息 |
+|---|------|------|
+| 1 | `:254` | `Encoder delay violations: in0 raw=[100, 70, 20, 125] exp=[10, 7, 2, 13]; in1 raw=[20, 20, 20] exp=[2, 2, 2]` |
+| 2 | `:282` | `Editor round-trip violations: rt raw=[100, 70, 20] exp=[10, 7, 2]` |
+| 3 | `:345` | `Video GIF plan violations: ToolboxResult lacks syncFallbackFrames; s30 raw=100..100 exp=10.0; s30 sum=3000/300cs; s60 raw=125..125 exp=12.5; s60 sum=4000/400cs; r30 raw=66..66 exp=27.8; r30 sum=2376/1000cs; r30 last#<a>/292; d30 raw=125..125 exp=13.9; d30 sum=4500/500cs; d30 last#<a>/146; r60 raw=200..200 exp=50.0; r60 sum=7200/1800cs; r60 last#<a>/1050; rot raw=100..100 exp=10.0; rot sum=2000/200cs; hd raw=200..200 exp=20.0; hd sum=1000/100cs` |
+| 4 | `:398` | 不变 |
+| 5 | `:469` | 不变 |
+
+判定补充：
+- 2a 之后，如果出现 `identicalNeighbours`、`first#`、`undecodable`、`dup`、`n=`、`size=`、`aspect=`、`platform=`，或者非 rot 用例的 `red=`，都算非预期红，必须先停下分析。
+- `lzw_decoderEvidence` 在 candidate 上所有用例都会变成 `observed=conformant`。修复前规则判为 breaks 的用例会显示 `ruleMatches=false`。这是预期的：这条规则描述的是修复前的编码器，这个测试只记录证据。
+- baseline、lint、unit-tests 必须全绿。

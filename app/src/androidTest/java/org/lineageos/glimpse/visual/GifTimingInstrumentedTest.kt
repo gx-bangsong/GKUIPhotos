@@ -585,6 +585,57 @@ class GifTimingInstrumentedTest {
         assertTrue("External GIF import violations: ${violations.joinToString("; ")}", violations.isEmpty())
     }
 
+    /**
+     * Step 2a: GifCodec output must read pixel-identically in the independent parser, ImageDecoder
+     * and GifCodec.decode (threeWayCompare), for 1-, 2- and 256-colour frames, both sides of every
+     * code-width boundary, and a frame that needs 12-bit codes and a mid-stream clear code.
+     * Candidate: no disagreement and no decoder issue. Baseline (772071a): the same check on the
+     * pre-fix encoder must report problems, which proves it fails before the fix.
+     */
+    @Test fun step2a_lzwOutputIsPixelIdenticalAcrossDecoders() {
+        val cases = lzwCases()
+        val problems = ArrayList<String>()
+        val structural = ArrayList<String>()
+        val lines = ArrayList<String>()
+        var compared = 0
+        cases.forEach { c ->
+            val bytes = gifCodecSingleFrame(c)
+            val check = threeWayCompare(bytes, c.width, c.height, listOf(c.argb))
+            compared += check.compared
+            val first = MinimalGif.parse(bytes).frames.first()
+            val caseProblems = check.decoderIssues.map { "${c.name} $it" } + check.disagreements.map { "${c.name} $it" }
+            problems.addAll(caseProblems)
+            lines.add("${c.name} compared=${check.compared} problems=${caseProblems.size} issues=${check.decoderIssues} " +
+                "disagreements=${check.disagreements.size} first=${check.disagreements.take(3)} " +
+                "maxCodeWidth=${first.maxCodeWidth} clearCodes=${first.clearCodes} endCode=${first.endCode}")
+            if (c.name == "random256" && (first.maxCodeWidth != 12 || first.clearCodes < 2)) {
+                structural.add("random256 maxCodeWidth=${first.maxCodeWidth} clearCodes=${first.clearCodes}")
+            }
+        }
+        val expectedCompared = cases.sumOf { it.width * it.height }
+        publish("step2a-threeway", lines.joinToString("\n", postfix = "\n") +
+            "compared=$compared/$expectedCompared problems=${problems.size} first=${problems.take(5)}\n")
+        assertEquals("Pixels compared by threeWayCompare", expectedCompared, compared)
+        if (isBaseline) {
+            assertTrue("Three-way check found no problem in the pre-fix encoder output", problems.isNotEmpty())
+            return
+        }
+        val violations = structural + problems
+        assertTrue("Three-way LZW violations (${violations.size}): " + violations.take(10).joinToString("; "),
+            violations.isEmpty())
+    }
+
+    /** One GifCodec-encoded single-frame GIF for [c] (100 ms delay; delays are not under test here). */
+    private fun gifCodecSingleFrame(c: LzwCase): ByteArray {
+        val source = Bitmap.createBitmap(c.width, c.height, Bitmap.Config.ARGB_8888)
+        source.setPixels(c.argb, 0, c.width, 0, 0, c.width, c.height)
+        return try {
+            ByteArrayOutputStream().also { GifCodec.encode(listOf(GifCodec.GifFrame(source, 100)), it) }.toByteArray()
+        } finally {
+            source.recycle()
+        }
+    }
+
     private class LzwCase(val name: String, val width: Int, val height: Int, val argb: IntArray)
 
     /** 256 colours that stay distinct in GifCodec's 5-5-5 lookup cache (GifCodec.kt:364, 413-423). */

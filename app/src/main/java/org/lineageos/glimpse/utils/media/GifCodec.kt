@@ -523,7 +523,9 @@ object GifCodec {
                     codetab[hpos] = freeCode
                     htab[hpos] = key
                     freeCode++
-                    if (freeCode == (1 shl codeSize) && codeSize < 12) {
+                    // The decoder adds each entry one code later than we do, so widen only once
+                    // freeCode passes 2^codeSize; widening at == was one code early (step 2a).
+                    if (freeCode > (1 shl codeSize) && codeSize < 12) {
                         codeSize++
                     }
                 } else {
