@@ -61,6 +61,8 @@ class SelectionSheetInstrumentedTest {
     private val images = mutableListOf<Uri>()
     private var activity: Activity? = null
     private var oldDialogPreference = false
+    private var setupStarted = false
+    private var preferenceCaptured = false
     private val pendingCaptures = mutableListOf<Pair<File, String>>()
 
     private fun id(name: String): Int = context.resources.getIdentifier(name, "id", context.packageName)
@@ -73,6 +75,7 @@ class SelectionSheetInstrumentedTest {
     @Before fun setUp() {
         assumeTrue("Selection sheet is candidate-only",
             InstrumentationRegistry.getArguments().getString("uiVersion") != "baseline")
+        setupStarted = true
         val permissions = if (Build.VERSION.SDK_INT >= 33)
             listOf(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO,
                 Manifest.permission.ACCESS_MEDIA_LOCATION)
@@ -80,6 +83,7 @@ class SelectionSheetInstrumentedTest {
         permissions.forEach { instrumentation.uiAutomation.grantRuntimePermission(context.packageName, it) }
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
         oldDialogPreference = preferences.manageMediaPermissionDialogDismissed
+        preferenceCaptured = true
         preferences.manageMediaPermissionDialogDismissed = true
         repeat(24) { index ->
             val bitmap = Bitmap.createBitmap(160, 160, Bitmap.Config.ARGB_8888)
@@ -100,12 +104,16 @@ class SelectionSheetInstrumentedTest {
     }
 
     @After fun tearDown() {
-        device.unfreezeRotation()
-        activity?.finish()
-        instrumentation.waitForIdleSync()
-        publishCaptures()
-        images.forEach { context.contentResolver.delete(it, null, null) }
-        if (activity != null) PreferenceManager.getDefaultSharedPreferences(context).manageMediaPermissionDialogDismissed = oldDialogPreference
+        if (!setupStarted) return
+        try {
+            device.unfreezeRotation()
+            activity?.finish()
+            waitForBoundedUiIdle(instrumentation, device, "selection teardown")
+            publishCaptures()
+        } finally {
+            images.forEach { context.contentResolver.delete(it, null, null) }
+            if (preferenceCaptured) PreferenceManager.getDefaultSharedPreferences(context).manageMediaPermissionDialogDismissed = oldDialogPreference
+        }
     }
 
     private fun capture(name: String) {

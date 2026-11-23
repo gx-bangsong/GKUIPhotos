@@ -68,6 +68,7 @@ class UiScreenshotTest {
     private val device = UiDevice.getInstance(instrumentation)
     private val images = mutableListOf<Uri>()
     private val insertedImages = mutableSetOf<Uri>()
+    private val shellEvidence = mutableListOf<String>()
     @get:Rule val testName = TestName()
     private var activity: Activity? = null
     private val output by lazy { File(context.getExternalFilesDir(null), "ui-screenshots").apply { mkdirs() } }
@@ -150,6 +151,10 @@ class UiScreenshotTest {
             val stdout = android.os.ParcelFileDescriptor.AutoCloseInputStream(pipes[0]).bufferedReader().use { it.readText() }
             val stderr = stderrFuture.get(30, java.util.concurrent.TimeUnit.SECONDS)
             val match = Regex("(?m)^__GKUI_EXIT__(\\d+)\\r?$").find(stderr)
+            val stderrWithoutExit = if (match == null) stderr else
+                stderr.substring(0, match.range.first).removeSuffix("\n") + stderr.substring(match.range.last + 1).removePrefix("\n")
+            val stderrEncoded = android.util.Base64.encodeToString(stderrWithoutExit.toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP)
+            shellEvidence.add("exit=${match?.groupValues?.get(1) ?: "unknown"} stderr_base64=$stderrEncoded")
             check(match != null && match.groupValues[1] == "0") {
                 "Shell failed: exit=${match?.groupValues?.get(1) ?: "unknown"}; stderr=$stderr; stdout=$stdout"
             }
@@ -190,7 +195,7 @@ class UiScreenshotTest {
             if (path == null) return null
             val file = File(path)
             return file.takeIf { it.isAbsolute && it.canonicalFile.parentFile == directory &&
-                it.parentFile.canonicalFile == directory }
+                requireNotNull(it.parentFile) { "Fixture file has no parent: $it" }.canonicalFile == directory }
         }
         fun exists(path: String?): String = if (path == null) "unknown" else
             safeFile(path)?.let { fixtureExists(it.name) } ?: "outside_directory"
@@ -205,6 +210,7 @@ class UiScreenshotTest {
         val beforeEvidence = publishDiagnostic("selection-trace-foreign-before-${testName.methodName}.txt", "text/plain", beforeTrace.toByteArray())
         var afterEvidence: Uri? = null
         var deleted = 0
+        val fileResults = mutableListOf<String>()
         try {
             before.forEach { row ->
                 val path = requireNotNull(row.data) { "Missing _data for foreign fixture ${row.id}" }
@@ -217,7 +223,9 @@ class UiScreenshotTest {
                 val remaining = queryFixtures("${MediaStore.Images.Media._ID} = ?", arrayOf(row.id.toString()))
                 check(remaining.isEmpty()) { "Fixture remained after deletion: $remaining" }
                 removeFixtureFile(file.name)
-                check(exists(path) == "no") { "Fixture file remained: $path" }
+                val fileExistsAfter = exists(path)
+                fileResults.add("id=${row.id} data=$path file_exists_after=$fileExistsAfter")
+                check(fileExistsAfter == "no") { "Fixture file remained: $path" }
                 deleted++
             }
             val remaining = foreignRows()
@@ -225,7 +233,9 @@ class UiScreenshotTest {
         } finally {
             val remaining = foreignRows()
             val afterTrace = "test=${testName.methodName} before=${before.size} deleted=$deleted " +
-                "remaining=${remaining.size}\n" + remaining.joinToString("\n", postfix = "\n")
+                "remaining=${remaining.size}\n" + remaining.joinToString("\n", postfix = "\n") +
+                fileResults.joinToString("\n", postfix = "\n") +
+                shellEvidence.joinToString("\n", postfix = "\n")
             afterEvidence = publishDiagnostic("selection-trace-foreign-after-${testName.methodName}.txt", "text/plain", afterTrace.toByteArray())
         }
         return ForeignCleanupEvidence(beforeEvidence, requireNotNull(afterEvidence))
@@ -346,6 +356,8 @@ class UiScreenshotTest {
         }
         val after = read(evidence.after)
         assertTrue("Cleanup counts missing: $after", after.contains("before=1 deleted=1 remaining=0"))
+        assertTrue("Cleanup file evidence missing: $after", after.contains("id=${row.id} data=${row.data} file_exists_after=no"))
+        assertTrue("Shell exit/stderr evidence missing: $after", after.contains("exit=0 stderr_base64="))
         assertTrue("Scanned fixture row remains", queryFixtures("${MediaStore.Images.Media._ID} = ?", arrayOf(row.id.toString())).isEmpty())
         assertEquals("Scanned fixture file remains", "no", fixtureExists(fixture.name))
     }
@@ -1204,7 +1216,7 @@ class UiScreenshotTest {
             device.findObject(By.text(context.getString(R.string.delete)))!!.click()
             assertTrue("Delete confirmation did not close", device.wait(
                 Until.gone(By.text(context.getString(R.string.editor_shape_delete_title))), 5000))
-            instrumentation.waitForIdleSync()
+            waitForBoundedUiIdle(instrumentation, device, "custom shape deletion")
             var afterDelete = emptyList<org.lineageos.glimpse.models.CustomShape>()
             instrumentation.runOnMainSync { afterDelete = manager.getCustomShapes(context) }
             if (afterDelete.any { it.name == "arena_custom_shape" }) capture("markup-shape-import-$mode-delete-result")
@@ -1298,13 +1310,13 @@ class UiScreenshotTest {
         instrumentation.runOnMainSync {
             val item = requireNotNull(overlay.activeText)
             val alignment = item.javaClass.getDeclaredField("alignment").apply { isAccessible = true }
-            assertEquals("RIGHT", alignment.get(item).toString())
+            assertEquals("RIGHT", requireNotNull(alignment.get(item)) { "Text alignment is null" }.toString())
             val rect = android.graphics.RectF().also { item.computeBounds(it) }
             assertTrue("Multiline layout has only one line of height", rect.height() > item.effectiveTextSize * 2)
             assertTrue("Alignment undo failed", overlay.undo())
-            assertEquals("CENTER", alignment.get(item).toString())
+            assertEquals("CENTER", requireNotNull(alignment.get(item)) { "Text alignment is null" }.toString())
             assertTrue("Alignment redo failed", overlay.javaClass.getMethod("redo").invoke(overlay) as Boolean)
-            assertEquals("RIGHT", alignment.get(item).toString())
+            assertEquals("RIGHT", requireNotNull(alignment.get(item)) { "Text alignment is null" }.toString())
             val original = item.copy()
             item.hasBackgroundPill = false
             item.text = "Hello 中文\nHi"
@@ -1313,7 +1325,7 @@ class UiScreenshotTest {
             val width = item.javaClass.getDeclaredField("boxWidth").apply { isAccessible = true }
             val oldWidth = width.getFloat(item); width.setFloat(item, 300f)
             val bounds = android.graphics.RectF().also { item.computeBounds(it) }
-            val enumClass = alignment.type.enumConstants
+            val enumClass = requireNotNull(alignment.type.enumConstants) { "Text alignment is not an enum" }
             fun render(name: String): Bitmap {
                 alignment.set(item, enumClass.first { it.toString() == name })
                 return Bitmap.createBitmap(512, 512, Bitmap.Config.ARGB_8888).also {
@@ -1410,10 +1422,16 @@ class UiScreenshotTest {
             }
             val cancelled = instrumentation.addMonitor(filter, Instrumentation.ActivityResult(Activity.RESULT_CANCELED, null), true)
             val before = (fonts.getMethod("ids").invoke(instance) as List<*>).toSet()
-            importButton!!.click(); instrumentation.waitForIdleSync(); instrumentation.removeMonitor(cancelled)
+            importButton!!.click()
+            waitForBoundedUiIdle(instrumentation, device, "cancel font picker")
+            assertTrue("Font import entry did not return", device.wait(Until.hasObject(By.text(context.getString(importLabel))), 5000))
+            instrumentation.removeMonitor(cancelled)
             assertEquals("Cancelled picker changed font library", before, (fonts.getMethod("ids").invoke(instance) as List<*>).toSet())
             val accepted = instrumentation.addMonitor(filter, Instrumentation.ActivityResult(Activity.RESULT_OK, Intent().setData(fontUri)), true)
-            importButton.click(); instrumentation.waitForIdleSync(); instrumentation.removeMonitor(accepted)
+            importButton.click()
+            waitForBoundedUiIdle(instrumentation, device, "accept font picker")
+            assertTrue("Font import entry did not return", device.wait(Until.hasObject(By.text(context.getString(importLabel))), 5000))
+            instrumentation.removeMonitor(accepted)
             val id = MessageDigest.getInstance("SHA-256").digest(otf.readBytes()).joinToString("") { "%02x".format(it) }
             val deadline = System.currentTimeMillis() + 15000
             while (id !in (fonts.getMethod("ids").invoke(instance) as List<*>) && System.currentTimeMillis() < deadline) Thread.sleep(100)
@@ -1546,7 +1564,7 @@ class UiScreenshotTest {
                 item.hasBackgroundPill = false; item.color = Color.WHITE
                 item.javaClass.getDeclaredField("fontId").apply { isAccessible = true }.set(item, fontId)
                 val alignment = item.javaClass.getDeclaredField("alignment").apply { isAccessible = true }
-                alignment.set(item, alignment.type.enumConstants.first { it.toString() == "RIGHT" })
+                alignment.set(item, requireNotNull(alignment.type.enumConstants) { "Text alignment is not an enum" }.first { it.toString() == "RIGHT" })
                 overlay.javaClass.getMethod("constrainActiveText").invoke(overlay)
                 val textBounds = android.graphics.RectF().also { item.computeBounds(it) }
                 @Suppress("UNCHECKED_CAST")
@@ -1650,7 +1668,7 @@ class UiScreenshotTest {
             val importButton = requireNotNull(findText(root, context.getString(importLabel)))
             assertTrue("Import needs a 48dp touch target", importButton.width >= min && importButton.height >= min)
             assertTrue("Import must be clickable", importButton.isClickable)
-            assertEquals("Import text size", 12f * context.resources.displayMetrics.scaledDensity, importButton.textSize, 0.5f)
+            assertEquals("Import text size", android.util.TypedValue.applyDimension(android.util.TypedValue.COMPLEX_UNIT_SP, 12f, context.resources.displayMetrics), importButton.textSize, 0.5f)
             val a = IntArray(2); val b = IntArray(2)
             group.getLocationOnScreen(a); importButton.getLocationOnScreen(b)
             assertTrue("Import overlaps the font choices", b[0] - (a[0] + group.width) >= gap)
@@ -2259,21 +2277,22 @@ class UiScreenshotTest {
                 addDataType("image/*")
             }
             val monitor = instrumentation.addMonitor(filter, result, true)
-            instrumentation.runOnMainSync { activity!!.findViewById<View>(id).performClick() }
-            instrumentation.waitForIdleSync()
+            runOnMainWithTimeout(instrumentation, "collage result state") { activity!!.findViewById<View>(id).performClick() }
+            waitForBoundedUiIdle(instrumentation, device, "collage replacement result")
+            assertTrue("Collage preview did not return", device.wait(Until.hasObject(By.res(context.packageName, "collagePreview")), 5000))
             instrumentation.removeMonitor(monitor)
         }
         deliver(Instrumentation.ActivityResult(Activity.RESULT_CANCELED, null))
-        instrumentation.runOnMainSync { assertEquals(images.take(2), view.photos.map { it.uri }) }
+        runOnMainWithTimeout(instrumentation, "collage result state") { assertEquals(images.take(2), view.photos.map { it.uri }) }
         deliver(Instrumentation.ActivityResult(Activity.RESULT_OK, Intent().setData(images[2])))
         val deadline = System.currentTimeMillis() + 30000
         while (System.currentTimeMillis() < deadline) {
             var done = false
-            instrumentation.runOnMainSync { done = view.photos.firstOrNull()?.uri == images[2] }
+            runOnMainWithTimeout(instrumentation, "collage result state") { done = view.photos.firstOrNull()?.uri == images[2] }
             if (done) break
             Thread.sleep(100)
         }
-        instrumentation.runOnMainSync {
+        runOnMainWithTimeout(instrumentation, "collage result state") {
             assertEquals(listOf(images[2], images[1]), view.photos.map { it.uri })
             assertEquals(0, view.layout)
         }
@@ -2286,20 +2305,21 @@ class UiScreenshotTest {
         val r = device.findObject(By.res(context.packageName, "collagePreview"))!!.visibleBounds
         device.click(r.left + r.width() / 4, r.centerY())
         assertNotNull(device.wait(Until.findObject(By.res(context.packageName, "collageEdit")), 5000))
-        instrumentation.runOnMainSync { view.photos[0].zoom = 2f; view.photos[0].offsetX = .2f }
+        runOnMainWithTimeout(instrumentation, "collage result state") { view.photos[0].zoom = 2f; view.photos[0].offsetX = .2f }
         val monitor = instrumentation.addMonitor(ImageEditorActivity::class.java.name,
             Instrumentation.ActivityResult(Activity.RESULT_OK, Intent().setData(images[2])), true)
         device.findObject(By.res(context.packageName, "collageEdit"))!!.click()
-        instrumentation.waitForIdleSync()
+        waitForBoundedUiIdle(instrumentation, device, "collage edit result")
+        assertTrue("Collage preview did not return", device.wait(Until.hasObject(By.res(context.packageName, "collagePreview")), 5000))
         instrumentation.removeMonitor(monitor)
         val deadline = System.currentTimeMillis() + 30000
         while (System.currentTimeMillis() < deadline) {
             var done = false
-            instrumentation.runOnMainSync { done = view.photos.firstOrNull()?.uri == images[2] }
+            runOnMainWithTimeout(instrumentation, "collage result state") { done = view.photos.firstOrNull()?.uri == images[2] }
             if (done) break
             Thread.sleep(100)
         }
-        instrumentation.runOnMainSync {
+        runOnMainWithTimeout(instrumentation, "collage result state") {
             assertEquals(listOf(images[2], images[1]), view.photos.map { it.uri })
             assertEquals(2f, view.photos[0].zoom, 0f)
             assertEquals(.2f, view.photos[0].offsetX, 0f)
