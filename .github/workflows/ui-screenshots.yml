@@ -240,8 +240,12 @@ jobs:
             echo "::error::APK metadata validation failed: $(head -c 300 "$UI_RETURN_DIR/apk-error.txt")"
             exit 1
           fi
-          if ! gh api --method POST "repos/$GITHUB_REPOSITORY/git/blobs" --input "$UI_RETURN_DIR/apk-blob-payload.json" --jq .sha > "$UI_RETURN_DIR/apk-blob-sha.txt" 2>/dev/null; then
-            echo '::error::Unable to create the detached APK blob.'
+          # Keep gh's stderr so a failure reports its HTTP status and sanitized message (no retry).
+          if gh api --method POST "repos/$GITHUB_REPOSITORY/git/blobs" --input "$UI_RETURN_DIR/apk-blob-payload.json" --jq .sha > "$UI_RETURN_DIR/apk-blob-sha.txt" 2> "$UI_RETURN_DIR/apk-blob-stderr.txt"; then
+            :
+          else
+            apk_blob_exit=$?
+            python3 scripts/ui-blob-error.py 'Detached APK blob upload' "$UI_RETURN_DIR/apk-blob-stderr.txt" "$apk_blob_exit"
             exit 1
           fi
           python3 scripts/write-ui-comment.py
