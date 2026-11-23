@@ -334,9 +334,11 @@ class UiScreenshotTest {
             while (true) {
                 rows = queryFixtures("${MediaStore.Images.Media.RELATIVE_PATH} = ? AND ${MediaStore.Images.Media.DISPLAY_NAME} = ?",
                     arrayOf(fixtureDirectory, fixture.name))
-                if (rows.isNotEmpty()) break
+                // MediaScanner can publish the row before it clears IS_PENDING.
+                // Compare evidence only once the exact row has finished publishing.
+                if (rows.size > 1 || (rows.size == 1 && rows.single().pending == 0)) break
                 val remaining = deadline - SystemClock.uptimeMillis()
-                assertTrue("Scanned fixture record did not appear within 30 seconds",
+                assertTrue("Scanned fixture record did not finish publishing within 30 seconds; rows=$rows",
                     remaining > 0 && changed.tryAcquire(remaining, java.util.concurrent.TimeUnit.MILLISECONDS))
             }
         } finally {
