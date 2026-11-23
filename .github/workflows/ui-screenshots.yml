@@ -167,8 +167,9 @@ jobs:
           path: ui-evidence/
           if-no-files-found: warn
   return-evidence:
-    # Never give PR code from a fork write access; only the approved repository PR can report.
-    if: always() && github.event_name == 'pull_request' && (github.event.pull_request.number == 4 || github.event.pull_request.number == 5) && github.event.pull_request.head.repo.full_name == github.repository
+    # Never give PR code from a fork write access: only pull requests whose head branch lives in
+    # this repository report back, each to its own PR (number taken from the event payload).
+    if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     needs: [lint, screenshots, apk, unit-tests]
     runs-on: ubuntu-latest
     concurrency:
