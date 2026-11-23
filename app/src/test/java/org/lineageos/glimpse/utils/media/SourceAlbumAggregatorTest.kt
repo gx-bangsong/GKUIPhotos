@@ -11,10 +11,7 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.database.Cursor
 import android.net.Uri
-import android.os.Bundle
 import android.provider.MediaStore
-import android.test.mock.MockContentResolver
-import androidx.test.core.app.ApplicationProvider
 import java.lang.reflect.Proxy
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -22,8 +19,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.lineageos.glimpse.models.AppRule
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowContentResolver
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
@@ -78,11 +77,10 @@ class SourceAlbumAggregatorTest {
     }
 
     private fun resolverContext(provider: FakeMediaProvider): Context {
-        val resolver = MockContentResolver()
-        resolver.addProvider("media", provider)
-        return object : ContextWrapper(ApplicationProvider.getApplicationContext()) {
+        ShadowContentResolver.registerProviderInternal("media", provider)
+        val application = RuntimeEnvironment.getApplication()
+        return object : ContextWrapper(application) {
             override fun getApplicationContext(): Context = this
-            override fun getContentResolver(): MockContentResolver = resolver
         }
     }
 
@@ -121,16 +119,16 @@ class SourceAlbumAggregatorTest {
         override fun onCreate(): Boolean = true
 
         override fun query(
-            uri: Uri?,
+            uri: Uri,
             projection: Array<out String>?,
             selection: String?,
             selectionArgs: Array<out String>?,
             sortOrder: String?,
-        ): Cursor = cursorFor(rows)
+        ): Cursor? = cursorFor(rows)
 
-        override fun getType(uri: Uri): String = "image/jpeg"
+        override fun getType(uri: Uri): String? = "image/jpeg"
 
-        override fun insert(uri: Uri, values: ContentValues): Uri? = null
+        override fun insert(uri: Uri, values: ContentValues?): Uri? = null
 
         override fun delete(uri: Uri, selection: String?, selectionArgs: Array<out String>?): Int = 0
 
