@@ -131,20 +131,50 @@ class UiScreenshotTest {
         }
     }
 
-    private fun shell(command: String): String {
-        // UiAutomation executes its argument with Runtime.exec(String), not a
-        // shell parser. Feed scripts to sh over stdin so quoting and exit checks
-        // work without treating metacharacters as ordinary command arguments.
-        val pipes = instrumentation.uiAutomation.executeShellCommandRw("sh")
-        android.os.ParcelFileDescriptor.AutoCloseOutputStream(pipes[1]).bufferedWriter().use {
-            it.write("exec 2>&1\n")
-            it.write(command)
-            it.write("\nexit\n")
+    private fun shell(script: String, vararg args: String): String {
+        // Only single-token, validated arguments reach Runtime.exec; the script
+        // itself is fixed and receives untrusted file names as base64 arguments.
+        args.forEach { require(it.matches(Regex("[A-Za-z0-9._+=/-]+"))) { "Invalid shell argument" } }
+        val command = (listOf("sh", "-s", "--") + args).joinToString(" ")
+        val pipes = instrumentation.uiAutomation.executeShellCommandRwe(command)
+        val executor = java.util.concurrent.Executors.newSingleThreadExecutor()
+        try {
+            val stderrFuture = executor.submit<String> {
+                android.os.ParcelFileDescriptor.AutoCloseInputStream(pipes[2]).bufferedReader().use { it.readText() }
+            }
+            android.os.ParcelFileDescriptor.AutoCloseOutputStream(pipes[1]).bufferedWriter().use {
+                it.write("set -e\ntrap 'rc=\$?; trap - EXIT; printf \"\\n__GKUI_EXIT__%s\\n\" \"\$rc\" >&2; exit \"\$rc\"' EXIT\n")
+                it.write(script)
+                it.write("\n")
+            }
+            val stdout = android.os.ParcelFileDescriptor.AutoCloseInputStream(pipes[0]).bufferedReader().use { it.readText() }
+            val stderr = stderrFuture.get(30, java.util.concurrent.TimeUnit.SECONDS)
+            val match = Regex("(?m)^__GKUI_EXIT__(\\d+)\\r?$").find(stderr)
+            check(match != null && match.groupValues[1] == "0") {
+                "Shell failed: exit=${match?.groupValues?.get(1) ?: "unknown"}; stderr=$stderr; stdout=$stdout"
+            }
+            return stdout.trim()
+        } finally {
+            executor.shutdownNow()
         }
-        return android.os.ParcelFileDescriptor.AutoCloseInputStream(pipes[0]).bufferedReader().use { it.readText().trim() }
     }
 
-    private fun shellQuote(value: String): String = "'" + value.replace("'", "'\\''") + "'"
+    private fun fileArgument(name: String): String = android.util.Base64.encodeToString(
+        name.toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP)
+
+    private fun fixtureExists(name: String): String = shell("""
+        cd /sdcard/Pictures/GlimpseUiTest
+        name=${'$'}(printf %s "${'$'}1" | base64 -d)
+        case "${'$'}name" in ''|.|..|*/*) echo 'invalid fixture name' >&2; exit 64;; esac
+        if test -e "${'$'}name"; then echo yes; else echo no; fi
+    """.trimIndent(), fileArgument(name))
+
+    private fun removeFixtureFile(name: String) = shell("""
+        cd /sdcard/Pictures/GlimpseUiTest
+        name=${'$'}(printf %s "${'$'}1" | base64 -d)
+        case "${'$'}name" in ''|.|..|*/*) echo 'invalid fixture name' >&2; exit 64;; esac
+        rm -f -- "${'$'}name"
+    """.trimIndent(), fileArgument(name))
 
     private data class ForeignCleanupEvidence(val before: Uri, val after: Uri)
 
@@ -156,8 +186,14 @@ class UiScreenshotTest {
             "GlimpseUiTest").canonicalFile
         val before = foreignRows()
         val installed = context.packageManager.getPackageInfo(context.packageName, 0).firstInstallTime
+        fun safeFile(path: String?): File? {
+            if (path == null) return null
+            val file = File(path)
+            return file.takeIf { it.isAbsolute && it.canonicalFile.parentFile == directory &&
+                it.parentFile.canonicalFile == directory }
+        }
         fun exists(path: String?): String = if (path == null) "unknown" else
-            shell("if test -e ${shellQuote(path)}; then echo yes; else echo no; fi")
+            safeFile(path)?.let { fixtureExists(it.name) } ?: "outside_directory"
         val beforeTrace = buildString {
             append("test=${testName.methodName} directory=$fixtureDirectory found=${before.size} ")
             append("firstInstallTimeMillis=$installed\n")
@@ -172,19 +208,16 @@ class UiScreenshotTest {
         try {
             before.forEach { row ->
                 val path = requireNotNull(row.data) { "Missing _data for foreign fixture ${row.id}" }
-                val file = File(path)
-                check(file.isAbsolute && file.canonicalFile.parentFile == directory && file.parentFile.canonicalFile == directory) {
-                    "Foreign fixture path outside exact directory: $path"
-                }
-                val where = "_id=${row.id} AND relative_path='$fixtureDirectory' AND " +
-                    "(owner_package_name IS NULL OR owner_package_name != '${context.packageName}')"
-                val result = shell("content delete --uri content://media/external/images/media --where ${shellQuote(where)}; " +
-                    "printf '\\nexit=%s\\n' \$?")
-                check(result.endsWith("exit=0")) { "Shell media delete failed for ${row.id}: $result" }
+                val file = requireNotNull(safeFile(path)) { "Foreign fixture path outside exact directory: $path" }
+                require(context.packageName.matches(Regex("[A-Za-z0-9._]+")))
+                shell("""
+                    case "${'$'}1" in ''|*[!0-9]*) echo 'invalid row id' >&2; exit 64;; esac
+                    content delete --uri content://media/external/images/media --where "_id=${'$'}1 AND relative_path='Pictures/GlimpseUiTest/' AND (owner_package_name IS NULL OR owner_package_name != '${'$'}2')"
+                """.trimIndent(), row.id.toString(), context.packageName)
                 val remaining = queryFixtures("${MediaStore.Images.Media._ID} = ?", arrayOf(row.id.toString()))
                 check(remaining.isEmpty()) { "Fixture remained after deletion: $remaining" }
-                val removal = shell("rm -f -- ${shellQuote(file.canonicalPath)}; printf '\\nexit=%s\\n' \$?")
-                check(removal.endsWith("exit=0") && exists(path) == "no") { "Fixture file remained: $path; $removal" }
+                removeFixtureFile(file.name)
+                check(exists(path) == "no") { "Fixture file remained: $path" }
                 deleted++
             }
             val remaining = foreignRows()
@@ -264,42 +297,57 @@ class UiScreenshotTest {
             "GlimpseUiTest").canonicalFile
         val fixture = File(dir, "shell_fixture_${UUID.randomUUID()}.png")
         check(fixture.canonicalFile.parentFile == dir)
-        // Small synthetic 8x8 PNG; keep the shell command bounded.
-        val encoded = "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEklEQVR4nGP4z8CAFWEXHbQSACj/P8Fu7N9hAAAAAElFTkSuQmCC"
-        val created = shell("mkdir -p ${shellQuote(dir.path)} && " +
-            "printf %s ${shellQuote(encoded)} | base64 -d > ${shellQuote(fixture.path)}; printf '\\nexit=%s\\n' \$?")
-        assertTrue("Shell fixture write failed: $created", created.endsWith("exit=0"))
-        assertEquals("Fixture file missing", "yes", shell("if test -f ${shellQuote(fixture.path)}; then echo yes; else echo no; fi"))
+        // Small synthetic 8x8 PNG. The directory and script are fixed; the
+        // generated file name is passed only as a validated positional argument.
+        shell("""
+            mkdir -p /sdcard/Pictures/GlimpseUiTest
+            cd /sdcard/Pictures/GlimpseUiTest
+            name=${'$'}(printf %s "${'$'}1" | base64 -d)
+            case "${'$'}name" in ''|.|..|*/*) echo 'invalid fixture name' >&2; exit 64;; esac
+            printf %s iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEklEQVR4nGP4z8CAFWEXHbQSACj/P8Fu7N9hAAAAAElFTkSuQmCC | base64 -d > "${'$'}name"
+        """.trimIndent(), fileArgument(fixture.name))
+        assertEquals("Fixture file missing", "yes", fixtureExists(fixture.name))
 
-        val changed = java.util.concurrent.CountDownLatch(1)
+        val changed = java.util.concurrent.Semaphore(0)
         val observer = object : android.database.ContentObserver(null) {
-            override fun onChange(selfChange: Boolean) { changed.countDown() }
+            override fun onChange(selfChange: Boolean) { changed.release() }
         }
+        var rows: List<FixtureRecord> = emptyList()
         context.contentResolver.registerContentObserver(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, true, observer)
         try {
-            val scanned = shell("am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d " +
-                shellQuote("file://${fixture.path}") + "; printf '\\nexit=%s\\n' \$?")
-            assertTrue("Media scan broadcast failed: $scanned", scanned.endsWith("exit=0"))
-            assertTrue("Media scan did not notify the image collection", changed.await(30, java.util.concurrent.TimeUnit.SECONDS))
+            shell("""
+                name=${'$'}(printf %s "${'$'}1" | base64 -d)
+                case "${'$'}name" in ''|.|..|*/*) echo 'invalid fixture name' >&2; exit 64;; esac
+                am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d "file:///sdcard/Pictures/GlimpseUiTest/${'$'}name"
+            """.trimIndent(), fileArgument(fixture.name))
+            val deadline = SystemClock.uptimeMillis() + 30000
+            while (true) {
+                rows = queryFixtures("${MediaStore.Images.Media.RELATIVE_PATH} = ? AND ${MediaStore.Images.Media.DISPLAY_NAME} = ?",
+                    arrayOf(fixtureDirectory, fixture.name))
+                if (rows.isNotEmpty()) break
+                val remaining = deadline - SystemClock.uptimeMillis()
+                assertTrue("Scanned fixture record did not appear within 30 seconds",
+                    remaining > 0 && changed.tryAcquire(remaining, java.util.concurrent.TimeUnit.MILLISECONDS))
+            }
         } finally {
             context.contentResolver.unregisterContentObserver(observer)
         }
-        val rows = queryFixtures("${MediaStore.Images.Media.DATA} = ?", arrayOf(fixture.path))
         assertEquals("Expected one scanned fixture", 1, rows.size)
         val row = rows.single()
-        assertNull("Shell-scanned fixture must have a NULL owner", row.owner)
+        // NULL owner uses the same cleanup path but remains unverified.
+        assertEquals("Shell-scanned fixture owner", "com.android.shell", row.owner)
         val evidence = cleanForeignFixtures()
         fun read(uri: Uri) = requireNotNull(context.contentResolver.openInputStream(uri)).bufferedReader().use { it.readText() }
         val before = read(evidence.before)
         listOf("id=${row.id}", "data=${row.data}", "date_added_seconds=${row.dateAdded}",
-            "owner=null", "is_pending=${row.pending}", "is_trashed=${row.trashed}",
+            "owner=com.android.shell", "is_pending=${row.pending}", "is_trashed=${row.trashed}",
             "file_exists=yes", "firstInstallTimeMillis=").forEach { field ->
             assertTrue("Missing cleanup evidence field: $field", before.contains(field))
         }
         val after = read(evidence.after)
         assertTrue("Cleanup counts missing: $after", after.contains("before=1 deleted=1 remaining=0"))
         assertTrue("Scanned fixture row remains", queryFixtures("${MediaStore.Images.Media._ID} = ?", arrayOf(row.id.toString())).isEmpty())
-        assertEquals("Scanned fixture file remains", "no", shell("if test -e ${shellQuote(fixture.path)}; then echo yes; else echo no; fi"))
+        assertEquals("Scanned fixture file remains", "no", fixtureExists(fixture.name))
     }
 
     private fun publishDiagnostic(name: String, mime: String, bytes: ByteArray): Uri {
