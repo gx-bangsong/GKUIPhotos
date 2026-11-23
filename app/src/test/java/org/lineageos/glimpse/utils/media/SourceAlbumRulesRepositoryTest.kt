@@ -13,25 +13,16 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
-import org.junit.Rule
 import org.junit.Test
-import org.junit.rules.TestWatcher
-import org.junit.runner.Description
+import org.junit.runner.RunWith
 import org.lineageos.glimpse.models.AppRule
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import org.lineageos.glimpse.models.AppRuleExport
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class SourceAlbumRulesRepositoryTest {
-
-    @get:Rule
-    val failureDiagnostics = object : TestWatcher() {
-        override fun failed(error: Throwable, description: Description) {
-            val detail = listOfNotNull(error::class.java.simpleName, error.message)
-                .joinToString(": ")
-                .replace(Regex("[\\r\\n]+"), " ")
-                .replace("::", "")
-            System.err.println("error: smart-album-test ${description.methodName}: $detail")
-        }
-    }
 
     @Test
     fun exportThenOverwriteImportPreservesRules() {

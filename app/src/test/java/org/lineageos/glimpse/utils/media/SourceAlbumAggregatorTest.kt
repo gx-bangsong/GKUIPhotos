@@ -9,6 +9,7 @@ import android.content.ContentProvider
 import android.content.ContentValues
 import android.content.Context
 import android.content.ContextWrapper
+import android.content.pm.ProviderInfo
 import android.database.Cursor
 import android.net.Uri
 import android.provider.MediaStore
@@ -16,10 +17,7 @@ import java.lang.reflect.Proxy
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
-import org.junit.Rule
 import org.junit.Test
-import org.junit.rules.TestWatcher
-import org.junit.runner.Description
 import org.junit.runner.RunWith
 import org.lineageos.glimpse.models.AppRule
 import org.robolectric.RuntimeEnvironment
@@ -30,17 +28,6 @@ import org.robolectric.shadows.ShadowContentResolver
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class SourceAlbumAggregatorTest {
-
-    @get:Rule
-    val failureDiagnostics = object : TestWatcher() {
-        override fun failed(error: Throwable, description: Description) {
-            val detail = listOfNotNull(error::class.java.simpleName, error.message)
-                .joinToString(": ")
-                .replace(Regex("[\\r\\n]+"), " ")
-                .replace("::", "")
-            System.err.println("error: smart-album-test ${description.methodName}: $detail")
-        }
-    }
 
     @Test
     fun enabledRulesMatchMultipleAlbumsAndDisabledRulesAreIgnored() {
@@ -91,8 +78,9 @@ class SourceAlbumAggregatorTest {
     }
 
     private fun resolverContext(provider: FakeMediaProvider): Context {
-        ShadowContentResolver.registerProviderInternal("media", provider)
         val application = RuntimeEnvironment.getApplication()
+        provider.attachInfo(application, ProviderInfo().apply { authority = "media" })
+        ShadowContentResolver.registerProviderInternal("media", provider)
         return object : ContextWrapper(application) {
             override fun getApplicationContext(): Context = this
         }
