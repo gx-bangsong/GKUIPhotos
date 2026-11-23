@@ -5,32 +5,40 @@
 
 package org.lineageos.glimpse.utils.media
 
-import android.content.ContentResolver
+import android.content.ContentProvider
+import android.content.ContentValues
 import android.content.Context
 import android.content.ContextWrapper
-import android.content.res.AssetFileDescriptor
 import android.database.Cursor
 import android.net.Uri
-import android.os.CancellationSignal
+import android.os.Bundle
 import android.provider.MediaStore
+import android.test.mock.MockContentResolver
+import androidx.test.core.app.ApplicationProvider
 import java.lang.reflect.Proxy
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
 import org.lineageos.glimpse.models.AppRule
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class SourceAlbumAggregatorTest {
 
     @Test
     fun enabledRulesMatchMultipleAlbumsAndDisabledRulesAreIgnored() {
-        val resolver = FakeContentResolver(
+        val provider = FakeMediaProvider(
             rows = listOf(
                 mediaRow(1, "/storage/emulated/0/Pictures/AppOne/one.jpg"),
                 mediaRow(2, "/storage/emulated/0/Pictures/AppTwo/two.jpg"),
                 mediaRow(3, "/storage/emulated/0/Movies/AppThree/three.mp4", video = true),
             ),
         )
+        val context = resolverContext(provider)
         val rules = listOf(
             rule("one", "AppOne", enabled = true),
             rule("two", "AppTwo", enabled = false),
@@ -39,7 +47,7 @@ class SourceAlbumAggregatorTest {
 
         // No EXIF fallback is needed for rows that exercise path matching.
         val albums = SourceAlbumAggregator.aggregateWithRules(
-            ResolverContext(resolver),
+            context,
             rules,
             maxExifScans = 0,
         )
@@ -52,7 +60,7 @@ class SourceAlbumAggregatorTest {
 
     @Test
     fun exifFallbackStopsAtConfiguredScanLimit() {
-        val resolver = FakeContentResolver(
+        val provider = FakeMediaProvider(
             rows = (1L..5L).map { id ->
                 mediaRow(id, "/storage/emulated/0/Pictures/Unknown/$id.jpg")
             },
@@ -60,13 +68,22 @@ class SourceAlbumAggregatorTest {
         val rules = listOf(rule("source", "NeverMatches", enabled = true))
 
         val albums = SourceAlbumAggregator.aggregateWithRules(
-            ResolverContext(resolver),
+            resolverContext(provider),
             rules,
             maxExifScans = 2,
         )
 
         assertTrue(albums.isEmpty())
-        assertEquals(2, resolver.exifOpenUris.size)
+        assertEquals(2, provider.exifOpenUris.size)
+    }
+
+    private fun resolverContext(provider: FakeMediaProvider): Context {
+        val resolver = MockContentResolver()
+        resolver.addProvider("media", provider)
+        return object : ContextWrapper(ApplicationProvider.getApplicationContext()) {
+            override fun getApplicationContext(): Context = this
+            override fun getContentResolver(): MockContentResolver = resolver
+        }
     }
 
     private fun rule(key: String, keyword: String, enabled: Boolean) = AppRule(
@@ -96,18 +113,12 @@ class SourceAlbumAggregatorTest {
         val type: Int,
     )
 
-    private class ResolverContext(
-        private val resolver: ContentResolver,
-    ) : ContextWrapper(null) {
-        override fun getApplicationContext(): Context = this
-
-        override fun getContentResolver(): ContentResolver = resolver
-    }
-
-    private class FakeContentResolver(
+    private inner class FakeMediaProvider(
         private val rows: List<MediaRow>,
-    ) : ContentResolver(null) {
+    ) : ContentProvider() {
         val exifOpenUris = mutableListOf<Uri>()
+
+        override fun onCreate(): Boolean = true
 
         override fun query(
             uri: Uri?,
@@ -117,14 +128,21 @@ class SourceAlbumAggregatorTest {
             sortOrder: String?,
         ): Cursor = cursorFor(rows)
 
-        // ContentResolver.openInputStream delegates here. Returning null makes the
-        // EXIF read fail harmlessly while still letting the test count scans.
-        override fun openAssetFileDescriptor(
-            uri: Uri?,
-            mode: String?,
-            cancellationSignal: CancellationSignal?,
-        ): AssetFileDescriptor? {
-            if (uri != null) exifOpenUris += uri
+        override fun getType(uri: Uri): String = "image/jpeg"
+
+        override fun insert(uri: Uri, values: ContentValues): Uri? = null
+
+        override fun delete(uri: Uri, selection: String?, selectionArgs: Array<out String>?): Int = 0
+
+        override fun update(
+            uri: Uri,
+            values: ContentValues?,
+            selection: String?,
+            selectionArgs: Array<out String>?,
+        ): Int = 0
+
+        override fun openAssetFile(uri: Uri, mode: String): android.content.res.AssetFileDescriptor? {
+            exifOpenUris += uri
             return null
         }
     }
