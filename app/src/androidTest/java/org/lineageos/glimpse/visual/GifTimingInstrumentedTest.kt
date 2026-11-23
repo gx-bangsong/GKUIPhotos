@@ -100,6 +100,8 @@ class GifTimingInstrumentedTest {
     private class Conversion(
         val case: GifCase,
         val gif: MinimalGif.Parsed?,
+        /** Exact pixel-layer token (lzw=..., platform=...) or null when pixels decode and match the platform. */
+        val pixelIssue: String?,
         val error: Throwable?,
         val decoded: List<Int?>,
         val probeTimesUs: List<Long>,
@@ -137,19 +139,46 @@ class GifTimingInstrumentedTest {
     // ------------------------------------------------------------------
 
     @Test fun harness_parserSelfCheck() {
+        // Known-good GIFs built by the test's own writer (never GifCodec): both layers must be exact.
         val bytes = fixtureGif(listOf(10, 7, 2))
         val gif = MinimalGif.parse(bytes)
         assertEquals("Fixture raw delays", listOf(10, 7, 2), gif.delaysRaw)
         assertEquals("Fixture frame count", 3, gif.frames.size)
+        assertEquals("Fixture image descriptors", 3, gif.imageDescriptors)
         assertEquals("Fixture width", 64, gif.width)
         assertEquals("Fixture height", 48, gif.height)
         assertTrue("Fixture loop block", gif.loopBlockPresent)
         assertEquals("Fixture loop count", 0, gif.loopCount)
-        gif.frames.forEachIndexed { i, frame ->
-            assertEquals("Fixture body colour of frame $i", FIXTURE_PALETTE[i % 3], frame.pixels[40 * 64 + 10])
-            assertEquals("Fixture stripe colour of frame $i", FIXTURE_PALETTE[3], frame.pixels[0])
+        assertEquals("Fixture trailing bytes", 0, gif.trailingBytes)
+        assertEquals("Fixture pixel layer: ${gif.lzwError}", null, gif.lzwError)
+        gif.frames.forEachIndexed { i, _ ->
+            assertEquals("Fixture body colour of frame $i", FIXTURE_PALETTE[i % 3], gif.pixels(i)[40 * 64 + 10])
+            assertEquals("Fixture stripe colour of frame $i", FIXTURE_PALETTE[3], gif.pixels(i)[0])
         }
         assertEquals("Parser disagrees with the platform GIF decoder", 0, platformMismatch(bytes, gif))
+
+        val lines = ArrayList<String>()
+        compressedFixtures().forEach { fixture ->
+            val compressed = MinimalGif.write(fixture.width, fixture.height, fixture.palette,
+                listOf(fixture.indices to 4, fixture.indices.reversedArray() to 6), compress = true)
+            val parsed = MinimalGif.parse(compressed)
+            lines.add("${fixture.name}: ${parsed.structure()} ${parsed.pixelLayer()}")
+            assertEquals("${fixture.name} raw delays", listOf(4, 6), parsed.delaysRaw)
+            assertEquals("${fixture.name} pixel layer: ${parsed.lzwError}", null, parsed.lzwError)
+            listOf(fixture.indices, fixture.indices.reversedArray()).forEachIndexed { f, indices ->
+                val wrong = indices.indices.count { parsed.pixels(f)[it] != fixture.palette[indices[it].toInt() and 0xFF] }
+                assertEquals("${fixture.name} frame $f pixels differ from the source indices", 0, wrong)
+            }
+            assertEquals("${fixture.name} parser disagrees with the platform GIF decoder", 0, platformMismatch(compressed, parsed))
+            fixture.expectedMaxWidth?.let {
+                assertEquals("${fixture.name} widest code", it, parsed.frames.maxOf { frame -> frame.maxCodeWidth })
+            }
+            if (fixture.needsMidStreamClear) {
+                assertTrue("${fixture.name} needs a mid-stream clear code: ${parsed.pixelLayer()}",
+                    parsed.frames.any { it.clearCodes >= 2 })
+            }
+        }
+        publish("harness-parser", lines.joinToString("\n", postfix = "\n"))
     }
 
     @Test fun harness_syntheticVideosAreValid() {
@@ -197,7 +226,7 @@ class GifTimingInstrumentedTest {
     @Test fun step2_encoderWritesCentisecondDelays() {
         val inputs = listOf(listOf(100, 70, 20, 125), listOf(15, 15, 15))
         val expected = listOf(listOf(10, 7, 2, 13), listOf(2, 2, 2))
-        val parsed = inputs.map { delaysMs ->
+        val outputs = inputs.map { delaysMs ->
             val frames = delaysMs.mapIndexed { i, delay ->
                 val bitmap = Bitmap.createBitmap(32, 24, Bitmap.Config.ARGB_8888)
                 bitmap.eraseColor(FIXTURE_PALETTE[i % 4])
@@ -207,19 +236,20 @@ class GifTimingInstrumentedTest {
             GifCodec.encode(frames, out)
             frames.forEach { it.bitmap.recycle() }
             val bytes = out.toByteArray()
-            val gif = MinimalGif.parse(bytes)
-            assertEquals("Parser disagrees with the platform GIF decoder", 0, platformMismatch(bytes, gif))
-            gif
+            // Structure layer must parse on both versions; pixel problems become evidence/violations.
+            bytes to MinimalGif.parse(bytes)
         }
-        publish("step2-encoder", parsed.mapIndexed { i, gif ->
-            "inputMs=${inputs[i]} raw=${gif.delaysRaw} expectedRaw=${expected[i]} frames=${gif.frames.size} " +
-                "loopBlock=${gif.loopBlockPresent} loopCount=${gif.loopCount} size=${gif.width}x${gif.height}"
+        val issues = outputs.map { (bytes, gif) -> pixelIssue(bytes, gif) }
+        publish("step2-encoder", outputs.mapIndexed { i, (_, gif) ->
+            "in$i inputMs=${inputs[i]} expectedRaw=${expected[i]} ${gif.structure()} ${gif.pixelLayer()} " +
+                "pixelIssue=${issues[i]}"
         }.joinToString("\n", postfix = "\n"))
         if (isBaseline) return
         val violations = ArrayList<String>()
-        parsed.forEachIndexed { i, gif ->
-            if (gif.delaysRaw != expected[i]) violations.add("ms=${inputs[i]} raw=${gif.delaysRaw} exp=${expected[i]}")
-            if (!gif.loopBlockPresent || gif.loopCount != 0) violations.add("loop=${gif.loopBlockPresent}/${gif.loopCount}")
+        outputs.forEachIndexed { i, (_, gif) ->
+            if (gif.delaysRaw != expected[i]) violations.add("in$i raw=${gif.delaysRaw} exp=${expected[i]}")
+            if (!gif.loopBlockPresent || gif.loopCount != 0) violations.add("in$i loop=${gif.loopBlockPresent}/${gif.loopCount}")
+            issues[i]?.let { violations.add("in$i $it") }
         }
         assertTrue("Encoder delay violations: " + violations.joinToString("; "), violations.isEmpty())
     }
@@ -237,17 +267,18 @@ class GifTimingInstrumentedTest {
             resolver.delete(output, null, null)
         }
         val gif = MinimalGif.parse(bytes)
-        assertEquals("Parser disagrees with the platform GIF decoder", 0, platformMismatch(bytes, gif))
-        val identicalNeighbours = (1 until gif.frames.size).count { gif.frames[it].pixels.contentEquals(gif.frames[it - 1].pixels) }
-        publish("step2-editor-roundtrip", "sourceRaw=${source.delaysRaw} outputRaw=${gif.delaysRaw} " +
-            "frames=${gif.frames.size} size=${gif.width}x${gif.height} loopBlock=${gif.loopBlockPresent} " +
-            "loopCount=${gif.loopCount} identicalNeighbours=$identicalNeighbours\n")
+        val issue = pixelIssue(bytes, gif)
+        val identicalNeighbours = if (issue != null) -1
+        else (1 until gif.frames.size).count { gif.pixels(it).contentEquals(gif.pixels(it - 1)) }
+        publish("step2-editor-roundtrip", "rt sourceRaw=${source.delaysRaw} ${gif.structure()} ${gif.pixelLayer()} " +
+            "pixelIssue=$issue identicalNeighbours=$identicalNeighbours\n")
         if (isBaseline) return
         val violations = ArrayList<String>()
-        if (gif.delaysRaw != source.delaysRaw) violations.add("raw=${gif.delaysRaw} exp=${source.delaysRaw}")
-        if (!gif.loopBlockPresent || gif.loopCount != 0) violations.add("loop=${gif.loopBlockPresent}/${gif.loopCount}")
-        if (gif.width != source.width || gif.height != source.height) violations.add("size=${gif.width}x${gif.height}")
-        if (identicalNeighbours != 0) violations.add("identicalNeighbours=$identicalNeighbours")
+        if (gif.delaysRaw != source.delaysRaw) violations.add("rt raw=${gif.delaysRaw} exp=${source.delaysRaw}")
+        if (!gif.loopBlockPresent || gif.loopCount != 0) violations.add("rt loop=${gif.loopBlockPresent}/${gif.loopCount}")
+        if (gif.width != source.width || gif.height != source.height) violations.add("rt size=${gif.width}x${gif.height}")
+        if (issue != null) violations.add("rt $issue")
+        else if (identicalNeighbours != 0) violations.add("rt identicalNeighbours=$identicalNeighbours")
         assertTrue("Editor round-trip violations: " + violations.joinToString("; "), violations.isEmpty())
     }
 
@@ -288,7 +319,13 @@ class GifTimingInstrumentedTest {
                 minOf(case.video.displayWidth, case.video.displayHeight)
             val aspectError = abs(longSide - shortSide * sourceRatio)
             if (aspectError >= 1.0) violations.add("$t aspect=${String.format(Locale.US, "%.2f", aspectError)}px")
-            val identical = (1 until gif.frames.size).count { gif.frames[it].pixels.contentEquals(gif.frames[it - 1].pixels) }
+            val issue = c.pixelIssue
+            if (issue != null) {
+                // Pixel-dependent checks are meaningless until the pixel layer decodes.
+                violations.add("$t $issue")
+                return@forEach
+            }
+            val identical = (1 until gif.frames.size).count { gif.pixels(it).contentEquals(gif.pixels(it - 1)) }
             if (identical > 0) violations.add("$t identicalNeighbours=$identical")
             if (case.checkContent) {
                 val plan = planTimesUs(case)
@@ -375,13 +412,18 @@ class GifTimingInstrumentedTest {
                 violations.add("${c.case.tag} error=${c.error?.javaClass?.simpleName}")
                 return@forEach
             }
-            listOf(0, gif.frames.lastIndex).distinct().forEach { i ->
-                val corners = SyntheticVideo.redCorners(gif.frames[i].pixels, gif.width, gif.height)
-                lines.add("${c.case.name} frame=$i gif=${gif.width}x${gif.height} retrieverFrame=${c.retrieverSize} redCorners=$corners")
-                if (corners != listOf("TL")) violations.add("${c.case.tag} f$i red=$corners")
-            }
             if (gif.width != c.case.expectedWidth || gif.height != c.case.expectedHeight) {
                 violations.add("${c.case.tag} size=${gif.width}x${gif.height}/${c.case.expectedWidth}x${c.case.expectedHeight}")
+            }
+            if (c.pixelIssue != null) {
+                lines.add("${c.case.name} gif=${gif.width}x${gif.height} retrieverFrame=${c.retrieverSize} pixelIssue=${c.pixelIssue}")
+                violations.add("${c.case.tag} pixels undecodable")
+                return@forEach
+            }
+            listOf(0, gif.frames.lastIndex).distinct().forEach { i ->
+                val corners = SyntheticVideo.redCorners(gif.pixels(i), gif.width, gif.height)
+                lines.add("${c.case.name} frame=$i gif=${gif.width}x${gif.height} retrieverFrame=${c.retrieverSize} redCorners=$corners")
+                if (corners != listOf("TL")) violations.add("${c.case.tag} f$i red=$corners")
             }
         }
         publish("step4-orientation", lines.joinToString("\n", postfix = "\n") + "violations=" + violations.joinToString("; ") + "\n")
@@ -530,18 +572,53 @@ class GifTimingInstrumentedTest {
         check(resolver.update(uri, values, null, null) == 1) { "Evidence $label was not published" }
     }
 
-    /** Pixels of frame 0 that differ between [gif] and the platform decoder. */
+    /**
+     * Pixels of frame 0 that differ between [gif] and the platform decoder, or -1
+     * when the platform decoder cannot decode the bytes. Requires a decoded pixel layer.
+     */
     private fun platformMismatch(bytes: ByteArray, gif: MinimalGif.Parsed): Int {
-        val bitmap = requireNotNull(BitmapFactory.decodeByteArray(bytes, 0, bytes.size)) { "Platform cannot decode GIF" }
+        val ours = gif.pixels(0)
+        val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return -1
         try {
             if (bitmap.width != gif.width || bitmap.height != gif.height) return gif.width * gif.height
             val px = IntArray(bitmap.width * bitmap.height)
             bitmap.getPixels(px, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
-            val ours = gif.frames.first().pixels
             return px.indices.count { (px[it] or ALPHA) != (ours[it] or ALPHA) }
         } finally {
             bitmap.recycle()
         }
+    }
+
+    /** Exact pixel-layer token for assertion messages: `lzw=frame:<n> offset:<n> width:<n>` or `platform=...`. */
+    private fun pixelIssue(bytes: ByteArray, gif: MinimalGif.Parsed): String? {
+        gif.lzwError?.let { return it.token }
+        return when (val mismatch = platformMismatch(bytes, gif)) {
+            0 -> null
+            -1 -> "platform=undecodable"
+            else -> "platform=${mismatch}px"
+        }
+    }
+
+    private class Fixture(val name: String, val width: Int, val height: Int, val palette: IntArray,
+        val indices: ByteArray, val expectedMaxWidth: Int?, val needsMidStreamClear: Boolean)
+
+    /** Deterministic known-good inputs covering 1, 2 and 256 colours and code-width boundaries. */
+    private fun compressedFixtures(): List<Fixture> {
+        var seed = 0x2545F491L
+        fun nextInt(bound: Int): Int {
+            seed = (seed * 6364136223846793005L + 1442695040888963407L)
+            return ((seed ushr 33) % bound).toInt()
+        }
+        fun palette(size: Int) = IntArray(size) { i ->
+            (0xFF shl 24) or (((i * 37 + 11) and 0xFF) shl 16) or (((i * 91 + 3) and 0xFF) shl 8) or ((i * 13 + 5) and 0xFF)
+        }
+        return listOf(
+            Fixture("solid1", 64, 64, palette(4), ByteArray(64 * 64) { 1 }, null, false),
+            Fixture("two2", 64, 64, palette(2), ByteArray(64 * 64) { nextInt(2).toByte() }, null, false),
+            Fixture("random256", 128, 96, palette(256), ByteArray(128 * 96) { nextInt(256).toByte() }, 12, true),
+            // Smooth gradient: few new strings per row, so widths step 9→10→11→12 one at a time.
+            Fixture("gradient256", 240, 135, palette(256), ByteArray(240 * 135) { ((it % 240) * 256 / 240).toByte() }, 12, false),
+        )
     }
 
     private fun <T> callWithTimeout(stage: String, seconds: Long, block: () -> T): T {
@@ -700,7 +777,7 @@ class GifTimingInstrumentedTest {
             val failure = attempt.exceptionOrNull()
             if (failure != null) {
                 // Baseline only: a legacy failure is evidence, not a harness failure.
-                val failed = Conversion(case, null, failure, emptyList(), emptyList(), 0, "", null,
+                val failed = Conversion(case, null, null, failure, emptyList(), emptyList(), 0, "", null,
                     SystemClock.uptimeMillis() - started)
                 publish("conversion-${case.name}", summary(failed) + "\n")
                 synchronized(conversions) { conversions[case.name] = failed }
@@ -718,8 +795,9 @@ class GifTimingInstrumentedTest {
             resolver.delete(output, null, null)
         }
         val gif = MinimalGif.parse(bytes)
-        val mismatch = platformMismatch(bytes, gif)
-        val decoded = gif.frames.map { SyntheticVideo.decodeIndex(it.pixels, gif.width, gif.height) }
+        val issue = pixelIssue(bytes, gif)
+        val decoded: List<Int?> = if (issue != null) emptyList()
+        else gif.frames.indices.map { SyntheticVideo.decodeIndex(gif.pixels(it), gif.width, gif.height) }
         val times = if (isBaseline) legacyTimesUs(case) else planTimesUs(case)
         val retriever = MediaMetadataRetriever()
         var nulls = 0
@@ -740,9 +818,8 @@ class GifTimingInstrumentedTest {
         }
         val reported = result.javaClass.methods.firstOrNull { it.name == "getSyncFallbackFrames" && it.parameterCount == 0 }
             ?.invoke(result) as? Int
-        val conversion = Conversion(case, gif, null, decoded, times, nulls, retrieverSize, reported, elapsed)
+        val conversion = Conversion(case, gif, issue, null, decoded, times, nulls, retrieverSize, reported, elapsed)
         publish("conversion-${case.name}", summary(conversion) + "\n")
-        assertEquals("Parser disagrees with the platform GIF decoder for ${case.name}", 0, mismatch)
         synchronized(conversions) { conversions[case.name] = conversion }
         return conversion
     }
@@ -754,8 +831,7 @@ class GifTimingInstrumentedTest {
         val n = expectedFrames(case)
         val plan = planTimesUs(case)
         val duplicates = (1 until c.decoded.size).count { c.decoded[it] != null && c.decoded[it] == c.decoded[it - 1] }
-        return "$head gif=${gif.version} ${gif.width}x${gif.height} frames=${gif.frames.size} loopBlock=${gif.loopBlockPresent} " +
-            "loopCount=${gif.loopCount} rawDelays=${gif.delaysRaw} totalCs=${gif.totalCs} " +
+        return "$head gif=${gif.structure()} ${gif.pixelLayer()} pixelIssue=${c.pixelIssue} " +
             "expectedFrames=$n expectedFps=${String.format(Locale.US, "%.2f", n / case.seconds.toDouble())} " +
             "expectedIntervalMs=${String.format(Locale.US, "%.2f", intervalMs(case))} expectedTotalCs=${case.seconds * 100} " +
             "decodedIndices=${c.decoded} expectedIndices=${plan.map { expectedSourceIndex(case, it) }} " +

@@ -16,10 +16,26 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 
 /**
- * Minimal GIF89a parser and writer. It deliberately shares no code with the
- * product GifCodec so encoder output can be checked independently.
+ * Minimal two-layer GIF89a parser (structure, then pixels) and writer. It
+ * deliberately shares no code with the product GifCodec so encoder output can
+ * be checked independently.
  */
 internal object MinimalGif {
+    /** First pixel-layer failure: where decoding stopped and in what state. */
+    class LzwError(
+        val frame: Int,
+        val fileOffset: Int,
+        val codeWidth: Int,
+        val dictSize: Int,
+        val pixelsDecoded: Int,
+        val pixelsExpected: Int,
+        val reason: String,
+    ) {
+        /** Exact token used in assertion messages. */
+        val token: String get() = "lzw=frame:$frame offset:$fileOffset width:$codeWidth"
+        override fun toString() = "$token dict:$dictSize pixels:$pixelsDecoded/$pixelsExpected reason:$reason"
+    }
+
     class Frame(
         /** Raw Graphic Control Extension delay, in 1/100 s. */
         val delayRaw: Int,
@@ -28,8 +44,12 @@ internal object MinimalGif {
         val top: Int,
         val width: Int,
         val height: Int,
-        /** Composited logical screen after this frame, ARGB row-major. */
-        val pixels: IntArray,
+        val minCodeSize: Int,
+        /** Widest LZW code read in this frame and number of clear codes (including the first). */
+        val maxCodeWidth: Int,
+        val clearCodes: Int,
+        /** Composited logical screen after this frame (ARGB), or null once the pixel layer failed. */
+        val pixels: IntArray?,
     )
 
     class Parsed(
@@ -39,17 +59,48 @@ internal object MinimalGif {
         val loopBlockPresent: Boolean,
         val loopCount: Int?,
         val frames: List<Frame>,
+        val imageDescriptors: Int,
+        val graphicControls: Int,
+        val trailingBytes: Int,
+        val lzwError: LzwError?,
     ) {
         val delaysRaw: List<Int> get() = frames.map { it.delayRaw }
         val totalCs: Int get() = frames.sumOf { it.delayRaw }
+        val pixelsOk: Boolean get() = lzwError == null
+        fun pixels(i: Int): IntArray = requireNotNull(frames[i].pixels) { "Pixel layer failed: $lzwError" }
+        fun structure(): String = "$version ${width}x$height frames=${frames.size} descriptors=$imageDescriptors " +
+            "gce=$graphicControls loopBlock=$loopBlockPresent loopCount=$loopCount rawDelays=$delaysRaw " +
+            "totalCs=$totalCs trailingBytes=$trailingBytes"
+        fun pixelLayer(): String = "lzwError=${lzwError ?: "none"} minCodeSize=${frames.map { it.minCodeSize }.distinct()} " +
+            "maxCodeWidth=${frames.maxOfOrNull { it.maxCodeWidth }} clearCodes=${frames.map { it.clearCodes }}"
     }
 
+    private class Chain(val data: ByteArray, val starts: IntArray, val fileOffsets: IntArray, val next: Int) {
+        fun fileOffset(dataOffset: Int): Int {
+            if (dataOffset >= data.size || starts.isEmpty()) return next - 1
+            var i = starts.size - 1
+            while (i > 0 && starts[i] > dataOffset) i--
+            return fileOffsets[i] + (dataOffset - starts[i])
+        }
+    }
+
+    private class Lzw(
+        val indices: IntArray, val decoded: Int, val maxWidth: Int, val clears: Int,
+        val errorDataOffset: Int, val errorWidth: Int, val errorDict: Int, val error: String?,
+    )
+
+    /**
+     * Structure layer always runs and throws on malformed block structure (bad
+     * signature, sub-block chain without a 0-length terminator, missing 0x3B
+     * trailer, GCE/descriptor mismatch). Pixel-layer failures are returned in
+     * [Parsed.lzwError] instead of thrown.
+     */
     fun parse(bytes: ByteArray): Parsed {
         require(bytes.size >= 13) { "GIF too short: ${bytes.size} bytes" }
         val version = String(bytes, 0, 6, Charsets.US_ASCII)
         require(version == "GIF87a" || version == "GIF89a") { "Bad GIF signature: $version" }
         fun u8(p: Int): Int {
-            require(p in bytes.indices) { "Truncated GIF at offset $p" }
+            require(p in bytes.indices) { "Truncated GIF at offset $p (no 0x3B trailer)" }
             return bytes[p].toInt() and 0xFF
         }
         fun u16(p: Int): Int = u8(p) or (u8(p + 1) shl 8)
@@ -65,10 +116,13 @@ internal object MinimalGif {
             p += size * 3
         }
 
-        val canvas = IntArray(width * height)
+        var canvas: IntArray? = IntArray(width * height)
+        var lzwError: LzwError? = null
         val frames = ArrayList<Frame>()
         var loopBlockPresent = false
         var loopCount: Int? = null
+        var descriptors = 0
+        var controls = 0
         var delay = 0
         var disposal = 0
         var transparent = -1
@@ -82,7 +136,7 @@ internal object MinimalGif {
                     when (label) {
                         0xF9 -> {
                             val size = u8(p)
-                            require(size == 4) { "Bad Graphic Control Extension size $size" }
+                            require(size == 4) { "Bad Graphic Control Extension size $size at $p" }
                             val packed = u8(p + 1)
                             delay = u16(p + 2)
                             transparent = if ((packed and 0x01) != 0) u8(p + 4) else -1
@@ -90,26 +144,27 @@ internal object MinimalGif {
                             p += 1 + size
                             require(u8(p) == 0) { "Graphic Control Extension terminator missing at $p" }
                             p += 1
+                            controls++
                         }
                         0xFF -> {
                             val size = u8(p)
-                            require(p + 1 + size <= bytes.size) { "Truncated application extension" }
+                            require(p + 1 + size <= bytes.size) { "Truncated application extension at $p" }
                             val application = String(bytes, p + 1, size, Charsets.US_ASCII)
-                            p += 1 + size
-                            val (blocks, next) = readSubBlocks(bytes, p)
+                            val chain = readSubBlocks(bytes, p + 1 + size)
                             if (application == "NETSCAPE2.0" || application == "ANIMEXTS1.0") {
                                 loopBlockPresent = true
-                                val first = blocks.firstOrNull()
-                                if (first != null && first.size >= 3 && (first[0].toInt() and 0xFF) == 1) {
-                                    loopCount = (first[1].toInt() and 0xFF) or ((first[2].toInt() and 0xFF) shl 8)
+                                val d = chain.data
+                                if (d.size >= 3 && (d[0].toInt() and 0xFF) == 1) {
+                                    loopCount = (d[1].toInt() and 0xFF) or ((d[2].toInt() and 0xFF) shl 8)
                                 }
                             }
-                            p = next
+                            p = chain.next
                         }
-                        else -> p = readSubBlocks(bytes, p).second
+                        else -> p = readSubBlocks(bytes, p).next
                     }
                 }
                 0x2C -> {
+                    descriptors++
                     val left = u16(p + 1)
                     val top = u16(p + 3)
                     val frameWidth = u16(p + 5)
@@ -124,33 +179,53 @@ internal object MinimalGif {
                     }
                     val interlaced = (packed and 0x40) != 0
                     val minCodeSize = u8(p)
-                    p += 1
-                    val (blocks, next) = readSubBlocks(bytes, p)
-                    p = next
-                    val data = ByteArrayOutputStream().apply { blocks.forEach { write(it) } }.toByteArray()
-                    val indices = lzwDecode(data, minCodeSize, frameWidth * frameHeight)
-                    val saved = if (disposal == 3) canvas.copyOf() else null
-                    val rows = rowOrder(frameHeight, interlaced)
-                    for (r in 0 until frameHeight) {
-                        val y = top + rows[r]
-                        if (y >= height) continue
-                        for (x in 0 until frameWidth) {
-                            val cx = left + x
-                            if (cx >= width) continue
-                            val index = indices[r * frameWidth + x]
-                            if (index == transparent) continue
-                            require(index < table.size) { "Colour index $index outside table of ${table.size}" }
-                            canvas[y * width + cx] = table[index]
+                    require(minCodeSize in 1..11) { "Bad LZW minimum code size $minCodeSize at $p" }
+                    val chain = readSubBlocks(bytes, p + 1)
+                    p = chain.next
+                    val frameIndex = frames.size
+                    val count = frameWidth * frameHeight
+                    val lzw = lzwDecode(chain.data, minCodeSize, count)
+                    var current = canvas
+                    if (current != null && lzw.error != null) {
+                        lzwError = LzwError(frameIndex, chain.fileOffset(lzw.errorDataOffset), lzw.errorWidth,
+                            lzw.errorDict, lzw.decoded, count, lzw.error)
+                        current = null
+                    }
+                    var framePixels: IntArray? = null
+                    if (current != null) {
+                        val saved = if (disposal == 3) current.copyOf() else null
+                        val rows = rowOrder(frameHeight, interlaced)
+                        var badIndex = -1
+                        for (r in 0 until frameHeight) {
+                            val y = top + rows[r]
+                            if (y >= height) continue
+                            for (x in 0 until frameWidth) {
+                                val cx = left + x
+                                if (cx >= width) continue
+                                val index = lzw.indices[r * frameWidth + x]
+                                if (index == transparent) continue
+                                if (index >= table.size) { if (badIndex < 0) badIndex = r * frameWidth + x; continue }
+                                current[y * width + cx] = table[index]
+                            }
+                        }
+                        if (badIndex >= 0) {
+                            lzwError = LzwError(frameIndex, chain.fileOffset(chain.data.size), lzw.maxWidth, -1,
+                                badIndex, count, "colour index outside table of ${table.size}")
+                            current = null
+                        } else {
+                            framePixels = current.copyOf()
+                            if (disposal == 2) {
+                                for (y in top until minOf(height, top + frameHeight)) {
+                                    for (x in left until minOf(width, left + frameWidth)) current[y * width + x] = 0
+                                }
+                            } else if (saved != null) {
+                                saved.copyInto(current)
+                            }
                         }
                     }
-                    frames.add(Frame(delay, disposal, left, top, frameWidth, frameHeight, canvas.copyOf()))
-                    if (disposal == 2) {
-                        for (y in top until minOf(height, top + frameHeight)) {
-                            for (x in left until minOf(width, left + frameWidth)) canvas[y * width + x] = 0
-                        }
-                    } else if (saved != null) {
-                        saved.copyInto(canvas)
-                    }
+                    canvas = current
+                    frames.add(Frame(delay, disposal, left, top, frameWidth, frameHeight, minCodeSize,
+                        lzw.maxWidth, lzw.clears, framePixels))
                     delay = 0
                     disposal = 0
                     transparent = -1
@@ -158,11 +233,14 @@ internal object MinimalGif {
                 else -> throw IllegalArgumentException("Unexpected GIF block 0x${block.toString(16)} at offset $p")
             }
         }
-        return Parsed(version, width, height, loopBlockPresent, loopCount, frames)
+        require(frames.size == descriptors) { "Frame count ${frames.size} != image descriptors $descriptors" }
+        require(controls == descriptors) { "Graphic Control Extensions $controls != image descriptors $descriptors" }
+        return Parsed(version, width, height, loopBlockPresent, loopCount, frames, descriptors, controls,
+            bytes.size - p - 1, lzwError)
     }
 
     private fun readTable(bytes: ByteArray, p: Int, size: Int): IntArray {
-        require(p + size * 3 <= bytes.size) { "Truncated colour table" }
+        require(p + size * 3 <= bytes.size) { "Truncated colour table at $p" }
         return IntArray(size) { i ->
             val q = p + i * 3
             (0xFF shl 24) or ((bytes[q].toInt() and 0xFF) shl 16) or
@@ -170,16 +248,21 @@ internal object MinimalGif {
         }
     }
 
-    private fun readSubBlocks(bytes: ByteArray, start: Int): Pair<List<ByteArray>, Int> {
-        val blocks = ArrayList<ByteArray>()
+    /** Reads a sub-block chain; it must end with a 0-length block. */
+    private fun readSubBlocks(bytes: ByteArray, start: Int): Chain {
+        val data = ByteArrayOutputStream()
+        val starts = ArrayList<Int>()
+        val offsets = ArrayList<Int>()
         var p = start
         while (true) {
-            require(p in bytes.indices) { "Truncated sub-block chain at $p" }
+            require(p in bytes.indices) { "Sub-block chain from $start has no 0-length terminator" }
             val size = bytes[p].toInt() and 0xFF
             p += 1
-            if (size == 0) return blocks to p
+            if (size == 0) return Chain(data.toByteArray(), starts.toIntArray(), offsets.toIntArray(), p)
             require(p + size <= bytes.size) { "Truncated sub-block at $p" }
-            blocks.add(bytes.copyOfRange(p, p + size))
+            starts.add(data.size())
+            offsets.add(p)
+            data.write(bytes, p, size)
             p += size
         }
     }
@@ -194,8 +277,8 @@ internal object MinimalGif {
         return order.toIntArray()
     }
 
-    private fun lzwDecode(data: ByteArray, minCodeSize: Int, count: Int): IntArray {
-        require(minCodeSize in 1..11) { "Bad LZW minimum code size $minCodeSize" }
+    /** Standard GIF LZW: the code width grows after the entry that makes next == 2^width. */
+    private fun lzwDecode(data: ByteArray, minCodeSize: Int, count: Int): Lzw {
         val clear = 1 shl minCodeSize
         val end = clear + 1
         val prefix = IntArray(4096)
@@ -211,34 +294,39 @@ internal object MinimalGif {
         var buffer = 0
         var bits = 0
         var pos = 0
+        var maxWidth = 0
+        var clears = 0
+        fun fail(reason: String) = Lzw(out, n, maxWidth, clears, maxOf(0, pos - 1), codeSize, next, reason)
         while (n < count) {
             while (bits < codeSize && pos < data.size) {
                 buffer = buffer or ((data[pos].toInt() and 0xFF) shl bits)
                 bits += 8
                 pos++
             }
-            if (bits < codeSize) break
+            if (bits < codeSize) return fail("data exhausted")
+            maxWidth = maxOf(maxWidth, codeSize)
             var code = buffer and ((1 shl codeSize) - 1)
             buffer = buffer ushr codeSize
             bits -= codeSize
             if (code == clear) {
+                clears++
                 codeSize = minCodeSize + 1
                 next = end + 1
                 old = -1
                 continue
             }
-            if (code == end) break
+            if (code == end) return fail("end code before all pixels")
             if (old == -1) {
-                require(code < clear) { "First LZW code $code after clear is not a literal" }
+                if (code > clear) return fail("first code $code after clear is not a literal")
                 out[n++] = code
                 old = code
                 first = code
                 continue
             }
+            if (code > next) return fail("code $code beyond table size $next")
             val inCode = code
             var sp = 0
-            if (code >= next) {
-                require(code == next) { "LZW code $code beyond table size $next" }
+            if (code == next) {
                 stack[sp++] = first
                 code = old
             }
@@ -257,22 +345,29 @@ internal object MinimalGif {
             }
             old = inCode
         }
-        require(n == count) { "LZW stream ended after $n of $count pixels" }
-        return out
+        return Lzw(out, n, maxWidth, clears, -1, 0, 0, null)
     }
 
     /**
-     * Write a 4-colour GIF89a with exact raw delays. LZW data is emitted
-     * uncompressed: a clear code every two pixels keeps every code 3 bits wide.
+     * Write a GIF89a with exact raw delays. [palette] size must be a power of two
+     * (2..256). With [compress] false every code is a literal and a clear code is
+     * sent every two pixels, so the width never grows; with [compress] true a
+     * standard LZW encoder (width grows one code after the table reaches 2^width,
+     * clear when the table is full) is used.
      */
-    fun write(width: Int, height: Int, palette: IntArray, frames: List<Pair<ByteArray, Int>>, loopCount: Int = 0): ByteArray {
-        require(palette.size == 4) { "Fixture writer supports exactly 4 colours" }
+    fun write(
+        width: Int, height: Int, palette: IntArray, frames: List<Pair<ByteArray, Int>>,
+        loopCount: Int = 0, compress: Boolean = false,
+    ): ByteArray {
+        val bits = Integer.numberOfTrailingZeros(palette.size)
+        require(palette.size in 2..256 && palette.size == 1 shl bits) { "Palette size ${palette.size} is not 2..256 power of two" }
+        val minCodeSize = maxOf(2, bits)
         val out = ByteArrayOutputStream()
         fun u16(value: Int) { out.write(value and 0xFF); out.write((value shr 8) and 0xFF) }
         out.write("GIF89a".toByteArray(Charsets.US_ASCII))
         u16(width)
         u16(height)
-        out.write(0x80 or (1 shl 4) or 1)
+        out.write(0x80 or ((bits - 1) shl 4) or (bits - 1))
         out.write(0)
         out.write(0)
         palette.forEach { out.write((it shr 16) and 0xFF); out.write((it shr 8) and 0xFF); out.write(it and 0xFF) }
@@ -286,8 +381,8 @@ internal object MinimalGif {
             u16(delayCs)
             out.write(0); out.write(0)
             out.write(0x2C); u16(0); u16(0); u16(width); u16(height); out.write(0)
-            out.write(2)
-            val data = uncompressedLzw(indices)
+            out.write(minCodeSize)
+            val data = if (compress) standardLzw(indices, minCodeSize) else literalLzw(indices, minCodeSize)
             var i = 0
             while (i < data.size) {
                 val chunk = minOf(255, data.size - i)
@@ -301,22 +396,66 @@ internal object MinimalGif {
         return out.toByteArray()
     }
 
-    private fun uncompressedLzw(indices: ByteArray): ByteArray {
+    private class BitWriter {
         val out = ByteArrayOutputStream()
-        var buffer = 0
-        var bits = 0
-        fun put(code: Int) {
+        private var buffer = 0
+        private var bits = 0
+        fun put(code: Int, width: Int) {
             buffer = buffer or (code shl bits)
-            bits += 3
+            bits += width
             while (bits >= 8) { out.write(buffer and 0xFF); buffer = buffer ushr 8; bits -= 8 }
         }
-        indices.forEachIndexed { i, value ->
-            if (i % 2 == 0) put(4)
-            put(value.toInt() and 0x03)
+        fun finish(): ByteArray {
+            if (bits > 0) out.write(buffer and 0xFF)
+            return out.toByteArray()
         }
-        put(5)
-        if (bits > 0) out.write(buffer and 0xFF)
-        return out.toByteArray()
+    }
+
+    private fun literalLzw(indices: ByteArray, minCodeSize: Int): ByteArray {
+        val clear = 1 shl minCodeSize
+        val width = minCodeSize + 1
+        val writer = BitWriter()
+        indices.forEachIndexed { i, value ->
+            if (i % 2 == 0) writer.put(clear, width)
+            writer.put(value.toInt() and 0xFF, width)
+        }
+        writer.put(clear + 1, width)
+        return writer.finish()
+    }
+
+    private fun standardLzw(indices: ByteArray, minCodeSize: Int): ByteArray {
+        val clear = 1 shl minCodeSize
+        val end = clear + 1
+        var width = minCodeSize + 1
+        var next = end + 1
+        val table = HashMap<Int, Int>()
+        val writer = BitWriter()
+        fun emit(code: Int) {
+            writer.put(code, width)
+            // Grow after the code whose (decoder-side) entry makes next reach 2^width.
+            if (next >= (1 shl width) && width < 12) width++
+        }
+        writer.put(clear, width)
+        var prefix = indices[0].toInt() and 0xFF
+        for (i in 1 until indices.size) {
+            val s = indices[i].toInt() and 0xFF
+            val key = (prefix shl 8) or s
+            val hit = table[key]
+            if (hit != null) { prefix = hit; continue }
+            emit(prefix)
+            if (next < 4096) {
+                table[key] = next++
+            } else {
+                writer.put(clear, width)
+                table.clear()
+                width = minCodeSize + 1
+                next = end + 1
+            }
+            prefix = s
+        }
+        emit(prefix)
+        writer.put(end, width)
+        return writer.finish()
     }
 }
 
