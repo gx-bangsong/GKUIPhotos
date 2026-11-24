@@ -5,4 +5,12 @@
 -->
 <resources>
     <item name="annotation_background_opacity" type="id" />
+    <item name="markup_add_color" type="id" />
+    <item name="markup_add_background_color" type="id" />
+    <item name="markup_no_background_control" type="id" />
+    <item name="markup_add_shape" type="id" />
+    <item name="markup_add_sticker" type="id" />
+    <item name="markup_add_font" type="id" />
+    <item name="markup_add_brush" type="id" />
+    <item name="markup_add_pattern" type="id" />
 </resources>

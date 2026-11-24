@@ -659,133 +659,6 @@ class UiScreenshotTest {
         }
     }
 
-    /** Temporary candidate-only runtime inventory; never changes product state. */
-    @CandidateOnly("Runtime measurement is candidate-only")
-    @Test fun markupMeasureControlsDiagnostic() {
-        val all = listOf("brush_chip", "brush_import", "color_swatch", "color_add",
-            "shape_chip", "shape_import", "mosaic_chip", "mosaic_import", "sticker_item",
-            "sticker_import", "font_chip", "font_import", "background_swatch", "background_add", "background_none")
-        var measurement: MarkupControlMeasurement? = null
-        var failure: Throwable? = null
-        var closed = false
-        var closeElapsedMs = 0L
-        var closeError: Throwable? = null
-        var deleted = 0
-        val deleteErrors = mutableListOf<String>()
-        try {
-            val image = images.firstOrNull() ?: throw IllegalStateException("fixture missing")
-            val intent = ImageEditorActivity.createIntent(context, image, "image/jpeg")
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            val launch = java.util.concurrent.FutureTask<Activity> { instrumentation.startActivitySync(intent) }
-            Thread(launch, "markup-measurement-launch").apply { isDaemon = true; start() }
-            activity = launch.get(30, java.util.concurrent.TimeUnit.SECONDS)
-            waitForBoundedUiIdle(instrumentation, device, "measurement editor launch")
-            val m = MarkupControlMeasurement(activity!!, instrumentation, device)
-            measurement = m
-            m.environment()
-            m.select("editor_tab_markup")
-            if (!device.wait(Until.hasObject(By.desc(context.getString(R.string.editor_markup_doodle))), 10000))
-                throw IllegalStateException("editor_tab_markup: markup tools did not open")
-
-            fun group(step: String, names: List<String>, action: () -> Unit) {
-                try { action() } catch (error: Throwable) { m.failed(names, step, error) }
-            }
-            group("brush", listOf("brush_chip", "brush_import")) {
-                m.select("editor_markup_doodle"); m.select("markup_brush_section")
-                m.record("brush_chip", resource = "editor_brush_normal")
-                m.record("brush_import", resource = "editor_brush_import")
-            }
-            group("color", listOf("color_swatch", "color_add")) {
-                m.select("editor_markup_doodle"); m.select("markup_color_section")
-                m.record("color_swatch", description = "markup_color_red")
-                m.record("color_add", description = "markup_custom_color")
-            }
-            group("shape", listOf("shape_chip", "shape_import")) {
-                m.select("editor_markup_shapes"); m.select("markup_shape_section")
-                m.record("shape_chip", resource = "editor_shape_arrow")
-                m.record("shape_import", resource = "editor_shape_import")
-            }
-            group("mosaic", listOf("mosaic_chip", "mosaic_import")) {
-                m.select("editor_markup_mosaic"); m.select("markup_effect_section")
-                m.record("mosaic_chip", resource = "editor_mosaic_pixelate")
-                m.record("mosaic_import", resource = "editor_mosaic_import")
-            }
-            group("sticker preset", listOf("sticker_item")) {
-                m.select("editor_markup_sticker"); m.select("markup_preset_stickers")
-                m.record("sticker_item", literal = "⭐")
-            }
-            group("sticker import", listOf("sticker_import")) {
-                m.select("editor_markup_sticker"); m.select("markup_import_section")
-                m.record("sticker_import", resource = "editor_sticker_import")
-            }
-            group("font", listOf("font_chip", "font_import")) {
-                m.select("editor_markup_text"); m.select("markup_font")
-                m.record("font_chip", resource = "markup_font_sample")
-                m.record("font_import", resource = "markup_font_import")
-            }
-            group("background", listOf("background_swatch", "background_add", "background_none")) {
-                m.select("editor_markup_text"); m.select("editor_markup_text_bg")
-                m.record("background_swatch", description = "markup_color_red")
-                m.record("background_add", description = "markup_custom_color")
-                m.record("background_none", description = "markup_no_background")
-            }
-        } catch (error: Throwable) {
-            failure = error
-            measurement?.failed(all, "editor navigation", error)
-        } finally {
-            val closeStarted = SystemClock.elapsedRealtime()
-            try {
-                activity?.let { opened ->
-                    val destroyed = java.util.concurrent.CountDownLatch(1)
-                    val callbacks = object : android.app.Application.ActivityLifecycleCallbacks {
-                        override fun onActivityCreated(a: Activity, state: Bundle?) = Unit
-                        override fun onActivityStarted(a: Activity) = Unit
-                        override fun onActivityResumed(a: Activity) = Unit
-                        override fun onActivityPaused(a: Activity) = Unit
-                        override fun onActivityStopped(a: Activity) = Unit
-                        override fun onActivitySaveInstanceState(a: Activity, state: Bundle) = Unit
-                        override fun onActivityDestroyed(a: Activity) { if (a === opened) destroyed.countDown() }
-                    }
-                    try {
-                        runOnMainWithTimeout(instrumentation, "close measurement editor") {
-                            opened.application.registerActivityLifecycleCallbacks(callbacks)
-                            if (opened.isDestroyed) destroyed.countDown() else opened.finish()
-                        }
-                        destroyed.await(10, java.util.concurrent.TimeUnit.SECONDS)
-                        closed = opened.isDestroyed
-                    } finally {
-                        opened.application.unregisterActivityLifecycleCallbacks(callbacks)
-                    }
-                }
-            } catch (error: Throwable) {
-                closeError = error
-            } finally {
-                closeElapsedMs = SystemClock.elapsedRealtime() - closeStarted
-                // Attempt every fixture even if closing the editor failed or timed out.
-                images.toList().forEach { image ->
-                    try {
-                        deleteWithDiagnostics(image)
-                        images.remove(image)
-                        deleted++
-                    } catch (error: Throwable) {
-                        deleteErrors.add("${error.javaClass.name}: ${(error.message ?: "(no message)").replace('\n', ' ')}")
-                    }
-                }
-            }
-            val output = measurement?.output() ?: buildString {
-                val cause = failure
-                all.forEach { append("$it: 失败：editor launch ${cause?.javaClass?.name}: ${cause?.message?.replace('\n', ' ')}\n") }
-                append("navigation_failures=${all.size} measurement_failures=0 missing=0\n")
-                append("control_total=${all.size}\n")
-            }
-            val cleanup = "cleanup: closed=$closed close_elapsed_ms=$closeElapsedMs close_timeout_ms=10000 " +
-                "deleted=$deleted deletion_failures=${deleteErrors.size} " +
-                "close_error=${closeError?.let { it.javaClass.name + ": " + it.message } ?: "none"} " +
-                "delete_errors=${deleteErrors.joinToString("; ")}\n"
-            publishDiagnostic("selection-trace-markup-control-measurements.txt", "text/plain", (cleanup + output).toByteArray())
-        }
-    }
-
     @Test fun markupIdle() { editor(); capture("markup-idle"); assertMarkupAlignment() }
     @Test fun markupIdleChinese() {
         try {
@@ -817,9 +690,15 @@ class UiScreenshotTest {
                     listOf(child) + if (child is ViewGroup) descendants(child) else emptyList()
                 }
                 val views = descendants(root)
-                val importButton = views.filterIsInstance<TextView>().first { it.text == activity!!.getString(R.string.editor_brush_import) }
-                val density = activity!!.resources.displayMetrics.density
-                assertEquals((14 * density).toInt(), importButton.paddingLeft)
+                val id = context.resources.getIdentifier("markup_add_brush", "id", context.packageName)
+                val importButton = requireNotNull(root.findViewById<com.google.android.material.chip.Chip>(id))
+                val ordinary = views.filterIsInstance<com.google.android.material.chip.Chip>()
+                    .first { it.text == activity!!.getString(R.string.editor_brush_normal) }
+                assertTrue("Import and brush chip end padding differ", kotlin.math.abs(importButton.paddingRight - ordinary.paddingRight) <= 1)
+                assertEquals(ordinary.chipStartPadding, importButton.chipStartPadding, 1f)
+                assertEquals(ordinary.chipEndPadding, importButton.chipEndPadding, 1f)
+                assertEquals(ordinary.textStartPadding, importButton.textStartPadding, 1f)
+                assertEquals(ordinary.textEndPadding, importButton.textEndPadding, 1f)
             }
             if (isCandidate()) {
                 subtool(R.string.markup_color_section)
@@ -933,14 +812,25 @@ class UiScreenshotTest {
             return id
         }
         tool(R.string.editor_markup_sticker)
-        subtool(resource("markup_import_section"))
-        val sticker = device.wait(Until.findObject(By.text(context.getString(R.string.editor_sticker_import))), 5000)
+        subtool(resource("markup_preset_stickers"))
+        val sticker = device.wait(Until.findObject(By.res(context.packageName, "markup_add_sticker")), 5000)
         assertNotNull("Sticker import entrance missing", sticker)
+        instrumentation.runOnMainSync {
+            val root = activity!!.findViewById<ViewGroup>(R.id.markupOptionsContent)
+            val id = context.resources.getIdentifier("markup_add_sticker", "id", context.packageName)
+            val button = requireNotNull(root.findViewById<View>(id))
+            assertEquals("Sticker import must be first", 0, (button.parent as ViewGroup).indexOfChild(button))
+            val visible = Rect()
+            assertTrue("Sticker import entrance is clipped", button.getGlobalVisibleRect(visible) &&
+                visible.width() == button.width && visible.height() == button.height)
+            assertTrue("Sticker import must be clickable", button.isClickable)
+        }
         screenshot("touch-inventory-sticker-import")
 
         tool(R.string.editor_markup_mosaic)
         subtool(R.string.markup_effect_section)
         val viewport = Rect()
+        var mosaicScroll: android.widget.HorizontalScrollView? = null
         instrumentation.runOnMainSync {
             fun findScroll(view: View): android.widget.HorizontalScrollView? {
                 if (view is android.widget.HorizontalScrollView) return view
@@ -950,28 +840,151 @@ class UiScreenshotTest {
                 return null
             }
             val scroll = requireNotNull(findScroll(activity!!.findViewById(R.id.markupOptionsContent)))
+            mosaicScroll = scroll
             assertTrue("Mosaic effect scroller not visible", scroll.getGlobalVisibleRect(viewport))
         }
         assertTrue("Mosaic scroll injection failed", device.swipe(viewport.right - 12, viewport.centerY(),
             viewport.left + 12, viewport.centerY(), 30))
+        instrumentation.runOnMainSync { requireNotNull(mosaicScroll).scrollTo(0, 0) }
         device.waitForIdle()
-        val mosaic = device.wait(Until.findObject(By.text(context.getString(R.string.editor_mosaic_import))), 5000)
+        val mosaic = device.wait(Until.findObject(By.res(context.packageName, "markup_add_pattern")), 5000)
         assertNotNull("Mosaic import entrance missing", mosaic)
         instrumentation.runOnMainSync {
             val root = activity!!.findViewById<ViewGroup>(R.id.markupOptionsContent)
-            fun findMosaicImport(view: View): TextView? {
-                if (view is TextView && view.text.toString() == context.getString(R.string.editor_mosaic_import)) return view
-                if (view is ViewGroup) for (i in 0 until view.childCount) {
-                    findMosaicImport(view.getChildAt(i))?.let { return it }
-                }
-                return null
-            }
-            val button = requireNotNull(findMosaicImport(root))
+            val mosaicId = context.resources.getIdentifier("markup_add_pattern", "id", context.packageName)
+            val button = requireNotNull(root.findViewById<View>(mosaicId))
+            val group = button.parent as ViewGroup
+            assertEquals("Mosaic import must be first", 0, group.indexOfChild(button))
+            assertTrue("Mosaic import must be clickable", button.isClickable)
             val visible = Rect()
             assertTrue("Mosaic import entrance is clipped", button.getGlobalVisibleRect(visible) &&
                 visible.width() == button.width && visible.height() == button.height)
         }
         screenshot("touch-inventory-mosaic-import")
+    }
+
+    @CandidateOnly("Unified markup entrances are candidate-only")
+    @Test fun markupUnifiedEntrances() {
+        editor()
+        fun id(name: String): Int = context.resources.getIdentifier(name, "id", context.packageName)
+        fun label(name: String): String = context.getString(context.resources.getIdentifier(name, "string", context.packageName))
+        fun screenshot(name: String) {
+            device.waitForIdle(1000)
+            val file = File(output, "$name.png")
+            assertTrue("Screenshot failed: $name", device.takeScreenshot(file))
+            publishDiagnostic("$name.png", "image/png", file.readBytes())
+        }
+        fun chipEntrance(idName: String, description: String) {
+            instrumentation.runOnMainSync {
+                val root = activity!!.findViewById<ViewGroup>(R.id.markupOptionsContent)
+                val add = requireNotNull(root.findViewById<com.google.android.material.chip.Chip>(id(idName)))
+                val group = add.parent as com.google.android.material.chip.ChipGroup
+                val ordinary = group.getChildAt(1) as com.google.android.material.chip.Chip
+                val next = group.getChildAt(2) as com.google.android.material.chip.Chip
+                val density = context.resources.displayMetrics.density
+                assertEquals("Entrance must be first", 0, group.indexOfChild(add))
+                assertEquals(label(description), add.contentDescription)
+                assertEquals(add.contentDescription, add.tooltipText)
+                assertTrue("Entrance must be clickable", add.isClickable)
+                assertTrue("Entrance touch target", add.width >= (48 * density).toInt() && add.height >= (48 * density).toInt())
+                assertEquals(ordinary.textSize, add.textSize, 1f)
+                assertEquals(android.util.TypedValue.applyDimension(android.util.TypedValue.COMPLEX_UNIT_SP, 14f,
+                    context.resources.displayMetrics), add.textSize, 1f)
+                assertEquals(ordinary.height.toFloat(), add.height.toFloat(), 1f)
+                assertEquals(ordinary.chipCornerRadius, add.chipCornerRadius, 1f)
+                assertEquals(8f * density, add.chipCornerRadius, 1f)
+                assertEquals(ordinary.chipStartPadding, add.chipStartPadding, 1f)
+                assertEquals(ordinary.chipEndPadding, add.chipEndPadding, 1f)
+                assertEquals(ordinary.textStartPadding, add.textStartPadding, 1f)
+                assertEquals(ordinary.textEndPadding, add.textEndPadding, 1f)
+                val entryGap = ordinary.left - add.right
+                val ordinaryGap = next.left - ordinary.right
+                assertEquals("Entry spacing differs from regular chips", ordinaryGap.toFloat(), entryGap.toFloat(), 1f)
+                assertEquals("Entry spacing is not 8dp", 8f * density, entryGap.toFloat(), 1f)
+                assertTrue("Entry text is clipped", add.paint.measureText(add.text.toString()) <=
+                    add.width - add.paddingLeft - add.paddingRight + 1f)
+                assertTrue("Entry lacks plus icon", add.chipIcon != null && add.isChipIconVisible)
+            }
+        }
+        fun circularEntrance(idName: String, description: String, index: Int) {
+            instrumentation.runOnMainSync {
+                val root = activity!!.findViewById<ViewGroup>(R.id.markupOptionsContent)
+                val add = requireNotNull(root.findViewById<com.google.android.material.card.MaterialCardView>(id(idName)))
+                val row = add.parent as ViewGroup
+                assertEquals("Fixed entry position", index, row.indexOfChild(add))
+                assertEquals(label(description), add.contentDescription)
+                assertEquals(add.contentDescription, add.tooltipText)
+                assertTrue("Fixed entry must be clickable", add.isClickable)
+                val density = context.resources.displayMetrics.density
+                assertEquals(48f * density, add.width.toFloat(), 1f)
+                assertEquals(48f * density, add.height.toFloat(), 1f)
+                assertEquals(24f * density, add.radius, 1f)
+                assertTrue("Fixed entry must contain only an icon", add.childCount == 1 && add.getChildAt(0) is ImageView)
+            }
+        }
+        fun palette(background: Boolean) {
+            val addId = if (background) "markup_add_background_color" else "markup_add_color"
+            val description = if (background) "markup_add_background_color_description" else "markup_add_color_description"
+            circularEntrance(addId, description, 0)
+            if (background) circularEntrance("markup_no_background_control", "markup_no_background", 1)
+            instrumentation.runOnMainSync {
+                val root = activity!!.findViewById<ViewGroup>(R.id.markupOptionsContent)
+                val add = requireNotNull(root.findViewById<com.google.android.material.card.MaterialCardView>(id(addId)))
+                val row = add.parent as ViewGroup
+                val firstSwatch = row.getChildAt(if (background) 2 else 1) as com.google.android.material.card.MaterialCardView
+                val density = context.resources.displayMetrics.density
+                for (i in 0 until row.childCount - 1) {
+                    assertEquals("Palette gap", 2f * density,
+                        (row.getChildAt(i + 1).left - row.getChildAt(i).right).toFloat(), 1f)
+                }
+                assertEquals(firstSwatch.width.toFloat(), add.width.toFloat(), 1f)
+                assertEquals(firstSwatch.height.toFloat(), add.height.toFloat(), 1f)
+                assertEquals(firstSwatch.radius, add.radius, 1f)
+                if (background) {
+                    val none = requireNotNull(root.findViewById<com.google.android.material.card.MaterialCardView>(id("markup_no_background_control")))
+                    assertEquals(firstSwatch.width.toFloat(), none.width.toFloat(), 1f)
+                    assertEquals(firstSwatch.height.toFloat(), none.height.toFloat(), 1f)
+                    assertEquals(firstSwatch.radius, none.radius, 1f)
+                    none.performClick()
+                    val selectedNone = requireNotNull(root.findViewById<com.google.android.material.card.MaterialCardView>(id("markup_no_background_control")))
+                    assertTrue("No-background must be selected", selectedNone.isSelected)
+                    val width = selectedNone.strokeWidth
+                    val color = selectedNone.strokeColor
+                    val currentRow = selectedNone.parent as ViewGroup
+                    (currentRow.getChildAt(2) as com.google.android.material.card.MaterialCardView).performClick()
+                    val updatedNone = requireNotNull(root.findViewById<com.google.android.material.card.MaterialCardView>(id("markup_no_background_control")))
+                    val selectedSwatch = (updatedNone.parent as ViewGroup).getChildAt(2) as com.google.android.material.card.MaterialCardView
+                    assertTrue("Background swatch must be selected", selectedSwatch.isSelected)
+                    assertEquals("Selection stroke width differs", selectedSwatch.strokeWidth, width)
+                    assertEquals("Selection stroke color differs", selectedSwatch.strokeColor, color)
+                    updatedNone.performClick()
+                }
+            }
+        }
+        tool(R.string.editor_markup_doodle); subtool(R.string.markup_brush_section)
+        chipEntrance("markup_add_brush", "markup_add_brush_description")
+        subtool(R.string.markup_color_section); palette(false); screenshot("touch-unified-color")
+        tool(R.string.editor_markup_shapes); subtool(R.string.markup_shape_section)
+        chipEntrance("markup_add_shape", "markup_add_shape_description"); screenshot("touch-unified-chip")
+        tool(R.string.editor_markup_mosaic); subtool(R.string.markup_effect_section)
+        chipEntrance("markup_add_pattern", "markup_add_pattern_description")
+        tool(R.string.editor_markup_sticker)
+        subtool(context.resources.getIdentifier("markup_preset_stickers", "string", context.packageName))
+        circularEntrance("markup_add_sticker", "markup_add_sticker_description", 0)
+        instrumentation.runOnMainSync {
+            val root = activity!!.findViewById<ViewGroup>(R.id.markupOptionsContent)
+            val add = requireNotNull(root.findViewById<View>(id("markup_add_sticker")))
+            val row = add.parent as ViewGroup
+            val ordinary = row.getChildAt(1)
+            assertEquals(ordinary.width.toFloat(), add.width.toFloat(), 1f)
+            assertEquals(ordinary.height.toFloat(), add.height.toFloat(), 1f)
+            assertEquals(8f * context.resources.displayMetrics.density, (ordinary.left - add.right).toFloat(), 1f)
+        }
+        screenshot("touch-unified-sticker")
+        tool(R.string.editor_markup_text)
+        subtool(context.resources.getIdentifier("markup_font", "string", context.packageName))
+        chipEntrance("markup_add_font", "markup_add_font_description")
+        subtool(R.string.editor_markup_text_bg); palette(true); screenshot("touch-unified-background")
     }
 
     @Test fun markupTextSelected() {
@@ -1274,7 +1287,7 @@ class UiScreenshotTest {
                 it.write("<svg xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M 0 0 L 100 0 L 50 100 Z\"/></svg>".toByteArray())
             }
             editor(); tool(R.string.editor_markup_shapes); subtool(R.string.markup_shape_section)
-            var button = device.findObject(By.text(context.getString(R.string.editor_shape_import)))
+            var button = device.findObject(By.res(context.packageName, "markup_add_shape"))
             if (button == null) {
                 val outer = requireNotNull(device.findObject(By.res(context.packageName, "markupOptionsScroll")))
                 val row = requireNotNull(outer.findObject(By.clazz("android.widget.HorizontalScrollView")))
@@ -1283,7 +1296,7 @@ class UiScreenshotTest {
                 repeat(3) { assertTrue("Shape options swipe injection failed", device.swipe(r.right - 10, r.centerY(), r.left + 10, r.centerY(), 20)) }
                 device.waitForIdle()
                 capture("markup-shape-import-$mode-after-scroll")
-                button = device.findObject(By.text(context.getString(R.string.editor_shape_import)))
+                button = device.findObject(By.res(context.packageName, "markup_add_shape"))
             }
             assertNotNull("Custom shape import action missing", button)
             if (bypassSaf) {
@@ -1583,8 +1596,10 @@ class UiScreenshotTest {
             val importLabel = context.resources.getIdentifier("markup_font_import", "string", context.packageName)
             assertTrue(fontPage != 0 && importLabel != 0)
             subtool(fontPage)
-            val importButton = device.wait(Until.findObject(By.text(context.getString(importLabel))), 5000)
+            val importButton = device.wait(Until.findObject(By.res(context.packageName, "markup_add_font")), 5000)
             assertNotNull("Import entry unavailable", importButton)
+            val fontDescription = context.resources.getIdentifier("markup_add_font_description", "string", context.packageName)
+            assertEquals(context.getString(fontDescription), importButton!!.contentDescription)
             val filter = IntentFilter(Intent.ACTION_OPEN_DOCUMENT).apply {
                 addCategory(Intent.CATEGORY_OPENABLE); addDataType("*/*")
             }
@@ -1592,13 +1607,13 @@ class UiScreenshotTest {
             val before = (fonts.getMethod("ids").invoke(instance) as List<*>).toSet()
             importButton!!.click()
             waitForBoundedUiIdle(instrumentation, device, "cancel font picker")
-            assertTrue("Font import entry did not return", device.wait(Until.hasObject(By.text(context.getString(importLabel))), 5000))
+            assertTrue("Font import entry did not return", device.wait(Until.hasObject(By.res(context.packageName, "markup_add_font")), 5000))
             instrumentation.removeMonitor(cancelled)
             assertEquals("Cancelled picker changed font library", before, (fonts.getMethod("ids").invoke(instance) as List<*>).toSet())
             val accepted = instrumentation.addMonitor(filter, Instrumentation.ActivityResult(Activity.RESULT_OK, Intent().setData(fontUri)), true)
             importButton.click()
             waitForBoundedUiIdle(instrumentation, device, "accept font picker")
-            assertTrue("Font import entry did not return", device.wait(Until.hasObject(By.text(context.getString(importLabel))), 5000))
+            assertTrue("Font import entry did not return", device.wait(Until.hasObject(By.res(context.packageName, "markup_add_font")), 5000))
             instrumentation.removeMonitor(accepted)
             val id = MessageDigest.getInstance("SHA-256").digest(otf.readBytes()).joinToString("") { "%02x".format(it) }
             val deadline = System.currentTimeMillis() + 15000
@@ -1825,7 +1840,9 @@ class UiScreenshotTest {
             val density = context.resources.displayMetrics.density
             val min = (48 * density).toInt()
             val gap = (8 * density).toInt()
-            val chips = (0 until group.childCount).map { group.getChildAt(it) }
+            val importId = context.resources.getIdentifier("markup_add_font", "id", context.packageName)
+            val chips = (0 until group.childCount).map { group.getChildAt(it) }.filter { it.id != importId }
+            assertTrue("Three ordinary font choices are required", chips.size >= 3)
             chips.forEach { chip ->
                 assertTrue("Font choice lacks 48dp touch target", chip.width >= min && chip.height >= min)
                 assertTrue("Font choice lacks accessibility label", !chip.contentDescription.isNullOrBlank())
@@ -1835,13 +1852,20 @@ class UiScreenshotTest {
                 assertTrue("Font choices are too close", chips[i].left - chips[i - 1].right >= gap)
                 assertTrue("Font choices are misaligned", kotlin.math.abs(chips[i].top - chips[0].top) <= 1)
             }
-            val importButton = requireNotNull(findText(root, context.getString(importLabel)))
+            val importButton = requireNotNull(root.findViewById<com.google.android.material.chip.Chip>(importId))
+            val ordinary = chips.first() as com.google.android.material.chip.Chip
             assertTrue("Import needs a 48dp touch target", importButton.width >= min && importButton.height >= min)
             assertTrue("Import must be clickable", importButton.isClickable)
-            assertEquals("Import text size", android.util.TypedValue.applyDimension(android.util.TypedValue.COMPLEX_UNIT_SP, 12f, context.resources.displayMetrics), importButton.textSize, 0.5f)
-            val a = IntArray(2); val b = IntArray(2)
-            group.getLocationOnScreen(a); importButton.getLocationOnScreen(b)
-            assertTrue("Import overlaps the font choices", b[0] - (a[0] + group.width) >= gap)
+            assertEquals("Import text size", ordinary.textSize, importButton.textSize, 1f)
+            assertEquals("Import height", ordinary.height.toFloat(), importButton.height.toFloat(), 1f)
+            assertEquals("Import corner", ordinary.chipCornerRadius, importButton.chipCornerRadius, 1f)
+            assertEquals(ordinary.chipStartPadding, importButton.chipStartPadding, 1f)
+            assertEquals(ordinary.chipEndPadding, importButton.chipEndPadding, 1f)
+            assertEquals(ordinary.textStartPadding, importButton.textStartPadding, 1f)
+            assertEquals(ordinary.textEndPadding, importButton.textEndPadding, 1f)
+            assertEquals("Import must be first", 0, group.indexOfChild(importButton))
+            assertTrue("Import overlaps the font choices", ordinary.left - importButton.right >= gap)
+
         }
         capture("markup-font-styled")
     }
@@ -1857,6 +1881,13 @@ class UiScreenshotTest {
                 val child = group.getChildAt(i)
                 if (child is TextView && child.text.toString() == label) return child
                 if (child is ViewGroup) findText(child, label)?.let { return it }
+            }
+            return null
+        }
+        fun findByDescription(view: View, description: String): View? {
+            if (view.contentDescription?.toString() == description) return view
+            if (view is ViewGroup) for (i in 0 until view.childCount) {
+                findByDescription(view.getChildAt(i), description)?.let { return it }
             }
             return null
         }
@@ -1893,10 +1924,15 @@ class UiScreenshotTest {
         instrumentation.runOnMainSync {
             val root = activity!!.findViewById<ViewGroup>(R.id.markupOptionsContent)
             val noBackgroundLabel = activity!!.getString(activity!!.resources.getIdentifier("markup_no_background", "string", activity!!.packageName))
-            val noBackground = requireNotNull(findText(root, "⊘")) { "No-background control (⊘) missing" }
+            val noBackgroundId = context.resources.getIdentifier("markup_no_background_control", "id", context.packageName)
+            val noBackground = requireNotNull(root.findViewById<View>(noBackgroundId)) { "No-background control (⊘) missing" }
             assertEquals("⊘ lacks its accessibility label", noBackgroundLabel, noBackground.contentDescription)
             val min = (48f * context.resources.displayMetrics.density).toInt()
+            val redView = findByDescription(root, context.getString(R.string.markup_color_red))
+            assertNotNull("Background swatch view missing", redView)
             assertTrue("No-background (⊘) touch target too small", noBackground.width >= min && noBackground.height >= min)
+            assertEquals("No-background width differs from swatch", redView!!.width.toFloat(), noBackground.width.toFloat(), 1f)
+            assertEquals("No-background height differs from swatch", redView.height.toFloat(), noBackground.height.toFloat(), 1f)
             assertTrue("Text action must not appear on the background page", findText(root, activity!!.getString(R.string.markup_text_action)) == null)
             assertTrue("No-background (⊘) control must be clickable", noBackground.isClickable)
         }
@@ -1976,20 +2012,21 @@ class UiScreenshotTest {
         // and undo must bring the same background back.
         val exportedWithBackground = exportBackgroundAlpha()
         assertTrue("Text background must be exported before ⊘", exportedWithBackground > 0)
-        requireNotNull(device.wait(Until.findObject(By.desc(newString("markup_no_background"))), 5000)) {
+        requireNotNull(device.wait(Until.findObject(By.res(context.packageName, "markup_no_background_control")), 5000)) {
             "No-background control (⊘) missing"
         }.click()
         device.waitForIdle()
         assertEquals("⊘ must remove the background from the export", 0, exportBackgroundAlpha())
         instrumentation.runOnMainSync { assertTrue("⊘ undo unavailable", overlay.undo()) }
         assertEquals("Undo must restore the exported background", exportedWithBackground, exportBackgroundAlpha())
-        val noBackground = device.wait(Until.findObject(By.desc(newString("markup_no_background"))), 5000)
+        val noBackground = device.wait(Until.findObject(By.res(context.packageName, "markup_no_background_control")), 5000)
         assertNotNull("No-background control missing", noBackground)
         noBackground!!.click(); device.waitForIdle()
         instrumentation.runOnMainSync { assertTrue("No background was not applied", !requireNotNull(overlay.activeText).hasBackgroundPill) }
-        val custom = device.wait(Until.findObject(By.desc(newString("markup_custom_color"))), 5000)
+        val custom = device.wait(Until.findObject(By.res(context.packageName, "markup_add_background_color")), 5000)
         assertNotNull("Custom background control missing", custom)
-        custom!!.click()
+        assertEquals(newString("markup_add_background_color_description"), custom!!.contentDescription)
+        custom.click()
         val opacityId = context.resources.getIdentifier("annotation_background_opacity", "id", context.packageName)
         assertTrue("Background opacity ID missing", opacityId != 0)
         fun dragOpacityFromOpaque(): Int {
@@ -2047,7 +2084,7 @@ class UiScreenshotTest {
         white!!.click(); device.waitForIdle()
         val opaqueExportAlpha = exportBackgroundAlpha()
         assertEquals("Opaque background export alpha", 255, opaqueExportAlpha)
-        requireNotNull(device.findObject(By.desc(newString("markup_custom_color")))).click()
+        requireNotNull(device.findObject(By.res(context.packageName, "markup_add_background_color"))).click()
         val dragged = dragOpacityFromOpaque()
         lastConfirmationSnapshot = null
         lastConfirmedColor = null
@@ -2074,7 +2111,17 @@ class UiScreenshotTest {
         assertEquals("Redo export must match translucent export", translucentExportAlpha, exportBackgroundAlpha())
         capture("markup-custom-background")
         subtool(R.string.markup_color_section)
-        requireNotNull(device.findObject(By.desc(newString("markup_custom_color")))).click()
+        val textColorAdd = requireNotNull(device.findObject(By.res(context.packageName, "markup_add_color")))
+        assertEquals(newString("markup_add_color_description"), textColorAdd.contentDescription)
+        textColorAdd.click()
+        assertNotNull("Text color picker did not open", device.wait(
+            Until.findObject(By.text(context.getString(android.R.string.ok))), 5000))
+        instrumentation.runOnMainSync {
+            assertTrue("Text color picker must not contain the background opacity control",
+                android.view.inspector.WindowInspector.getGlobalWindowViews().none {
+                    it.findViewById<Slider>(opacityId)?.isShown == true
+                })
+        }
         assertTrue("Text color must not offer opacity", !device.hasObject(By.desc(newString("markup_color_opacity"))))
         device.pressBack()
         } catch (original: Throwable) {
