@@ -659,6 +659,75 @@ class UiScreenshotTest {
         }
     }
 
+    /** Temporary measurement only; missing controls are recorded, never asserted. */
+    @Test fun markupMeasureControlsDiagnostic() {
+        val report = StringBuilder()
+        var measurement: MarkupControlMeasurement? = null
+        try {
+            val image = images.firstOrNull()
+            if (image == null) {
+                report.append("editor: unavailable (fixture missing)\n")
+            } else {
+                val intent = ImageEditorActivity.createIntent(context, image, "image/jpeg")
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                val launch = java.util.concurrent.FutureTask<Activity> { instrumentation.startActivitySync(intent) }
+                Thread(launch, "markup-measurement-launch").apply { isDaemon = true; start() }
+                activity = launch.get(30, java.util.concurrent.TimeUnit.SECONDS)
+                device.waitForIdle(1000)
+                val m = MarkupControlMeasurement(activity!!, instrumentation, device)
+                measurement = m
+                m.environment()
+                m.select("editor_tab_markup")
+                device.wait(Until.hasObject(By.desc(context.getString(R.string.editor_markup_doodle))), 10000)
+
+                if (m.select("editor_markup_doodle")) {
+                    m.select("markup_brush_section")
+                    m.record("brush_chip", resource = "editor_brush_normal")
+                    m.record("brush_import", resource = "editor_brush_import")
+                    m.select("markup_color_section")
+                    m.record("color_swatch", description = "markup_color_red")
+                    m.record("color_add", description = "markup_custom_color", literal = "+")
+                } else m.missing("brush_chip", "brush_import", "color_swatch", "color_add")
+
+                if (m.select("editor_markup_shapes")) {
+                    m.select("markup_shape_section")
+                    m.record("shape_chip", resource = "editor_shape_arrow")
+                    m.record("shape_import", resource = "editor_shape_import")
+                } else m.missing("shape_chip", "shape_import")
+
+                if (m.select("editor_markup_mosaic")) {
+                    m.select("markup_effect_section")
+                    m.record("mosaic_chip", resource = "editor_mosaic_pixelate")
+                    if (!isCandidate()) m.select("editor_mosaic_cat_graphical")
+                    m.record("mosaic_import", resource = "editor_mosaic_import")
+                } else m.missing("mosaic_chip", "mosaic_import")
+
+                if (m.select("editor_markup_sticker")) {
+                    m.record("sticker_item", literal = "⭐")
+                    if (isCandidate()) m.select("markup_import_section")
+                    m.record("sticker_import", resource = "editor_sticker_import")
+                } else m.missing("sticker_item", "sticker_import")
+
+                if (m.select("editor_markup_text")) {
+                    if (m.select("markup_font")) {
+                        m.record("font_chip", resource = "markup_font_sample")
+                        m.record("font_import", resource = "markup_font_import")
+                    } else m.missing("font_chip", "font_import")
+                    if (isCandidate() && m.select("editor_markup_text_bg")) {
+                        m.record("background_swatch", description = "markup_color_red")
+                        m.record("background_add", description = "markup_custom_color", literal = "+")
+                        m.record("background_none", description = "markup_no_background", literal = "⊘")
+                    } else m.missing("background_swatch", "background_add", "background_none")
+                } else m.missing("font_chip", "font_import", "background_swatch", "background_add", "background_none")
+            }
+        } catch (e: Exception) {
+            report.append("measurement_error=${e.javaClass.name}: ${e.message}\n")
+        } finally {
+            measurement?.let { report.append(it.output()) }
+            publishDiagnostic("selection-trace-markup-control-measurements.txt", "text/plain", report.toString().toByteArray())
+        }
+    }
+
     @Test fun markupIdle() { editor(); capture("markup-idle"); assertMarkupAlignment() }
     @Test fun markupIdleChinese() {
         try {
