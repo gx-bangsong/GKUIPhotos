@@ -352,6 +352,8 @@ object ImageToolbox {
      * extracted with [MediaMetadataRetriever] (framework-only) and encoded with
      * the bundled [GifCodec].
      *
+     * @param ensureActive Throws to cancel (for example a coroutine's `ensureActive`); checked
+     *   for every frame and around the MediaStore write, whose pending row is then deleted.
      * @param onProgress Optional callback reporting progress in 0..1.
      */
     fun videoToGif(
@@ -361,6 +363,7 @@ object ImageToolbox {
         fps: Int = 8,
         maxEdge: Int = 480,
         maxFrames: Int = 36,
+        ensureActive: () -> Unit = {},
         onProgress: ((Float) -> Unit)? = null,
     ): ToolboxResult {
         val resolver = context.contentResolver
@@ -392,6 +395,7 @@ object ImageToolbox {
             var failed = 0
             var syncFallbacks = 0
             plan.forEachIndexed { index, tUs ->
+                ensureActive()
                 var bmp: Bitmap? = try {
                     retriever.getFrameAtTime(tUs, MediaMetadataRetriever.OPTION_CLOSEST)
                 } catch (e: Exception) {
@@ -435,10 +439,17 @@ object ImageToolbox {
 
             val sourceName = sourceUri.lastPathSegment ?: "video"
             val outName = buildName(sourceName, "gif", "gif")
-            val uri = writeBitmapToMediaStore(
-                context, data, outName, "image/gif",
-                relativePath = "${Environment.DIRECTORY_PICTURES}/Glimpse",
-            )
+            // A failed or cancelled write deletes its pending row and rethrows (see PendingMediaStoreWrite).
+            val uri = PendingMediaStoreWrite.insert(
+                resolver,
+                MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY),
+                ContentValues().apply {
+                    put(MediaStore.Images.Media.DISPLAY_NAME, outName)
+                    put(MediaStore.Images.Media.MIME_TYPE, "image/gif")
+                    put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/Glimpse")
+                },
+                ensureActive,
+            ) { it.write(data) }
             onProgress?.invoke(1f)
             return ToolboxResult(
                 uri = uri,

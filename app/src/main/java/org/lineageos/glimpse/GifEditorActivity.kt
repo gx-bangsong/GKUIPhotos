@@ -16,6 +16,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.view.MenuItem
 import android.widget.ImageView
 import android.widget.SeekBar
@@ -26,11 +27,14 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.progressindicator.CircularProgressIndicator
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.lineageos.glimpse.utils.media.GifCodec
 import org.lineageos.glimpse.utils.media.ImageFilter
+import org.lineageos.glimpse.utils.media.PendingMediaStoreWrite
 import java.io.ByteArrayOutputStream
 
 /**
@@ -241,7 +245,17 @@ class GifEditorActivity : AppCompatActivity(R.layout.activity_gif_editor) {
                 return@launch
             }
             val ok = withContext(Dispatchers.IO) {
-                runCatching { writeToMediaStore(data) }.isSuccess
+                val coroutine = coroutineContext
+                try {
+                    writeToMediaStore(data) { coroutine.ensureActive() }
+                    true
+                } catch (e: CancellationException) {
+                    // The pending row is already deleted; let the cancellation propagate.
+                    throw e
+                } catch (e: Exception) {
+                    Log.e("GifEditorActivity", "GIF export failed", e)
+                    false
+                }
             }
             Toast.makeText(
                 this@GifEditorActivity,
@@ -255,7 +269,8 @@ class GifEditorActivity : AppCompatActivity(R.layout.activity_gif_editor) {
         }
     }
 
-    private fun writeToMediaStore(bytes: ByteArray): Uri {
+    /** Writes [bytes] as a new GIF; a failed or cancelled write leaves no pending row behind. */
+    private fun writeToMediaStore(bytes: ByteArray, ensureActive: () -> Unit): Uri {
         val collection = android.provider.MediaStore.Images.Media
             .getContentUri(android.provider.MediaStore.VOLUME_EXTERNAL_PRIMARY)
         val name = "Glimpse_GIF_${System.currentTimeMillis()}"
@@ -266,15 +281,10 @@ class GifEditorActivity : AppCompatActivity(R.layout.activity_gif_editor) {
                 android.provider.MediaStore.Images.Media.RELATIVE_PATH,
                 "${android.os.Environment.DIRECTORY_PICTURES}/Glimpse"
             )
-            put(android.provider.MediaStore.Images.Media.IS_PENDING, 1)
         }
-        val uri = contentResolver.insert(collection, values)
-            ?: throw IllegalStateException("MediaStore insert failed")
-        contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
-        values.clear()
-        values.put(android.provider.MediaStore.Images.Media.IS_PENDING, 0)
-        contentResolver.update(uri, values, null, null)
-        return uri
+        return PendingMediaStoreWrite.insert(contentResolver, collection, values, ensureActive) {
+            it.write(bytes)
+        }
     }
 
     companion object {

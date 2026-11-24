@@ -26,6 +26,8 @@ import com.google.android.material.chip.ChipGroup
 import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.google.android.material.slider.Slider
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.lineageos.glimpse.IdPhotoActivity
@@ -514,12 +516,15 @@ class ImageToolboxBottomSheet(
         val maxEdge = selectedMaxEdge
         val mainHandler = Handler(Looper.getMainLooper())
         launchHeavy(progressive = true) { onProgress ->
+            // Cancelling the coroutine stops the extraction and deletes a pending MediaStore row.
+            val coroutine = currentCoroutineContext()
             ImageToolbox.videoToGif(
                 context,
                 videoMedia.uri,
                 durationSeconds = seconds,
                 fps = fps,
                 maxEdge = maxEdge,
+                ensureActive = { coroutine.ensureActive() },
             ) { p ->
                 mainHandler.post { onProgress(p) }
             }

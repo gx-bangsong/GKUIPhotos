@@ -242,3 +242,51 @@ unit-tests job 必须为绿。
 - candidate 上只要 #5 以外有任何失败，或者 #5 的消息和上面不同，都算非预期红；
 - `reportedSyncFallbacks` 应为数字（不为 null）。实际值作为证据记录，不加断言；
 - baseline（浅色、深色）、lint、unit-tests 必须全绿；unit-tests 预期 94/94（原来 88 条，加上 `VideoGifPlanTest` 6 条）。
+
+### 第 3 步实际结果（`d5e529f`，run 45333079365）
+
+与清单逐字一致：#3 `:345` 和 #4 `:398` 在 candidate light/dark 上转绿；#5 `:469` 的消息不变。baseline light/dark 都是 72 个测试、0 失败、40 跳过；unit-tests 94/94。上表所有数值都与实测相符：每个用例的源帧序号都与计划一致（误差在 ±1 以内），最后一帧的起点加上它的延迟等于总时长，`reportedSyncFallbacks` 全部为 0。
+
+## 第 4 步（方向、图库、IS_PENDING）
+
+### 方向和图库：结论，不改代码
+
+- **方向**：API 34 上 #6 `step4_orientationIsUpright` 从 2a（`cffd36b`）起就是绿的（之前红只是因为 LZW 导致像素无法解码，不是方向问题）。旋转 90° 的竖屏视频输出为 135×240，首帧和末帧的红色标记都在左上角（`step4-orientation` 证据），因为 `MediaMetadataRetriever.getBitmapFromVideoFrame` 会按 `mRotationAngle` 旋转。minSdk 30 上厂商定制系统的行为未验证，保留在 PR 的“已知风险”里。
+- **图库动画**：不是缺陷。`step4_galleryAnimatesGif` 中 `GifDrawable running=true frameCount=3`，并且帧在推进（`framesSeen=[-1, 1]`）。
+
+### IS_PENDING 根因（`d5e529f` 的行号）
+
+- `ImageToolbox.kt:438` → `writeBitmapToMediaStore`：`:601` 设 `IS_PENDING=1`，`:603` 插入记录，`:605–608` 打开输出流并写入；这一步抛出异常时，`:610–611` 的发布不会执行，也没有任何删除，于是 `IS_PENDING=1` 的记录留在 MediaStore 里（#5 的证据：`FileNotFoundException` 之后留下 `land60_320x180_5s_gif_<n>.gif pending=1`）。
+- `GifEditorActivity.kt:271–276`（导出 GIF）：同样的问题，插入后写入失败不删除；另外 `:273` 的 `openOutputStream(uri)?.use` 在拿到 null 流时什么都不写，接着 `:275–276` 仍把记录发布出去，结果是返回成功、留下一个空 GIF。`:244` 的 `runCatching` 会把协程取消也当成普通失败。
+
+### 修复
+
+- 新文件 `utils/media/PendingMediaStoreWrite.kt`：先插入 `IS_PENDING=1` 的记录，写入完成后再发布。发布前任何异常都会删除已插入的记录，然后原样抛出原始异常（同一个实例）；删除本身也失败时（包括删除了 0 行），删除的异常会作为 suppressed 附加到原始异常上。这里的“任何异常”包括写入失败、拿到 null 流、发布时更新了 0 行，以及 `ensureActive` 抛出的协程取消。
+- `ImageToolbox.videoToGif`：改用这个 helper，新增参数 `ensureActive: () -> Unit = {}`（放在 `onProgress` 前面，带默认值）。每取一帧检查一次，写入前后也各检查一次。`ImageToolboxBottomSheet` 传入当前协程的 `ensureActive`。
+- `GifEditorActivity`：导出也改用这个 helper，传入当前协程的 `ensureActive`；取消直接抛出，不再显示“导出失败”；其他失败照常显示“导出失败”，并记录日志。
+- 产品里没有“取消”按钮。用户取消的实际方式是退出 Activity，这会取消 `lifecycleScope` 里的协程，走的是同一条清理路径。
+- 共享的 `writeBitmapToMediaStore` 不改，因为它也被非 GIF 路径使用。
+
+非 GIF 保存路径，本 PR 不修，只列出（行号以第 4 步提交为准；只有 ImageToolbox 的行号因本步改动而移动）：
+- `ImageToolbox.kt:599–624` `writeBitmapToMediaStore`：写入失败时不清理。调用方：`compress` `:124`、`convert` `:156`、`edit` `:210`、`IdPhotoGenerator.kt:163`。
+- `ImageToolbox.kt:626–649` `writePdfToMediaStore`（调用方 `:312`）：写入失败时不清理。
+- `ImageEditorActivity.kt:2725–2731`：插入后写入失败不清理。
+- `LockedVaultRepository.kt:159–175`：失败时会删除，但 `:161` 的 `openOutputStream(uri)?.use` 拿到 null 流时会被当成成功，并随后删除原文件。
+- `CollageActivity.kt:361–375`：已经在 `finally` 里删除，没有这个问题。
+
+新单元测试 `PendingMediaStoreWriteTest`（JVM，7 条）：
+- 成功时发布且不删除；
+- 写入失败时删除并原样抛出原始异常；
+- 删除也失败时，抛出的是原始异常，删除的异常在它的 suppressed 里；
+- 发布失败时删除；
+- 插入后被取消时删除并抛出 `CancellationException`；
+- 插入前被取消时不插入；
+- 插入失败时不删除。
+
+### 预期转绿
+
+- #5 `:469` `step4_writeFailureLeavesNoPendingRow`（candidate light/dark）
+
+### 预期仍红
+
+无，清单清空。candidate light/dark、baseline light/dark、lint、unit-tests（预期 101/101 = 94 + 7）、return-evidence 必须全部为绿；任何失败都是非预期红。
