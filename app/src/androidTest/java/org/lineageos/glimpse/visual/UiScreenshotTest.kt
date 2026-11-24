@@ -659,72 +659,99 @@ class UiScreenshotTest {
         }
     }
 
-    /** Temporary measurement only; missing controls are recorded, never asserted. */
+    /** Temporary candidate-only runtime inventory; never changes product state. */
+    @CandidateOnly("Runtime measurement is candidate-only")
     @Test fun markupMeasureControlsDiagnostic() {
-        val report = StringBuilder()
+        val all = listOf("brush_chip", "brush_import", "color_swatch", "color_add",
+            "shape_chip", "shape_import", "mosaic_chip", "mosaic_import", "sticker_item",
+            "sticker_import", "font_chip", "font_import", "background_swatch", "background_add", "background_none")
         var measurement: MarkupControlMeasurement? = null
+        var failure: Throwable? = null
+        var cleanupFailure: Throwable? = null
         try {
-            val image = images.firstOrNull()
-            if (image == null) {
-                report.append("editor: unavailable (fixture missing)\n")
-            } else {
-                val intent = ImageEditorActivity.createIntent(context, image, "image/jpeg")
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                val launch = java.util.concurrent.FutureTask<Activity> { instrumentation.startActivitySync(intent) }
-                Thread(launch, "markup-measurement-launch").apply { isDaemon = true; start() }
-                activity = launch.get(30, java.util.concurrent.TimeUnit.SECONDS)
-                device.waitForIdle(1000)
-                val m = MarkupControlMeasurement(activity!!, instrumentation, device)
-                measurement = m
-                m.environment()
-                m.select("editor_tab_markup")
-                device.wait(Until.hasObject(By.desc(context.getString(R.string.editor_markup_doodle))), 10000)
+            val image = images.firstOrNull() ?: throw IllegalStateException("fixture missing")
+            val intent = ImageEditorActivity.createIntent(context, image, "image/jpeg")
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            val launch = java.util.concurrent.FutureTask<Activity> { instrumentation.startActivitySync(intent) }
+            Thread(launch, "markup-measurement-launch").apply { isDaemon = true; start() }
+            activity = launch.get(30, java.util.concurrent.TimeUnit.SECONDS)
+            waitForBoundedUiIdle(instrumentation, device, "measurement editor launch")
+            val m = MarkupControlMeasurement(activity!!, instrumentation, device)
+            measurement = m
+            m.environment()
+            m.select("editor_tab_markup")
+            if (!device.wait(Until.hasObject(By.desc(context.getString(R.string.editor_markup_doodle))), 10000))
+                throw IllegalStateException("editor_tab_markup: markup tools did not open")
 
-                if (m.select("editor_markup_doodle")) {
-                    m.select("markup_brush_section")
-                    m.record("brush_chip", resource = "editor_brush_normal")
-                    m.record("brush_import", resource = "editor_brush_import")
-                    m.select("markup_color_section")
-                    m.record("color_swatch", description = "markup_color_red")
-                    m.record("color_add", description = "markup_custom_color", literal = "+")
-                } else m.missing("brush_chip", "brush_import", "color_swatch", "color_add")
-
-                if (m.select("editor_markup_shapes")) {
-                    m.select("markup_shape_section")
-                    m.record("shape_chip", resource = "editor_shape_arrow")
-                    m.record("shape_import", resource = "editor_shape_import")
-                } else m.missing("shape_chip", "shape_import")
-
-                if (m.select("editor_markup_mosaic")) {
-                    m.select("markup_effect_section")
-                    m.record("mosaic_chip", resource = "editor_mosaic_pixelate")
-                    if (!isCandidate()) m.select("editor_mosaic_cat_graphical")
-                    m.record("mosaic_import", resource = "editor_mosaic_import")
-                } else m.missing("mosaic_chip", "mosaic_import")
-
-                if (m.select("editor_markup_sticker")) {
-                    m.record("sticker_item", literal = "⭐")
-                    if (isCandidate()) m.select("markup_import_section")
-                    m.record("sticker_import", resource = "editor_sticker_import")
-                } else m.missing("sticker_item", "sticker_import")
-
-                if (m.select("editor_markup_text")) {
-                    if (m.select("markup_font")) {
-                        m.record("font_chip", resource = "markup_font_sample")
-                        m.record("font_import", resource = "markup_font_import")
-                    } else m.missing("font_chip", "font_import")
-                    if (isCandidate() && m.select("editor_markup_text_bg")) {
-                        m.record("background_swatch", description = "markup_color_red")
-                        m.record("background_add", description = "markup_custom_color", literal = "+")
-                        m.record("background_none", description = "markup_no_background", literal = "⊘")
-                    } else m.missing("background_swatch", "background_add", "background_none")
-                } else m.missing("font_chip", "font_import", "background_swatch", "background_add", "background_none")
+            fun group(step: String, names: List<String>, action: () -> Unit) {
+                try { action() } catch (error: Throwable) { m.failed(names, step, error) }
             }
-        } catch (e: Exception) {
-            report.append("measurement_error=${e.javaClass.name}: ${e.message}\n")
+            group("brush", listOf("brush_chip", "brush_import")) {
+                m.select("editor_markup_doodle"); m.select("markup_brush_section")
+                m.record("brush_chip", resource = "editor_brush_normal")
+                m.record("brush_import", resource = "editor_brush_import")
+            }
+            group("color", listOf("color_swatch", "color_add")) {
+                m.select("editor_markup_doodle"); m.select("markup_color_section")
+                m.record("color_swatch", description = "markup_color_red")
+                m.record("color_add", description = "markup_custom_color")
+            }
+            group("shape", listOf("shape_chip", "shape_import")) {
+                m.select("editor_markup_shapes"); m.select("markup_shape_section")
+                m.record("shape_chip", resource = "editor_shape_arrow")
+                m.record("shape_import", resource = "editor_shape_import")
+            }
+            group("mosaic", listOf("mosaic_chip", "mosaic_import")) {
+                m.select("editor_markup_mosaic"); m.select("markup_effect_section")
+                m.record("mosaic_chip", resource = "editor_mosaic_pixelate")
+                m.record("mosaic_import", resource = "editor_mosaic_import")
+            }
+            group("sticker preset", listOf("sticker_item")) {
+                m.select("editor_markup_sticker"); m.select("markup_preset_stickers")
+                m.record("sticker_item", literal = "⭐")
+            }
+            group("sticker import", listOf("sticker_import")) {
+                m.select("editor_markup_sticker"); m.select("markup_import_section")
+                m.record("sticker_import", resource = "editor_sticker_import")
+            }
+            group("font", listOf("font_chip", "font_import")) {
+                m.select("editor_markup_text"); m.select("markup_font")
+                m.record("font_chip", resource = "markup_font_sample")
+                m.record("font_import", resource = "markup_font_import")
+            }
+            group("background", listOf("background_swatch", "background_add", "background_none")) {
+                m.select("editor_markup_text"); m.select("editor_markup_text_bg")
+                m.record("background_swatch", description = "markup_color_red")
+                m.record("background_add", description = "markup_custom_color")
+                m.record("background_none", description = "markup_no_background")
+            }
+        } catch (error: Throwable) {
+            failure = error
+            measurement?.failed(all, "editor navigation", error)
         } finally {
-            measurement?.let { report.append(it.output()) }
-            publishDiagnostic("selection-trace-markup-control-measurements.txt", "text/plain", report.toString().toByteArray())
+            try {
+                activity?.let { opened ->
+                    runOnMainWithTimeout(instrumentation, "close measurement editor") { opened.finish() }
+                    waitForBoundedUiIdle(instrumentation, device, "close measurement editor")
+                    if (!opened.isDestroyed) throw IllegalStateException("measurement editor did not close")
+                    activity = null
+                }
+                while (images.isNotEmpty()) {
+                    val image = images.first()
+                    deleteWithDiagnostics(image)
+                    images.removeAt(0)
+                }
+            } catch (error: Throwable) {
+                cleanupFailure = error
+            }
+            val output = measurement?.output() ?: buildString {
+                val cause = failure
+                all.forEach { append("$it: 失败：editor launch ${cause?.javaClass?.name}: ${cause?.message}\n") }
+                append("control_total=${all.size}\n")
+            }
+            val cleanup = cleanupFailure?.let { "cleanup: 失败：${it.javaClass.name}: ${it.message}\n" } ?: "cleanup: editor closed; fixtures deleted\n"
+            publishDiagnostic("selection-trace-markup-control-measurements.txt", "text/plain", (cleanup + output).toByteArray())
+            cleanupFailure?.let { throw IllegalStateException("measurement cleanup failed", it) }
         }
     }
 

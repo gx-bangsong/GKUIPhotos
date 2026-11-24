@@ -27,6 +27,8 @@ internal class MarkupControlMeasurement(
     private val device: UiDevice,
 ) {
     private val lines = StringBuilder()
+    private var count = 0
+    private fun message(error: Throwable) = "${error.javaClass.name}: ${(error.message ?: "(no message)").replace('\n', ' ')}"
     private val metrics get() = activity.resources.displayMetrics
     private val density get() = metrics.density
     private fun num(value: Float) = String.format(Locale.US, "%.3f", value)
@@ -57,20 +59,30 @@ internal class MarkupControlMeasurement(
         (it is TextView && it.text.toString() == text) || it.contentDescription?.toString() == text
     }
 
-    /** Select an already existing tool or subtool; no actions on the measured entries. */
-    fun select(name: String): Boolean {
-        var clicked = false
+    /** Fail the current measurement group if its page cannot be opened. */
+    fun select(name: String) {
         try {
             runOnMainWithTimeout(instrumentation, "measurement select $name") {
                 var view: View? = byDescription(name) ?: byText(name)
                 while (view != null && !view.isClickable) view = view.parent as? View
-                clicked = view?.performClick() == true
+                if (view == null) throw IllegalStateException("navigation target not found")
+                if (!view.performClick()) throw IllegalStateException("navigation click rejected")
             }
-            device.waitForIdle(1000)
-        } catch (e: Exception) {
-            lines.append("navigation=$name error=${e.javaClass.simpleName}\n")
+            waitForBoundedUiIdle(instrumentation, device, "measurement select $name")
+            if (name != "editor_tab_markup") {
+                runOnMainWithTimeout(instrumentation, "verify measurement page $name") {
+                    val selected = byDescription(name)
+                    if (selected?.isSelected != true) throw IllegalStateException("navigation target is not selected")
+                }
+            }
+        } catch (error: Throwable) {
+            throw IllegalStateException("$name: ${message(error)}", error)
         }
-        return clicked
+    }
+
+    private fun options(): View {
+        val id = activity.resources.getIdentifier("markupOptionsContent", "id", activity.packageName)
+        return activity.findViewById<View>(id) ?: throw IllegalStateException("markup options page unavailable")
     }
 
     private fun corner(view: View): String {
@@ -98,7 +110,7 @@ internal class MarkupControlMeasurement(
         val right = left + view.width
         val top = location[1]
         val bottom = top + view.height
-        val candidates = views(root()).filter { other ->
+        val candidates = views(options()).filter { other ->
             other !== view && other.isClickable && other.visibility == View.VISIBLE &&
                 other.width > 0 && other.height > 0 && (other !is ViewGroup || other is MaterialCardView)
         }.mapNotNull { other ->
@@ -135,19 +147,28 @@ internal class MarkupControlMeasurement(
     }
 
     fun record(name: String, resource: String? = null, description: String? = null, literal: String? = null) {
+        count++
         try {
             var result = "不存在"
             runOnMainWithTimeout(instrumentation, "measurement $name") {
-                val view = (resource?.let(::byText) ?: description?.let(::byDescription) ?: literal?.let(::byLiteral))
+                val candidates = views(options())
+                val text = resource?.let(::label)
+                val desc = description?.let(::label)
+                val view = candidates.firstOrNull {
+                    (text != null && it is TextView && it.text.toString() == text) ||
+                        (desc != null && it.contentDescription?.toString() == desc) ||
+                        (literal != null && ((it is TextView && it.text.toString() == literal) || it.contentDescription?.toString() == literal))
+                }
                 result = describe(view)
             }
             lines.append("$name: $result\n")
-        } catch (e: Exception) {
-            lines.append("$name: measurement_error=${e.javaClass.simpleName}\n")
+        } catch (error: Throwable) {
+            lines.append("$name: 失败：测量 $name ${message(error)}\n")
         }
     }
 
-    fun missing(vararg names: String) { names.forEach { lines.append("$it: 不存在（页面不可用）\n") } }
-    fun note(message: String) { lines.append(message).append('\n') }
-    fun output(): String = lines.toString()
+    fun failed(names: List<String>, step: String, error: Throwable) {
+        names.forEach { name -> count++; lines.append("$name: 失败：$step ${message(error)}\n") }
+    }
+    fun output(): String = lines.toString() + "control_total=$count\n"
 }
