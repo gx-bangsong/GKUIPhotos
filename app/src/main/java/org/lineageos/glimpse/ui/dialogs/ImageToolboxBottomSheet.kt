@@ -36,6 +36,7 @@ import org.lineageos.glimpse.utils.media.CompressOptions
 import org.lineageos.glimpse.utils.media.ImageFilter
 import org.lineageos.glimpse.utils.media.ImageTargetFormat
 import org.lineageos.glimpse.utils.media.ImageToolbox
+import org.lineageos.glimpse.utils.media.VideoGifPlan
 
 /**
  * Module 6 & 8: an offline single- and multi-image/video toolkit (compress, convert
@@ -353,7 +354,7 @@ class ImageToolboxBottomSheet(
     }
 
     private fun setupVideoToGifModernUi() {
-        // Duration slider 1..15s
+        // Duration slider 1..18s (36 frames at the 2 fps minimum, see VideoGifPlan)
         durationSlider?.let { slider ->
             slider.value = 5f
             slider.addOnChangeListener { _, value, fromUser ->
@@ -460,8 +461,15 @@ class ImageToolboxBottomSheet(
         val seconds = (durationSlider?.value?.toInt() ?: legacySeekBar?.progress ?: 5).coerceAtLeast(1)
         val fps = selectedFps
         val edge = selectedMaxEdge
-        val frames = (seconds * fps).coerceAtMost(36)
-        estimateText?.text = "~${seconds}s • ${fps}fps • ${edge}p • ~${frames} frames"
+        val frames = VideoGifPlan.frameCount(seconds, fps)
+        estimateText?.text = if (frames < seconds * fps) {
+            // Frame cap reached: show the rate the GIF will actually have, and why.
+            val locale = context.resources.configuration.locales[0]
+            val actualFps = String.format(locale, "%.1f", frames / seconds.toDouble())
+            context.getString(R.string.toolbox_video_to_gif_estimate_reduced, seconds, actualFps, fps, edge, frames)
+        } else {
+            context.getString(R.string.toolbox_video_to_gif_estimate, seconds, fps, edge, frames)
+        }
     }
 
     private fun runCompress() {

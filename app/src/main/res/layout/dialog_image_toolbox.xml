@@ -448,7 +448,7 @@
                 android:stepSize="1"
                 android:value="5"
                 android:valueFrom="1"
-                android:valueTo="15"
+                android:valueTo="18"
                 app:labelBehavior="withinBounds" />
 
             <TextView
@@ -510,7 +510,7 @@
             android:id="@+id/gifDurationSeekBar"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:max="15"
+            android:max="18"
             android:progress="5"
             android:visibility="gone" />
 

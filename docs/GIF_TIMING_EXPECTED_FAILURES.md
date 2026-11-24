@@ -181,3 +181,64 @@ unit-tests job 必须为绿。
 - 其他测试（包括 #6、step2a、lzw_*、harness、gallery）必须保持绿。
 - #3 中只要出现上表以外的项，比如 `n=`、`fps=`、`identicalNeighbours`、`first#`、`dup`、`size=`、`aspect=`、`lzw=`，或者 `last#` 的值和上表不同，都算非预期红。
 - baseline、lint、unit-tests 必须全绿。
+
+### 第 2 步实际结果（`8f8dc1b`，run 45235843263）
+
+与上面的清单逐字一致：#1、#2 转绿；#3 剩下的 10 项与表中一致；#4、#5 不变。新单元测试 `GifCodecDelayTest` 6 条全部通过。
+
+## 第 3 步（取帧，方案 B）
+
+产品改动：
+- 新文件 `utils/media/VideoGifPlan.kt`（不含 Android 类型，可做 JVM 单元测试）：
+  - N = min(36, ⌈D·fps⌉)，t_i = i·D/N，最多 36/2 = 18 s，所以有效帧率不低于 2 fps；
+  - 每个成功取到的帧显示到下一个成功帧开始，最后一帧显示到片段末尾。时间先按毫秒累计取整，所以各帧延迟之和等于片段时长；
+  - 失败帧的时长并入前一帧；
+  - **报错阈值**：失败帧数 × 2 > 计划帧数时，`videoToGif` 抛出 `IllegalStateException`，不写入 MediaStore。正好一半失败（例如 36 帧里失败 18 帧）时仍然生成 GIF，多失败一帧（19 帧）就报错。计划帧数为奇数时，⌊N/2⌋ 帧失败仍可生成，多一帧就报错（例如 N=5 时失败 2 帧可生成，失败 3 帧报错）。一帧都没取到时也报错。
+- `ImageToolbox.videoToGif`：
+  - 原来的取帧逻辑：从 0 开始每隔 1000/fps 取一帧、最多 36 帧；固定延迟 ≥ 33 ms；连续 6 次失败后跳过一段时间；全部失败时再试 t=0。这些都删除了，换成上面的计划；
+  - 先用 OPTION_CLOSEST 取帧，取不到再用 OPTION_CLOSEST_SYNC，并统计回退次数。
+- `ToolboxResult` 新增 `syncFallbackFrames: Int = 0`（带默认值，不影响其他调用方）。测试只通过反射读取 `getSyncFallbackFrames`，不引用 baseline 里没有的符号。
+- `ImageToolboxBottomSheet.updateEstimate`：需要降帧时，估算文字使用 `toolbox_video_to_gif_estimate_reduced`，显示实际帧率（`%.1f`）、所选帧率和 36 帧上限；不需要降帧时使用 `toolbox_video_to_gif_estimate`。en、zh-CN、zh-TW 都有。
+- `dialog_image_toolbox.xml`：时长滑杆上限 `valueTo` 和隐藏的旧 SeekBar `max` 都从 15 改为 18。
+- 没有改：起点 UI（产品里没有，只记录不新增）、旋转、IS_PENDING（第 4 步）。
+
+新单元测试 `VideoGifPlanTest`（JVM，6 条）：
+- 帧数上限和 2 fps 下限；
+- 均匀时间点；
+- 7 个用例的毫秒和厘秒总和都等于片段时长，每帧误差 ≤ 1 cs；
+- 失败帧（中间、第一帧、最后一帧）并入前一帧；
+- 阈值边界 `exactlyHalfFailedPassesAndOneMoreIsAnError`：36 帧失败 18 帧时通过、失败 19 帧时报错；30 帧时是 15 和 16；5 帧时是 2 和 3；1 帧时是 0 和 1；
+- `exactlyHalfFailedStillCoversTheWholeClip`：正好一半失败（隔一帧失败一帧）时剩下 18 帧，总时长仍为 10 000 ms，也就是 1000 cs。
+
+### 预期转绿
+
+- #3 `:345` `step3_videoGifFollowsUniformPlan`（candidate light/dark）
+- #4 `:398` `step3_estimateShowsActualFrameRate`（candidate light/dark）
+
+### 预期数值（来自回传证据的 conversion 文件）
+
+| 用例 | 帧数 N | 有效 fps | 原始延迟（cs） | 总时长（cs） | 最后一帧起点 / 源帧 |
+|---|---|---|---|---|---|
+| s30 | 30 | 10.00 | 10 | 300 | 2.900 s / #87 |
+| s60 | 32 | 8.00 | 12/13 | 400 | 3.875 s / #232 |
+| r30 | 36 | 3.60 | 27/28 | **1000** | 9.722 s / #292 |
+| d30 | 36 | 7.20 | 13/14 | **500** | 4.861 s / #146 |
+| r60 | 36 | **2.00** | 50 | **1800** | 17.500 s / #1050 |
+| rot | 20 | 10.00 | 10 | 200 | 1.900 s / #57 |
+| hd | 5 | 5.00 | 20 | 100 | 0.800 s / #24 |
+
+“最后一帧对应片段末尾”的判定：最后一帧取自 t_{N−1} = (N−1)·D/N（`last#` 与上表的源帧误差 ±1），并且最后一帧的起点加上它的延迟等于总时长 D。
+
+估算文字：滑杆上限为 18；10 s × 15 fps 显示 `toolbox_video_to_gif_estimate_reduced(10, "3.6", 15, 480, 36)`；3 s × 10 fps 显示 `toolbox_video_to_gif_estimate(3, 10, 480, 30)`。
+
+### 预期仍红（candidate，消息逐字）
+
+| # | 位置 | 消息 |
+|---|------|------|
+| 5 | `:469` | `Rows left after a failed write: land60_320x180_5s_gif_<n>.gif is_pending=1` |
+
+判定补充：
+- 其他测试必须全部为绿，包括 #1、#2、#6、step2a、lzw_*、harness、gallery、UiScreenshotTest；
+- candidate 上只要 #5 以外有任何失败，或者 #5 的消息和上面不同，都算非预期红；
+- `reportedSyncFallbacks` 应为数字（不为 null）。实际值作为证据记录，不加断言；
+- baseline（浅色、深色）、lint、unit-tests 必须全绿；unit-tests 预期 94/94（原来 88 条，加上 `VideoGifPlanTest` 6 条）。

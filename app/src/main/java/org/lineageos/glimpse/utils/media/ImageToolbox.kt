@@ -62,6 +62,8 @@ data class ToolboxResult(
     val originalBytes: Long?,
     /** Resulting size in bytes. */
     val resultBytes: Long,
+    /** Video to GIF only: frames that fell back from OPTION_CLOSEST to OPTION_CLOSEST_SYNC. */
+    val syncFallbackFrames: Int = 0,
 )
 
 /**
@@ -379,53 +381,52 @@ object ImageToolbox {
             val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
                 ?.toLongOrNull() ?: 0L
             val total = durationMs.coerceAtLeast(1L)
-            val windowMs = (durationSeconds * 1000L).coerceAtMost(total)
+            // At most maxFrames / MIN_FPS seconds, so the effective rate never drops below MIN_FPS.
+            val seconds = durationSeconds.coerceIn(1, VideoGifPlan.maxSeconds(maxFrames).coerceAtLeast(1))
+            val windowUs = (seconds * 1000L).coerceAtMost(total) * 1000L
 
-            val intervalUs = (1_000_000L / fps.coerceIn(1, 15)).coerceAtLeast(1L)
-            val frames = ArrayList<GifCodec.GifFrame>()
-
-            val frameDelayMs = (1000 / fps.coerceIn(1, 15)).toInt().coerceAtLeast(33)
-            var tUs = 0L
-            var consecutiveNulls = 0
-            while (tUs < windowMs * 1000L && frames.size < maxFrames) {
-                var bmp: Bitmap? = null
-                try {
-                    bmp = retriever.getFrameAtTime(tUs, MediaMetadataRetriever.OPTION_CLOSEST)
-                        ?: retriever.getFrameAtTime(tUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+            // Uniform plan: N = min(maxFrames, ceil(window * fps)) frames at t_i = i * window / N.
+            val plan = VideoGifPlan.sampleTimesUs(windowUs, fps.coerceIn(1, 15), maxFrames)
+            val bitmaps = ArrayList<Bitmap>(plan.size)
+            val keptTimesUs = ArrayList<Long>(plan.size)
+            var failed = 0
+            var syncFallbacks = 0
+            plan.forEachIndexed { index, tUs ->
+                var bmp: Bitmap? = try {
+                    retriever.getFrameAtTime(tUs, MediaMetadataRetriever.OPTION_CLOSEST)
                 } catch (e: Exception) {
-                    Log.w("ImageToolbox", "getFrameAtTime failed at $tUs us", e)
+                    Log.w("ImageToolbox", "getFrameAtTime(CLOSEST) failed at $tUs us", e)
+                    null
+                }
+                if (bmp == null) {
+                    bmp = try {
+                        retriever.getFrameAtTime(tUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                    } catch (e: Exception) {
+                        Log.w("ImageToolbox", "getFrameAtTime(CLOSEST_SYNC) failed at $tUs us", e)
+                        null
+                    }
+                    if (bmp != null) syncFallbacks++
                 }
                 if (bmp != null) {
                     val scaled = scaleDown(bmp, maxEdge)
                     if (scaled !== bmp) bmp.recycle()
-                    frames.add(GifCodec.GifFrame(scaled, frameDelayMs))
-                    consecutiveNulls = 0
+                    bitmaps.add(scaled)
+                    keptTimesUs.add(tUs)
                 } else {
-                    consecutiveNulls++
-                    if (consecutiveNulls > 6) {
-                        tUs += intervalUs * 2
-                        consecutiveNulls = 0
-                        onProgress?.invoke((tUs.toFloat() / (windowMs * 1000f)).coerceIn(0f, 1f))
-                        continue
-                    }
+                    // No skipping ahead: the frame before absorbs this frame's time.
+                    failed++
                 }
-                onProgress?.invoke((tUs.toFloat() / (windowMs * 1000f)).coerceIn(0f, 1f))
-                tUs += intervalUs
+                onProgress?.invoke(((index + 1).toFloat() / plan.size).coerceIn(0f, 1f))
             }
-            if (frames.isEmpty()) {
-                try {
-                    val bmp = retriever.getFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST)
-                        ?: retriever.getFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
-                    if (bmp != null) {
-                        val scaled = scaleDown(bmp, maxEdge)
-                        if (scaled !== bmp) bmp.recycle()
-                        frames.add(GifCodec.GifFrame(scaled, frameDelayMs))
-                    }
-                } catch (e: Exception) {
-                    Log.w("ImageToolbox", "fallback frame at 0 failed", e)
-                }
+            if (bitmaps.isEmpty() || VideoGifPlan.tooManyFailures(failed, plan.size)) {
+                bitmaps.forEach { it.recycle() }
+                throw IllegalStateException(
+                    "Extracted ${plan.size - failed}/${plan.size} frames — video may be DRM or unsupported: $sourceUri"
+                )
             }
-            if (frames.isEmpty()) throw IllegalStateException("No frames extracted — video may be DRM or unsupported: $sourceUri")
+            // Each frame lasts until the next extracted frame; the last one until the end of the clip.
+            val delaysMs = VideoGifPlan.delaysMs(keptTimesUs, windowUs)
+            val frames = bitmaps.mapIndexed { i, bitmap -> GifCodec.GifFrame(bitmap, delaysMs[i]) }
 
             val out = ByteArrayOutputStream()
             GifCodec.encode(frames, out, loopCount = 0)
@@ -444,6 +445,7 @@ object ImageToolbox {
                 displayName = outName,
                 originalBytes = null,
                 resultBytes = data.size.toLong(),
+                syncFallbackFrames = syncFallbacks,
             )
         } finally {
             try { fd?.close() } catch (_: Exception) {}
