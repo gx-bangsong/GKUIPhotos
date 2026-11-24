@@ -9,6 +9,10 @@ import android.content.ContentResolver
 import android.content.ContentValues
 import android.net.Uri
 import android.provider.MediaStore
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
 import java.io.FileNotFoundException
 import java.io.OutputStream
 
@@ -17,16 +21,16 @@ import java.io.OutputStream
  *
  * The row is inserted with IS_PENDING=1, filled, then published with IS_PENDING=0. If anything
  * fails before it is published (a write error, a missing output stream, a publish that updates
- * no row, or a cancellation thrown by `ensureActive`), the row is deleted and the original
- * exception is rethrown unchanged. A failing delete is attached to it as a suppressed exception.
+ * no row, or cancellation of the calling coroutine), the row is deleted in a NonCancellable
+ * context and the original exception, including a CancellationException, is rethrown unchanged.
+ * A failing delete is attached to it as a suppressed exception.
  */
 object PendingMediaStoreWrite {
 
-    fun insert(
+    suspend fun insert(
         resolver: ContentResolver,
         collection: Uri,
         values: ContentValues,
-        ensureActive: () -> Unit = {},
         write: (OutputStream) -> Unit,
     ): Uri = runSequence(
         insert = {
@@ -48,29 +52,31 @@ object PendingMediaStoreWrite {
             val rows = resolver.delete(uri, null, null)
             check(rows > 0) { "Cleanup of $uri deleted $rows rows" }
         },
-        ensureActive = ensureActive,
     )
 
     /** The insert / write / publish / clean-up sequence, independent of Android types for testing. */
-    internal fun <T> runSequence(
+    internal suspend fun <T> runSequence(
         insert: () -> T,
         write: (T) -> Unit,
         publish: (T) -> Unit,
-        delete: (T) -> Unit,
-        ensureActive: () -> Unit = {},
+        delete: suspend (T) -> Unit,
     ): T {
-        ensureActive()
+        val coroutine = currentCoroutineContext()
+        coroutine.ensureActive()
         val row = insert()
         try {
-            ensureActive()
+            coroutine.ensureActive()
             write(row)
-            ensureActive()
+            coroutine.ensureActive()
             publish(row)
         } catch (original: Throwable) {
-            try {
-                delete(row)
-            } catch (cleanup: Throwable) {
-                original.addSuppressed(cleanup)
+            // After a cancellation the clean-up must still run, including any suspension inside it.
+            withContext(NonCancellable) {
+                try {
+                    delete(row)
+                } catch (cleanup: Throwable) {
+                    original.addSuppressed(cleanup)
+                }
             }
             throw original
         }

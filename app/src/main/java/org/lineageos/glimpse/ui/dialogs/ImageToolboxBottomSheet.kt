@@ -25,9 +25,8 @@ import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
 import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.google.android.material.slider.Slider
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.lineageos.glimpse.IdPhotoActivity
@@ -517,14 +516,12 @@ class ImageToolboxBottomSheet(
         val mainHandler = Handler(Looper.getMainLooper())
         launchHeavy(progressive = true) { onProgress ->
             // Cancelling the coroutine stops the extraction and deletes a pending MediaStore row.
-            val coroutine = currentCoroutineContext()
-            ImageToolbox.videoToGif(
+            ImageToolbox.videoToGifCancellable(
                 context,
                 videoMedia.uri,
                 durationSeconds = seconds,
                 fps = fps,
                 maxEdge = maxEdge,
-                ensureActive = { coroutine.ensureActive() },
             ) { p ->
                 mainHandler.post { onProgress(p) }
             }
@@ -565,6 +562,8 @@ class ImageToolboxBottomSheet(
                 Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
                 onComplete?.invoke()
             }.onFailure {
+                // Cancellation is not a failure: propagate it unchanged (any clean-up already ran).
+                if (it is CancellationException) throw it
                 progressBar.isVisible = false
                 android.util.Log.e("GlimpseToolbox", "toolbox operation failed", it)
                 Toast.makeText(

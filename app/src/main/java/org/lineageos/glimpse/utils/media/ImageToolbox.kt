@@ -20,6 +20,9 @@ import android.net.Uri
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.runBlocking
 import java.io.ByteArrayOutputStream
 import java.io.OutputStream
 
@@ -352,8 +355,8 @@ object ImageToolbox {
      * extracted with [MediaMetadataRetriever] (framework-only) and encoded with
      * the bundled [GifCodec].
      *
-     * @param ensureActive Throws to cancel (for example a coroutine's `ensureActive`); checked
-     *   for every frame and around the MediaStore write, whose pending row is then deleted.
+     * Blocking version for callers without a coroutine; see [videoToGifCancellable].
+     *
      * @param onProgress Optional callback reporting progress in 0..1.
      */
     fun videoToGif(
@@ -363,9 +366,26 @@ object ImageToolbox {
         fps: Int = 8,
         maxEdge: Int = 480,
         maxFrames: Int = 36,
-        ensureActive: () -> Unit = {},
+        onProgress: ((Float) -> Unit)? = null,
+    ): ToolboxResult = runBlocking {
+        videoToGifCancellable(context, sourceUri, durationSeconds, fps, maxEdge, maxFrames, onProgress)
+    }
+
+    /**
+     * [videoToGif] for coroutines: cancelling the calling coroutine stops the frame extraction,
+     * and a cancellation during the MediaStore write deletes the pending row (in a
+     * NonCancellable context) before the CancellationException is rethrown.
+     */
+    suspend fun videoToGifCancellable(
+        context: Context,
+        sourceUri: Uri,
+        durationSeconds: Int = 5,
+        fps: Int = 8,
+        maxEdge: Int = 480,
+        maxFrames: Int = 36,
         onProgress: ((Float) -> Unit)? = null,
     ): ToolboxResult {
+        val coroutine = currentCoroutineContext()
         val resolver = context.contentResolver
         val retriever = MediaMetadataRetriever()
         var fd: android.content.res.AssetFileDescriptor? = null
@@ -395,7 +415,7 @@ object ImageToolbox {
             var failed = 0
             var syncFallbacks = 0
             plan.forEachIndexed { index, tUs ->
-                ensureActive()
+                coroutine.ensureActive()
                 var bmp: Bitmap? = try {
                     retriever.getFrameAtTime(tUs, MediaMetadataRetriever.OPTION_CLOSEST)
                 } catch (e: Exception) {
@@ -448,7 +468,6 @@ object ImageToolbox {
                     put(MediaStore.Images.Media.MIME_TYPE, "image/gif")
                     put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/Glimpse")
                 },
-                ensureActive,
             ) { it.write(data) }
             onProgress?.invoke(1f)
             return ToolboxResult(

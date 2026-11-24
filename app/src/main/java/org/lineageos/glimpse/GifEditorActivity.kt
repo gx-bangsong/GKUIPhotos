@@ -29,7 +29,6 @@ import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.progressindicator.CircularProgressIndicator
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.lineageos.glimpse.utils.media.GifCodec
@@ -245,9 +244,8 @@ class GifEditorActivity : AppCompatActivity(R.layout.activity_gif_editor) {
                 return@launch
             }
             val ok = withContext(Dispatchers.IO) {
-                val coroutine = coroutineContext
                 try {
-                    writeToMediaStore(data) { coroutine.ensureActive() }
+                    writeToMediaStore(data)
                     true
                 } catch (e: CancellationException) {
                     // The pending row is already deleted; let the cancellation propagate.
@@ -270,7 +268,7 @@ class GifEditorActivity : AppCompatActivity(R.layout.activity_gif_editor) {
     }
 
     /** Writes [bytes] as a new GIF; a failed or cancelled write leaves no pending row behind. */
-    private fun writeToMediaStore(bytes: ByteArray, ensureActive: () -> Unit): Uri {
+    private suspend fun writeToMediaStore(bytes: ByteArray): Uri {
         val collection = android.provider.MediaStore.Images.Media
             .getContentUri(android.provider.MediaStore.VOLUME_EXTERNAL_PRIMARY)
         val name = "Glimpse_GIF_${System.currentTimeMillis()}"
@@ -282,7 +280,7 @@ class GifEditorActivity : AppCompatActivity(R.layout.activity_gif_editor) {
                 "${android.os.Environment.DIRECTORY_PICTURES}/Glimpse"
             )
         }
-        return PendingMediaStoreWrite.insert(contentResolver, collection, values, ensureActive) {
+        return PendingMediaStoreWrite.insert(contentResolver, collection, values) {
             it.write(bytes)
         }
     }
