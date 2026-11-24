@@ -167,12 +167,13 @@ jobs:
           path: ui-evidence/
           if-no-files-found: warn
   return-evidence:
-    # Never give PR code from a fork write access; only the approved repository PR can report.
-    if: always() && github.event_name == 'pull_request' && github.event.pull_request.number == 4 && github.event.pull_request.head.repo.full_name == github.repository
+    # Never give PR code from a fork write access: only pull requests whose head branch lives in
+    # this repository report back, each to its own PR (number taken from the event payload).
+    if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     needs: [lint, screenshots, apk, unit-tests]
     runs-on: ubuntu-latest
     concurrency:
-      group: ui-evidence-pr-4
+      group: ui-evidence-pr-${{ github.event.pull_request.number }}
       cancel-in-progress: false
     permissions:
       contents: write
@@ -195,6 +196,7 @@ jobs:
           UI_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
           UI_RETURN_DIR: ${{ runner.temp }}/ui-return
           UI_EVIDENCE_DIR: ui-collected
+          UI_PR_NUMBER: ${{ github.event.pull_request.number }}
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -212,7 +214,7 @@ jobs:
           owner=${GITHUB_REPOSITORY%/*}
           repo=${GITHUB_REPOSITORY#*/}
           query='query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){comments(last:100){nodes{databaseId author{login} body}}}}}'
-          if ! gh api graphql -f query="$query" -f owner="$owner" -f name="$repo" -F number=4 --jq '[.data.repository.pullRequest.comments.nodes[] | select(.author.login == "github-actions" or .author.login == "github-actions[bot]") | select(.body | contains("<!-- arena-ui-evidence -->"))] | last | .databaseId // empty' > "$UI_RETURN_DIR/comment-id.txt" 2>/dev/null; then
+          if ! gh api graphql -f query="$query" -f owner="$owner" -f name="$repo" -F number="$UI_PR_NUMBER" --jq '[.data.repository.pullRequest.comments.nodes[] | select(.author.login == "github-actions" or .author.login == "github-actions[bot]") | select(.body | contains("<!-- arena-ui-evidence -->"))] | last | .databaseId // empty' > "$UI_RETURN_DIR/comment-id.txt" 2>/dev/null; then
             echo '::error::Unable to find the existing evidence comment.'
             exit 1
           fi
@@ -223,10 +225,12 @@ jobs:
               exit 1
             fi
           else
-            if ! gh api --method POST "repos/$GITHUB_REPOSITORY/issues/4/comments" -F "body=@$UI_RETURN_DIR/comment.md" --silent 2>/dev/null; then
+            if ! gh api --method POST "repos/$GITHUB_REPOSITORY/issues/$UI_PR_NUMBER/comments" -F "body=@$UI_RETURN_DIR/comment.md" --jq .id > "$UI_RETURN_DIR/comment-id.txt" 2>/dev/null; then
               echo '::error::Unable to create the evidence comment.'
               exit 1
             fi
+            # Keep the new comment id so the APK metadata update below can patch it.
+            comment_id=$(cat "$UI_RETURN_DIR/comment-id.txt")
           fi
           if [[ ! -f "$UI_EVIDENCE_DIR/ui-apk/app-debug.apk" ]]; then
             echo '::error::Debug APK evidence is missing.'
@@ -236,8 +240,12 @@ jobs:
             echo "::error::APK metadata validation failed: $(head -c 300 "$UI_RETURN_DIR/apk-error.txt")"
             exit 1
           fi
-          if ! gh api --method POST "repos/$GITHUB_REPOSITORY/git/blobs" --input "$UI_RETURN_DIR/apk-blob-payload.json" --jq .sha > "$UI_RETURN_DIR/apk-blob-sha.txt" 2>/dev/null; then
-            echo '::error::Unable to create the detached APK blob.'
+          # Keep gh's stderr so a failure reports its HTTP status and sanitized message (no retry).
+          if gh api --method POST "repos/$GITHUB_REPOSITORY/git/blobs" --input "$UI_RETURN_DIR/apk-blob-payload.json" --jq .sha > "$UI_RETURN_DIR/apk-blob-sha.txt" 2> "$UI_RETURN_DIR/apk-blob-stderr.txt"; then
+            :
+          else
+            apk_blob_exit=$?
+            python3 scripts/ui-blob-error.py 'Detached APK blob upload' "$UI_RETURN_DIR/apk-blob-stderr.txt" "$apk_blob_exit"
             exit 1
           fi
           python3 scripts/write-ui-comment.py

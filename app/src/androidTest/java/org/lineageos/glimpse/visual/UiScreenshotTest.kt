@@ -47,7 +47,10 @@ import org.junit.Assume.assumeTrue
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
+import org.junit.AssumptionViolatedException
 import org.junit.rules.TestName
+import org.junit.rules.TestRule
+import org.junit.runners.model.Statement
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.lineageos.glimpse.ImageEditorActivity
@@ -61,6 +64,14 @@ import java.io.File
 import java.security.MessageDigest
 import java.util.UUID
 
+/**
+ * Marks a test that only runs on the candidate. [UiScreenshotTest.candidateOnly] skips it on the
+ * baseline before any @Before runs, so the baseline neither inserts nor deletes fixture images for it.
+ */
+@Retention(AnnotationRetention.RUNTIME)
+@Target(AnnotationTarget.FUNCTION)
+private annotation class CandidateOnly(val reason: String)
+
 @RunWith(AndroidJUnit4::class)
 class UiScreenshotTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
@@ -70,6 +81,13 @@ class UiScreenshotTest {
     private val insertedImages = mutableSetOf<Uri>()
     private val shellEvidence = mutableListOf<String>()
     @get:Rule val testName = TestName()
+    // Outermost rule: a baseline skip must happen before createFixtures inserts images and cleanup deletes them.
+    @get:Rule(order = Int.MIN_VALUE) val candidateOnly = TestRule { base, description ->
+        val marker = description.getAnnotation(CandidateOnly::class.java)
+        if (marker == null || isCandidate()) base else object : Statement() {
+            override fun evaluate() { throw AssumptionViolatedException(marker.reason) }
+        }
+    }
     private var activity: Activity? = null
     private val output by lazy { File(context.getExternalFilesDir(null), "ui-screenshots").apply { mkdirs() } }
 
@@ -210,6 +228,12 @@ class UiScreenshotTest {
         val beforeEvidence = publishDiagnostic("selection-trace-foreign-before-${testName.methodName}.txt", "text/plain", beforeTrace.toByteArray())
         var afterEvidence: Uri? = null
         var deleted = 0
+        // Rows found after the first query: record _data, date_added and whether the file is on disk.
+        fun describeRows(label: String, rows: List<FixtureRecord>) = rows.joinToString("") { row ->
+            val onDisk = runCatching { exists(row.data) }.getOrElse { "error:${it.javaClass.simpleName}" }
+            "$label id=${row.id} data=${row.data} date_added_seconds=${row.dateAdded} owner=${row.owner} file_exists=$onDisk\n"
+        }
+        var secondQuery = ""
         val fileResults = mutableListOf<String>()
         try {
             before.forEach { row ->
@@ -229,11 +253,13 @@ class UiScreenshotTest {
                 deleted++
             }
             val remaining = foreignRows()
+            secondQuery = describeRows("second_query", remaining)
             check(remaining.isEmpty()) { "Foreign fixtures remain after cleanup: $remaining" }
         } finally {
             val remaining = foreignRows()
             val afterTrace = "test=${testName.methodName} before=${before.size} deleted=$deleted " +
                 "remaining=${remaining.size}\n" + remaining.joinToString("\n", postfix = "\n") +
+                secondQuery + describeRows("final_query", remaining) +
                 fileResults.joinToString("\n", postfix = "\n") +
                 shellEvidence.joinToString("\n", postfix = "\n")
             afterEvidence = publishDiagnostic("selection-trace-foreign-after-${testName.methodName}.txt", "text/plain", afterTrace.toByteArray())
@@ -592,6 +618,7 @@ class UiScreenshotTest {
         }
     }
 
+    @CandidateOnly("Candidate navigation evidence")
     @Test fun markupNonMarkupCategories() {
         assumeTrue("Candidate navigation evidence", isCandidate())
         start(ImageEditorActivity.createIntent(context, images.first(), "image/jpeg"))
@@ -599,6 +626,7 @@ class UiScreenshotTest {
         capture("markup-dock-non-markup")
     }
 
+    @CandidateOnly("Candidate editor styling")
     @Test fun markupMatchesEditorColorsAndCentersOptions() {
         assumeTrue("Candidate editor styling", isCandidate())
         editor()
@@ -760,6 +788,7 @@ class UiScreenshotTest {
         capture("markup-mosaic")
     }
     @Test fun markupSticker() { editor(); tool(R.string.editor_markup_sticker); capture("markup-sticker") }
+    @CandidateOnly("Inventory entrances are candidate-only")
     @Test fun markupInventoryImportEntrances() {
         assumeTrue("Inventory entrances are candidate-only", isCandidate())
         editor()
@@ -844,6 +873,7 @@ class UiScreenshotTest {
         }
         capture("markup-text-black")
     }
+    @CandidateOnly("Subtool dock is candidate-only")
     @Test fun markupFixedSubtoolDockPreservesFrameAndSelection() {
         assumeTrue("Subtool dock is candidate-only", isCandidate())
         editor()
@@ -950,6 +980,7 @@ class UiScreenshotTest {
         capture("markup-dock-done")
     }
 
+    @CandidateOnly("Subtool dock is candidate-only")
     @Test fun markupDockNarrowAndLargeFont() {
         assumeTrue("Subtool dock is candidate-only", isCandidate())
         val previousScale = device.executeShellCommand("settings get system font_scale").trim()
@@ -987,6 +1018,7 @@ class UiScreenshotTest {
         }
     }
 
+    @CandidateOnly("Editor style evidence is candidate-only")
     @Test fun markupEditorToolStyleAndMaterialSaveDialog() {
         assumeTrue("Editor style evidence is candidate-only", isCandidate())
         editor()
@@ -1031,6 +1063,7 @@ class UiScreenshotTest {
         device.pressBack()
     }
 
+    @CandidateOnly("Flat effect selector only applies to the candidate")
     @Test fun markupMosaicChoices() {
         assumeTrue("Flat effect selector only applies to the candidate", isCandidate())
         editor(); tool(R.string.editor_markup_mosaic)
@@ -1091,9 +1124,11 @@ class UiScreenshotTest {
     @Test fun collageTwoLayouts() { collageLayouts(2, "collage-two-layouts") }
     @Test fun collageSixLayouts() { collageLayouts(6, "collage-six-layouts") }
 
+    @CandidateOnly("Custom shape UI is candidate-only")
     @Test fun markupCustomShapeImportDrawAndDelete() = exerciseCustomShapeImport(bypassSaf = false)
 
     // Bypass the system picker only in this diagnostic; the other test still exercises it.
+    @CandidateOnly("Custom shape UI is candidate-only")
     @Test fun markupCustomShapeImportWithResultIntent() = exerciseCustomShapeImport(bypassSaf = true)
 
     private fun exerciseCustomShapeImport(bypassSaf: Boolean) {
@@ -1229,6 +1264,7 @@ class UiScreenshotTest {
         }
     }
 
+    @CandidateOnly("Separate text handles are candidate-only")
     @Test fun markupTextResizeAndRotateHaveSeparateWindowHandles() {
         assumeTrue("Separate text handles are candidate-only", isCandidate())
         editor(); tool(R.string.editor_markup_text)
@@ -1270,6 +1306,7 @@ class UiScreenshotTest {
         capture("markup-text-separate-handles")
     }
 
+    @CandidateOnly("Overwrite result is candidate-only")
     @Test fun markupOverwriteWritesSyntheticOriginal() {
         assumeTrue("Overwrite result is candidate-only", isCandidate())
         editor()
@@ -1290,6 +1327,7 @@ class UiScreenshotTest {
         assertEquals(48, decoded!!.width); assertEquals(48, decoded.height); decoded.recycle()
     }
 
+    @CandidateOnly("Text layout is candidate-only")
     @Test fun markupMultilineFontAndAlignment() {
         assumeTrue("Text layout is candidate-only", isCandidate())
         editor(); tool(R.string.editor_markup_text)
@@ -1378,6 +1416,7 @@ class UiScreenshotTest {
         }
     }
 
+    @CandidateOnly("Font import is candidate-only")
     @Test fun markupFontImportValidationAndRecreation() {
         assumeTrue("Font import is candidate-only", isCandidate())
         editor(); tool(R.string.editor_markup_text)
@@ -1529,6 +1568,7 @@ class UiScreenshotTest {
         cache.deleteRecursively()
     }
 
+    @CandidateOnly("Text export scenario is candidate-only")
     @Test fun markupImportedFontCropAndSavedOutput() {
         assumeTrue("Text export scenario is candidate-only", isCandidate())
         val collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
@@ -1627,6 +1667,7 @@ class UiScreenshotTest {
         }
     }
 
+    @CandidateOnly("Font page is candidate-only")
     @Test fun markupFontPageUsesSpacedTouchTargets() {
         assumeTrue("Font page is candidate-only", isCandidate())
         editor(); tool(R.string.editor_markup_text)
@@ -1678,6 +1719,7 @@ class UiScreenshotTest {
         capture("markup-font-styled")
     }
 
+    @CandidateOnly("Text control spacing is candidate-only")
     @Test fun markupTextControlsHaveSeparateTouchTargets() {
         assumeTrue("Text control spacing is candidate-only", isCandidate())
         editor(); tool(R.string.editor_markup_text)
@@ -1723,10 +1765,13 @@ class UiScreenshotTest {
         subtool(R.string.editor_markup_text_bg)
         instrumentation.runOnMainSync {
             val root = activity!!.findViewById<ViewGroup>(R.id.markupOptionsContent)
-            val background = requireNotNull(findText(root, activity!!.getString(R.string.editor_markup_text_bg)))
-            assertTrue("Background touch target too small", background.height >= (48f * context.resources.displayMetrics.density).toInt())
+            val noBackgroundLabel = activity!!.getString(activity!!.resources.getIdentifier("markup_no_background", "string", activity!!.packageName))
+            val noBackground = requireNotNull(findText(root, "⊘")) { "No-background control (⊘) missing" }
+            assertEquals("⊘ lacks its accessibility label", noBackgroundLabel, noBackground.contentDescription)
+            val min = (48f * context.resources.displayMetrics.density).toInt()
+            assertTrue("No-background (⊘) touch target too small", noBackground.width >= min && noBackground.height >= min)
             assertTrue("Text action must not appear on the background page", findText(root, activity!!.getString(R.string.markup_text_action)) == null)
-            assertTrue("Background control must be clickable", background.isClickable)
+            assertTrue("No-background (⊘) control must be clickable", noBackground.isClickable)
         }
         subtool(R.string.markup_color_section)
         assertNotNull("Text color choices missing", device.findObject(By.desc(context.getString(R.string.markup_color_black))))
@@ -1766,6 +1811,33 @@ class UiScreenshotTest {
                     "itemBackgroundColor=$itemColor undoHistoryCount=${history.size}"
             }
         }
+        fun exportBackgroundAlpha(): Int {
+            var alpha = -1
+            instrumentation.runOnMainSync {
+                val item = requireNotNull(overlay.activeText)
+                val bounds = android.graphics.RectF().also { item.computeBounds(it) }
+                val matrix = android.graphics.Matrix().apply { setTranslate(256f - bounds.centerX(), 256f - bounds.centerY()) }
+                val sampleY = (256f - bounds.height() / 2f + 3f).toInt()
+                assertTrue("Background sample outside export", sampleY in 0 until 512)
+                val getBounds = overlay.javaClass.getMethod("getBaseBoundsProvider")
+                val setBounds = overlay.javaClass.getMethod("setBaseBoundsProvider", kotlin.jvm.functions.Function0::class.java)
+                val oldBounds = getBounds.invoke(overlay)
+                val doc = overlay.javaClass.getMethod("retainDocument").invoke(overlay)
+                val exportBounds: () -> android.graphics.RectF = { android.graphics.RectF(-100000f, -100000f, 100000f, 100000f) }
+                val bitmap = Bitmap.createBitmap(512, 512, Bitmap.Config.ARGB_8888)
+                try {
+                    setBounds.invoke(overlay, exportBounds)
+                    overlay.javaClass.getMethod("rasterize", android.graphics.Canvas::class.java, android.graphics.Matrix::class.java)
+                        .invoke(overlay, android.graphics.Canvas(bitmap), matrix)
+                    alpha = Color.alpha(bitmap.getPixel(256, sampleY))
+                } finally {
+                    setBounds.invoke(overlay, oldBounds)
+                    overlay.javaClass.getMethod("restoreRetainedDocument", Any::class.java).invoke(overlay, doc)
+                    bitmap.recycle()
+                }
+            }
+            return alpha
+        }
         try {
         subtool(R.string.editor_markup_text_bg)
         fun newString(name: String): String {
@@ -1773,6 +1845,17 @@ class UiScreenshotTest {
             assertTrue("Missing $name", id != 0)
             return context.getString(id)
         }
+        // ⊘ is the only no-background entry: it must remove the background from the export,
+        // and undo must bring the same background back.
+        val exportedWithBackground = exportBackgroundAlpha()
+        assertTrue("Text background must be exported before ⊘", exportedWithBackground > 0)
+        requireNotNull(device.wait(Until.findObject(By.desc(newString("markup_no_background"))), 5000)) {
+            "No-background control (⊘) missing"
+        }.click()
+        device.waitForIdle()
+        assertEquals("⊘ must remove the background from the export", 0, exportBackgroundAlpha())
+        instrumentation.runOnMainSync { assertTrue("⊘ undo unavailable", overlay.undo()) }
+        assertEquals("Undo must restore the exported background", exportedWithBackground, exportBackgroundAlpha())
         val noBackground = device.wait(Until.findObject(By.desc(newString("markup_no_background"))), 5000)
         assertNotNull("No-background control missing", noBackground)
         noBackground!!.click(); device.waitForIdle()
@@ -1835,33 +1918,6 @@ class UiScreenshotTest {
         val white = device.wait(Until.findObject(By.desc(newString("markup_color_white"))), 5000)
         assertNotNull("Opaque background swatch missing", white)
         white!!.click(); device.waitForIdle()
-        fun exportBackgroundAlpha(): Int {
-            var alpha = -1
-            instrumentation.runOnMainSync {
-                val item = requireNotNull(overlay.activeText)
-                val bounds = android.graphics.RectF().also { item.computeBounds(it) }
-                val matrix = android.graphics.Matrix().apply { setTranslate(256f - bounds.centerX(), 256f - bounds.centerY()) }
-                val sampleY = (256f - bounds.height() / 2f + 3f).toInt()
-                assertTrue("Background sample outside export", sampleY in 0 until 512)
-                val getBounds = overlay.javaClass.getMethod("getBaseBoundsProvider")
-                val setBounds = overlay.javaClass.getMethod("setBaseBoundsProvider", kotlin.jvm.functions.Function0::class.java)
-                val oldBounds = getBounds.invoke(overlay)
-                val doc = overlay.javaClass.getMethod("retainDocument").invoke(overlay)
-                val exportBounds: () -> android.graphics.RectF = { android.graphics.RectF(-100000f, -100000f, 100000f, 100000f) }
-                val bitmap = Bitmap.createBitmap(512, 512, Bitmap.Config.ARGB_8888)
-                try {
-                    setBounds.invoke(overlay, exportBounds)
-                    overlay.javaClass.getMethod("rasterize", android.graphics.Canvas::class.java, android.graphics.Matrix::class.java)
-                        .invoke(overlay, android.graphics.Canvas(bitmap), matrix)
-                    alpha = Color.alpha(bitmap.getPixel(256, sampleY))
-                } finally {
-                    setBounds.invoke(overlay, oldBounds)
-                    overlay.javaClass.getMethod("restoreRetainedDocument", Any::class.java).invoke(overlay, doc)
-                    bitmap.recycle()
-                }
-            }
-            return alpha
-        }
         val opaqueExportAlpha = exportBackgroundAlpha()
         assertEquals("Opaque background export alpha", 255, opaqueExportAlpha)
         requireNotNull(device.findObject(By.desc(newString("markup_custom_color")))).click()
@@ -1912,6 +1968,7 @@ class UiScreenshotTest {
         }
     }
 
+    @CandidateOnly("Collage gesture changes are candidate-only")
     @Test fun collagePreviewGesturesStayOnTheirStartingPhoto() {
         assumeTrue("Collage gesture changes are candidate-only", isCandidate())
         collage(2)
@@ -1970,6 +2027,7 @@ class UiScreenshotTest {
         }
     }
 
+    @CandidateOnly("Collage divider changes are candidate-only")
     @Test fun collageSplitControlAndBottomSave() {
         assumeTrue("Collage divider changes are candidate-only", isCandidate())
         collage(4)
@@ -2059,6 +2117,7 @@ class UiScreenshotTest {
         }
     }
     @Test fun collageSix() { collage(6); capture("collage-six") }
+    @CandidateOnly("Preview reorder is candidate-only")
     @Test fun collageDragAndZoom() {
         assumeTrue("Preview reorder is candidate-only", isCandidate())
         collage(3)
@@ -2107,6 +2166,7 @@ class UiScreenshotTest {
         }
     }
 
+    @CandidateOnly("Direct divider is candidate-only")
     @Test fun collageSplitGestureChangesGeometry() {
         assumeTrue("Direct divider is candidate-only", isCandidate())
         collage(4)
@@ -2136,6 +2196,7 @@ class UiScreenshotTest {
         capture("collage-preview-split")
     }
 
+    @CandidateOnly("Preview-only controls are candidate-only")
     @Test fun collagePreviewForAllPhotoCounts() {
         assumeTrue("Preview-only controls are candidate-only", isCandidate())
         for (count in 2..6) {
@@ -2152,6 +2213,7 @@ class UiScreenshotTest {
         }
     }
 
+    @CandidateOnly("Preview-only controls are candidate-only")
     @Test fun collageLandscapeBottomSave() {
         assumeTrue("Preview-only controls are candidate-only", isCandidate())
         try {
@@ -2171,6 +2233,7 @@ class UiScreenshotTest {
         }
     }
 
+    @CandidateOnly("Preview gestures are candidate-only")
     @Test fun collagePinchThroughWindow() {
         assumeTrue("Preview gestures are candidate-only", isCandidate())
         collage(2)
@@ -2213,6 +2276,7 @@ class UiScreenshotTest {
         }
     }
 
+    @CandidateOnly("Preview reorder is candidate-only")
     @Test fun collagePreviewCancelAndTemplateIndependence() {
         assumeTrue("Preview reorder is candidate-only", isCandidate())
         collage(4)
@@ -2300,6 +2364,7 @@ class UiScreenshotTest {
         }
     }
 
+    @CandidateOnly("Photo action mode is candidate-only")
     @Test fun collageEditReturnsPhotoAndPreservesComposition() {
         assumeTrue("Photo action mode is candidate-only", isCandidate())
         collage(2)
@@ -2329,6 +2394,7 @@ class UiScreenshotTest {
         assertNotNull(device.findObject(By.res(context.packageName, "collageDone")))
     }
 
+    @CandidateOnly("Preview gestures are candidate-only")
     @Test fun collagePanThroughWindow() {
         assumeTrue("Preview gestures are candidate-only", isCandidate())
         collage(2)

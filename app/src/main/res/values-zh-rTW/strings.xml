@@ -376,6 +376,8 @@
     <string name="toolbox_compress_run">壓縮</string>
     <string name="toolbox_convert_run">轉換</string>
     <string name="toolbox_video_to_gif_run">產生 GIF</string>
+    <string name="toolbox_video_to_gif_estimate">約 %1$d 秒 • %2$d fps • %3$dp • 約 %4$d 幀</string>
+    <string name="toolbox_video_to_gif_estimate_reduced">約 %1$d 秒 • %2$s fps（已從 %3$d fps 降低，上限 %5$d 幀）• %4$dp • %5$d 幀</string>
 
     <!-- 分享隱私（模組 2） -->
     <string name="share_privacy_title">隱私分享</string>

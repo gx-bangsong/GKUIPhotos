@@ -1609,18 +1609,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                     markupOptionsContent.addView(row)
                 }
                 MarkupSubtool.BACKGROUND -> addMarkupSection(R.string.editor_markup_text_bg, true, false) {
-                    markupOptionsContent.addView(Chip(this).apply {
-                        minHeight = (48 * density).toInt()
-                        text = getString(R.string.editor_markup_text_bg)
-                        isCheckable = true
-                        isChecked = annotationOverlayView.activeText?.hasBackgroundPill
-                            ?: annotationOverlayView.hasTextBackgroundPill
-                        setOnCheckedChangeListener { _, checked ->
-                            annotationOverlayView.hasTextBackgroundPill = checked
-                            annotationOverlayView.editAnnotation { annotationOverlayView.activeText?.hasBackgroundPill = checked }
-                            showMarkupToolOptions(tool)
-                        }
-                    })
+                    // The palette's ⊘ button is the only "no background" entry.
                     addColorPalette(isTextBackground = true) { color ->
                         annotationOverlayView.editAnnotation {
                             annotationOverlayView.activeTextBackgroundColor = color

@@ -449,6 +449,8 @@
     <string name="toolbox_compress_run">Compress</string>
     <string name="toolbox_convert_run">Convert</string>
     <string name="toolbox_video_to_gif_run">Create GIF</string>
+    <string name="toolbox_video_to_gif_estimate">~%1$ds • %2$dfps • %3$dp • ~%4$d frames</string>
+    <string name="toolbox_video_to_gif_estimate_reduced">~%1$ds • %2$s fps (lowered from %3$d fps, limit %5$d frames) • %4$dp • %5$d frames</string>
 
     <!-- GIF editor (module 7) -->
     <string name="gif_editor_title">Edit GIF</string>

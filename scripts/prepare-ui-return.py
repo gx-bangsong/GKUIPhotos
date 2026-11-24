@@ -46,6 +46,16 @@ def clean(text):
     return text.replace('\r', ' ').replace('\n', ' ')[:450]
 
 
+def clean_full(text, keep_lines=False):
+    # Same redaction as clean(), plus content URIs, but bounded far above one assertion message.
+    text = re.sub(r'(?i)\b(?:https?|file|content)://[^\s"\'<>,)]+', '[uri]', text)
+    text = re.sub(r'(?i)(bearer|token|password|secret|signature|sig|authorization)\s*[:= ]\s*\S+', r'\1=[redacted]', text)
+    text = text.replace('\r', ' ')
+    if not keep_lines:
+        text = text.replace('\n', ' ')
+    return text[:200000]
+
+
 def analyze(path, density):
     tree = ET.parse(path)
     found = []
@@ -214,6 +224,28 @@ with zipfile.ZipFile(out / 'ui-evidence.zip', 'w', compression=zipfile.ZIP_DEFLA
                 continue
         if len(collage_suite):
             archive.writestr(f'{name}/collage-junit.xml', ET.tostring(collage_suite, encoding='utf-8', xml_declaration=True))
+        # GIF timing suite: full JUnit outcomes (passes included) and its synthetic text evidence.
+        # Messages are not truncated because each assertion joins every violation into one line.
+        gif_suite = ET.Element('testsuite', name='GifTimingInstrumentedTest')
+        for report in sorted((folder / 'test-results').rglob('*.xml')):
+            try:
+                for case in ET.parse(report).getroot().iter('testcase'):
+                    if case.get('classname') != 'org.lineageos.glimpse.visual.GifTimingInstrumentedTest':
+                        continue
+                    entry = ET.SubElement(gif_suite, 'testcase', {
+                        key: case.get(key, '') for key in ('classname', 'name', 'time')
+                    })
+                    for result in case:
+                        if result.tag in ('failure', 'error', 'skipped'):
+                            item = ET.SubElement(entry, result.tag, message=clean_full(result.get('message', '')))
+                            item.text = clean_full(result.text or '', keep_lines=True)
+            except ET.ParseError:
+                continue
+        if len(gif_suite):
+            archive.writestr(f'{name}/gif-junit.xml', ET.tostring(gif_suite, encoding='utf-8', xml_declaration=True))
+        for file in sorted(folder.glob('gif-*.txt')):
+            if file.is_file():
+                archive.writestr(f'{name}/{file.name}', clean_full(file.read_text(errors='replace'), keep_lines=True))
         for filename in ('wm-size.txt', 'wm-density.txt', 'font-scale.txt', 'night-mode.txt', 'failure-tail.txt', 'failure-stacks.txt',
                          'google-photos-status.txt', 'google-photos-error.txt', 'google-photos-start.png', 'google-photos-start.xml',
                          'google-photos-after-back.png', 'google-photos-after-back.xml',
