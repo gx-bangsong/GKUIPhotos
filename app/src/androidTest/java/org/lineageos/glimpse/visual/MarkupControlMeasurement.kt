@@ -27,7 +27,7 @@ internal class MarkupControlMeasurement(
     private val device: UiDevice,
 ) {
     private val lines = StringBuilder()
-    private var count = 0
+    private val records = linkedMapOf<String, Pair<String, String>>()
     private fun message(error: Throwable) = "${error.javaClass.name}: ${(error.message ?: "(no message)").replace('\n', ' ')}"
     private val metrics get() = activity.resources.displayMetrics
     private val density get() = metrics.density
@@ -147,7 +147,6 @@ internal class MarkupControlMeasurement(
     }
 
     fun record(name: String, resource: String? = null, description: String? = null, literal: String? = null) {
-        count++
         try {
             var result = "不存在"
             runOnMainWithTimeout(instrumentation, "measurement $name") {
@@ -161,14 +160,23 @@ internal class MarkupControlMeasurement(
                 }
                 result = describe(view)
             }
-            lines.append("$name: $result\n")
+            records[name] = (if (result == "不存在") "missing" else "measured") to result
         } catch (error: Throwable) {
-            lines.append("$name: 失败：测量 $name ${message(error)}\n")
+            records[name] = "measurement_failure" to "失败：测量 $name ${message(error)}"
         }
     }
 
     fun failed(names: List<String>, step: String, error: Throwable) {
-        names.forEach { name -> count++; lines.append("$name: 失败：$step ${message(error)}\n") }
+        names.forEach { name ->
+            if (name !in records) records[name] = "navigation_failure" to "失败：$step ${message(error)}"
+        }
     }
-    fun output(): String = lines.toString() + "control_total=$count\n"
+    fun output(): String = buildString {
+        append(lines)
+        records.forEach { (name, result) -> append("$name: ${result.second}\n") }
+        append("navigation_failures=${records.count { it.value.first == "navigation_failure" }} ")
+        append("measurement_failures=${records.count { it.value.first == "measurement_failure" }} ")
+        append("missing=${records.count { it.value.first == "missing" }}\n")
+        append("control_total=${records.size}\n")
+    }
 }

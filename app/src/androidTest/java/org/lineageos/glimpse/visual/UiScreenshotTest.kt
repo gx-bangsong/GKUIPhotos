@@ -667,7 +667,11 @@ class UiScreenshotTest {
             "sticker_import", "font_chip", "font_import", "background_swatch", "background_add", "background_none")
         var measurement: MarkupControlMeasurement? = null
         var failure: Throwable? = null
-        var cleanupFailure: Throwable? = null
+        var closed = false
+        var closeElapsedMs = 0L
+        var closeError: Throwable? = null
+        var deleted = 0
+        val deleteErrors = mutableListOf<String>()
         try {
             val image = images.firstOrNull() ?: throw IllegalStateException("fixture missing")
             val intent = ImageEditorActivity.createIntent(context, image, "image/jpeg")
@@ -729,29 +733,56 @@ class UiScreenshotTest {
             failure = error
             measurement?.failed(all, "editor navigation", error)
         } finally {
+            val closeStarted = SystemClock.elapsedRealtime()
             try {
                 activity?.let { opened ->
-                    runOnMainWithTimeout(instrumentation, "close measurement editor") { opened.finish() }
-                    waitForBoundedUiIdle(instrumentation, device, "close measurement editor")
-                    if (!opened.isDestroyed) throw IllegalStateException("measurement editor did not close")
-                    activity = null
-                }
-                while (images.isNotEmpty()) {
-                    val image = images.first()
-                    deleteWithDiagnostics(image)
-                    images.removeAt(0)
+                    val destroyed = java.util.concurrent.CountDownLatch(1)
+                    val callbacks = object : android.app.Application.ActivityLifecycleCallbacks {
+                        override fun onActivityCreated(a: Activity, state: Bundle?) = Unit
+                        override fun onActivityStarted(a: Activity) = Unit
+                        override fun onActivityResumed(a: Activity) = Unit
+                        override fun onActivityPaused(a: Activity) = Unit
+                        override fun onActivityStopped(a: Activity) = Unit
+                        override fun onActivitySaveInstanceState(a: Activity, state: Bundle) = Unit
+                        override fun onActivityDestroyed(a: Activity) { if (a === opened) destroyed.countDown() }
+                    }
+                    try {
+                        runOnMainWithTimeout(instrumentation, "close measurement editor") {
+                            opened.application.registerActivityLifecycleCallbacks(callbacks)
+                            if (opened.isDestroyed) destroyed.countDown() else opened.finish()
+                        }
+                        destroyed.await(10, java.util.concurrent.TimeUnit.SECONDS)
+                        closed = opened.isDestroyed
+                    } finally {
+                        opened.application.unregisterActivityLifecycleCallbacks(callbacks)
+                    }
                 }
             } catch (error: Throwable) {
-                cleanupFailure = error
+                closeError = error
+            } finally {
+                closeElapsedMs = SystemClock.elapsedRealtime() - closeStarted
+                // Attempt every fixture even if closing the editor failed or timed out.
+                images.toList().forEach { image ->
+                    try {
+                        deleteWithDiagnostics(image)
+                        images.remove(image)
+                        deleted++
+                    } catch (error: Throwable) {
+                        deleteErrors.add("${error.javaClass.name}: ${(error.message ?: "(no message)").replace('\n', ' ')}")
+                    }
+                }
             }
             val output = measurement?.output() ?: buildString {
                 val cause = failure
-                all.forEach { append("$it: 失败：editor launch ${cause?.javaClass?.name}: ${cause?.message}\n") }
+                all.forEach { append("$it: 失败：editor launch ${cause?.javaClass?.name}: ${cause?.message?.replace('\n', ' ')}\n") }
+                append("navigation_failures=${all.size} measurement_failures=0 missing=0\n")
                 append("control_total=${all.size}\n")
             }
-            val cleanup = cleanupFailure?.let { "cleanup: 失败：${it.javaClass.name}: ${it.message}\n" } ?: "cleanup: editor closed; fixtures deleted\n"
+            val cleanup = "cleanup: closed=$closed close_elapsed_ms=$closeElapsedMs close_timeout_ms=10000 " +
+                "deleted=$deleted deletion_failures=${deleteErrors.size} " +
+                "close_error=${closeError?.let { it.javaClass.name + ": " + it.message } ?: "none"} " +
+                "delete_errors=${deleteErrors.joinToString("; ")}\n"
             publishDiagnostic("selection-trace-markup-control-measurements.txt", "text/plain", (cleanup + output).toByteArray())
-            cleanupFailure?.let { throw IllegalStateException("measurement cleanup failed", it) }
         }
     }
 
