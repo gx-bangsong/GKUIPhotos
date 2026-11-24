@@ -1723,10 +1723,13 @@ class UiScreenshotTest {
         subtool(R.string.editor_markup_text_bg)
         instrumentation.runOnMainSync {
             val root = activity!!.findViewById<ViewGroup>(R.id.markupOptionsContent)
-            val background = requireNotNull(findText(root, activity!!.getString(R.string.editor_markup_text_bg)))
-            assertTrue("Background touch target too small", background.height >= (48f * context.resources.displayMetrics.density).toInt())
+            val noBackgroundLabel = activity!!.getString(activity!!.resources.getIdentifier("markup_no_background", "string", activity!!.packageName))
+            val noBackground = requireNotNull(findText(root, "⊘")) { "No-background control (⊘) missing" }
+            assertEquals("⊘ lacks its accessibility label", noBackgroundLabel, noBackground.contentDescription)
+            val min = (48f * context.resources.displayMetrics.density).toInt()
+            assertTrue("No-background (⊘) touch target too small", noBackground.width >= min && noBackground.height >= min)
             assertTrue("Text action must not appear on the background page", findText(root, activity!!.getString(R.string.markup_text_action)) == null)
-            assertTrue("Background control must be clickable", background.isClickable)
+            assertTrue("No-background (⊘) control must be clickable", noBackground.isClickable)
         }
         subtool(R.string.markup_color_section)
         assertNotNull("Text color choices missing", device.findObject(By.desc(context.getString(R.string.markup_color_black))))
@@ -1766,6 +1769,33 @@ class UiScreenshotTest {
                     "itemBackgroundColor=$itemColor undoHistoryCount=${history.size}"
             }
         }
+        fun exportBackgroundAlpha(): Int {
+            var alpha = -1
+            instrumentation.runOnMainSync {
+                val item = requireNotNull(overlay.activeText)
+                val bounds = android.graphics.RectF().also { item.computeBounds(it) }
+                val matrix = android.graphics.Matrix().apply { setTranslate(256f - bounds.centerX(), 256f - bounds.centerY()) }
+                val sampleY = (256f - bounds.height() / 2f + 3f).toInt()
+                assertTrue("Background sample outside export", sampleY in 0 until 512)
+                val getBounds = overlay.javaClass.getMethod("getBaseBoundsProvider")
+                val setBounds = overlay.javaClass.getMethod("setBaseBoundsProvider", kotlin.jvm.functions.Function0::class.java)
+                val oldBounds = getBounds.invoke(overlay)
+                val doc = overlay.javaClass.getMethod("retainDocument").invoke(overlay)
+                val exportBounds: () -> android.graphics.RectF = { android.graphics.RectF(-100000f, -100000f, 100000f, 100000f) }
+                val bitmap = Bitmap.createBitmap(512, 512, Bitmap.Config.ARGB_8888)
+                try {
+                    setBounds.invoke(overlay, exportBounds)
+                    overlay.javaClass.getMethod("rasterize", android.graphics.Canvas::class.java, android.graphics.Matrix::class.java)
+                        .invoke(overlay, android.graphics.Canvas(bitmap), matrix)
+                    alpha = Color.alpha(bitmap.getPixel(256, sampleY))
+                } finally {
+                    setBounds.invoke(overlay, oldBounds)
+                    overlay.javaClass.getMethod("restoreRetainedDocument", Any::class.java).invoke(overlay, doc)
+                    bitmap.recycle()
+                }
+            }
+            return alpha
+        }
         try {
         subtool(R.string.editor_markup_text_bg)
         fun newString(name: String): String {
@@ -1773,6 +1803,17 @@ class UiScreenshotTest {
             assertTrue("Missing $name", id != 0)
             return context.getString(id)
         }
+        // ⊘ is the only no-background entry: it must remove the background from the export,
+        // and undo must bring the same background back.
+        val exportedWithBackground = exportBackgroundAlpha()
+        assertTrue("Text background must be exported before ⊘", exportedWithBackground > 0)
+        requireNotNull(device.wait(Until.findObject(By.desc(newString("markup_no_background"))), 5000)) {
+            "No-background control (⊘) missing"
+        }.click()
+        device.waitForIdle()
+        assertEquals("⊘ must remove the background from the export", 0, exportBackgroundAlpha())
+        instrumentation.runOnMainSync { assertTrue("⊘ undo unavailable", overlay.undo()) }
+        assertEquals("Undo must restore the exported background", exportedWithBackground, exportBackgroundAlpha())
         val noBackground = device.wait(Until.findObject(By.desc(newString("markup_no_background"))), 5000)
         assertNotNull("No-background control missing", noBackground)
         noBackground!!.click(); device.waitForIdle()
@@ -1835,33 +1876,6 @@ class UiScreenshotTest {
         val white = device.wait(Until.findObject(By.desc(newString("markup_color_white"))), 5000)
         assertNotNull("Opaque background swatch missing", white)
         white!!.click(); device.waitForIdle()
-        fun exportBackgroundAlpha(): Int {
-            var alpha = -1
-            instrumentation.runOnMainSync {
-                val item = requireNotNull(overlay.activeText)
-                val bounds = android.graphics.RectF().also { item.computeBounds(it) }
-                val matrix = android.graphics.Matrix().apply { setTranslate(256f - bounds.centerX(), 256f - bounds.centerY()) }
-                val sampleY = (256f - bounds.height() / 2f + 3f).toInt()
-                assertTrue("Background sample outside export", sampleY in 0 until 512)
-                val getBounds = overlay.javaClass.getMethod("getBaseBoundsProvider")
-                val setBounds = overlay.javaClass.getMethod("setBaseBoundsProvider", kotlin.jvm.functions.Function0::class.java)
-                val oldBounds = getBounds.invoke(overlay)
-                val doc = overlay.javaClass.getMethod("retainDocument").invoke(overlay)
-                val exportBounds: () -> android.graphics.RectF = { android.graphics.RectF(-100000f, -100000f, 100000f, 100000f) }
-                val bitmap = Bitmap.createBitmap(512, 512, Bitmap.Config.ARGB_8888)
-                try {
-                    setBounds.invoke(overlay, exportBounds)
-                    overlay.javaClass.getMethod("rasterize", android.graphics.Canvas::class.java, android.graphics.Matrix::class.java)
-                        .invoke(overlay, android.graphics.Canvas(bitmap), matrix)
-                    alpha = Color.alpha(bitmap.getPixel(256, sampleY))
-                } finally {
-                    setBounds.invoke(overlay, oldBounds)
-                    overlay.javaClass.getMethod("restoreRetainedDocument", Any::class.java).invoke(overlay, doc)
-                    bitmap.recycle()
-                }
-            }
-            return alpha
-        }
         val opaqueExportAlpha = exportBackgroundAlpha()
         assertEquals("Opaque background export alpha", 255, opaqueExportAlpha)
         requireNotNull(device.findObject(By.desc(newString("markup_custom_color")))).click()
