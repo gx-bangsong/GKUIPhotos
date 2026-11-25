@@ -849,6 +849,72 @@ class UiScreenshotTest {
         device.waitForIdle()
         val mosaic = device.wait(Until.findObject(By.res(context.packageName, "markup_add_pattern")), 5000)
         assertNotNull("Mosaic import entrance missing", mosaic)
+        // TEMP-DIAG 2026-11-11: failure-only capture for the mosaic clipping assertion;
+        // revert this temporary diagnostic commit after the five evidence runs.
+        var clippingFailure: AssertionError? = null
+        var failedButton: View? = null
+        val diagnosticLog = StringBuilder()
+        val diagnosticImages = mutableListOf<Pair<String, ByteArray>>()
+        fun collectDiagnostic(stage: String, button: View, originalVisible: Rect?) {
+            // Bounds are screen coordinates unless noted. Immediate sample runs on the main
+            // thread; post-idle sample reads passively on the instrumentation thread.
+            diagnosticLog.append("stage=$stage elapsedRealtimeNanos=${SystemClock.elapsedRealtimeNanos()} ")
+                .append("wallTimeMillis=${System.currentTimeMillis()} order=swipe,scrollTo0,assertion,$stage\n")
+            diagnosticLog.append("swipe_and_scroll_timestamps=not_recorded_to_preserve_passing_path ")
+                .append("screenshot_and_view_state_same_frame=not_guaranteed ")
+                .append("sample_thread=${Thread.currentThread().name}\n")
+            try {
+                val visible = Rect()
+                val visibleResult = button.getGlobalVisibleRect(visible)
+                diagnosticLog.append("expect=visible_true_and_visible_width_equals_view_width_and_visible_height_equals_view_height ")
+                    .append("actual_recomputed_visible=$visibleResult visible_screen=$visible ")
+                    .append("visible_width=${visible.width()} visible_height=${visible.height()} ")
+                    .append("view_width=${button.width} view_height=${button.height} ")
+                    .append("measured_width=${button.measuredWidth} measured_height=${button.measuredHeight} ")
+                    .append("assertion_visible_screen=${originalVisible ?: "not_available"}\n")
+                var current: View? = button
+                var level = 0
+                while (current != null) {
+                    val view = current
+                    val location = IntArray(2)
+                    view.getLocationOnScreen(location)
+                    val global = Rect()
+                    val hasGlobal = view.getGlobalVisibleRect(global)
+                    val clip = view.clipBounds
+                    diagnosticLog.append("ancestor_level=$level class=${view.javaClass.name} ")
+                        .append("screen_xy=${location[0]},${location[1]} size=${view.width}x${view.height} ")
+                        .append("parent_local_bounds=${view.left},${view.top},${view.right},${view.bottom} ")
+                        .append("global_visible=$hasGlobal global_visible_screen=$global clipBounds_local=$clip ")
+                        .append("padding_local=${view.paddingLeft},${view.paddingTop},${view.paddingRight},${view.paddingBottom} ")
+                        .append("scrollX=${view.scrollX} scrollY=${view.scrollY}")
+                    if (view is ViewGroup) {
+                        diagnosticLog.append(" clipChildren=${view.clipChildren} clipToPadding=${view.clipToPadding}")
+                    }
+                    if (view is android.widget.HorizontalScrollView) {
+                        diagnosticLog.append(" viewport_width=${view.width - view.paddingLeft - view.paddingRight} ")
+                            .append("content_width=${view.getChildAt(0)?.width ?: -1}")
+                    }
+                    diagnosticLog.append('\n')
+                    current = view.parent as? View
+                    level++
+                }
+            } catch (t: Throwable) {
+                diagnosticLog.append("view_capture_error=${t.javaClass.name}\n")
+            }
+            try {
+                val bitmap = instrumentation.uiAutomation.takeScreenshot()
+                if (bitmap == null) diagnosticLog.append("screenshot=$stage missing_null\n") else {
+                    val bytes = java.io.ByteArrayOutputStream()
+                    val ok = bitmap.compress(Bitmap.CompressFormat.PNG, 100, bytes)
+                    bitmap.recycle()
+                    if (ok) diagnosticImages.add(stage to bytes.toByteArray())
+                    else diagnosticLog.append("screenshot=$stage compression_failed\n")
+                }
+            } catch (t: Throwable) {
+                diagnosticLog.append("screenshot=$stage error=${t.javaClass.name}\n")
+            }
+            diagnosticLog.append("stage=$stage end_elapsedRealtimeNanos=${SystemClock.elapsedRealtimeNanos()}\n")
+        }
         instrumentation.runOnMainSync {
             val root = activity!!.findViewById<ViewGroup>(R.id.markupOptionsContent)
             val mosaicId = context.resources.getIdentifier("markup_add_pattern", "id", context.packageName)
@@ -857,8 +923,39 @@ class UiScreenshotTest {
             assertEquals("Mosaic import must be first", 0, group.indexOfChild(button))
             assertTrue("Mosaic import must be clickable", button.isClickable)
             val visible = Rect()
-            assertTrue("Mosaic import entrance is clipped", button.getGlobalVisibleRect(visible) &&
-                visible.width() == button.width && visible.height() == button.height)
+            try {
+                assertTrue("Mosaic import entrance is clipped", button.getGlobalVisibleRect(visible) &&
+                    visible.width() == button.width && visible.height() == button.height)
+            } catch (original: AssertionError) {
+                clippingFailure = original
+                failedButton = button
+                try { collectDiagnostic("immediate", button, visible) } catch (_: Throwable) { }
+            }
+        }
+        clippingFailure?.let { original ->
+            try {
+                val idle = java.util.concurrent.CountDownLatch(1)
+                instrumentation.waitForIdle { idle.countDown() }
+                val idleReached = idle.await(5, java.util.concurrent.TimeUnit.SECONDS)
+                diagnosticLog.append("idle_wait_timeout_ms=5000 idle_reached=$idleReached ")
+                    .append("elapsedRealtimeNanos=${SystemClock.elapsedRealtimeNanos()}\n")
+            } catch (t: Throwable) {
+                diagnosticLog.append("idle_wait_error=${t.javaClass.name}\n")
+            }
+            try { failedButton?.let { collectDiagnostic("post_idle", it, null) } }
+            catch (t: Throwable) {
+                diagnosticLog.append("second_collection_error=${t.javaClass.name} evidence_incomplete=true\n")
+            }
+            try {
+                diagnosticImages.forEach { (stage, bytes) ->
+                    try { publishDiagnostic("touch-temp-diag-mosaic-$stage.png", "image/png", bytes) }
+                    catch (t: Throwable) { diagnosticLog.append("publish_$stage=${t.javaClass.name}\n") }
+                }
+                publishDiagnostic("touch-temp-diag-mosaic-trace.txt", "text/plain", diagnosticLog.toString().toByteArray())
+            } catch (t: Throwable) {
+                android.util.Log.e("TEMP-DIAG", "Could not publish evidence: ${t.javaClass.name}")
+            }
+            throw original
         }
         screenshot("touch-inventory-mosaic-import")
     }
