@@ -2055,10 +2055,12 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
 
     private fun addStickerSelector(section: Int) {
         val density = resources.displayMetrics.density
-        markupOptionsContent.addView(markupCircleControl(R.id.markup_add_sticker,
-            R.string.markup_add_sticker_description, R.drawable.ic_add, false, 8, sticker = true) {
-            pickCustomStickerLauncher.launch("image/*")
-        })
+        if (section == 0) {
+            markupOptionsContent.addView(markupCircleControl(R.id.markup_add_sticker,
+                R.string.markup_add_sticker_description, R.drawable.ic_add, false, 8, sticker = true) {
+                pickCustomStickerLauncher.launch("image/*")
+            })
+        }
 
         if (section == 1) {
             CustomEditorAssetManager.getCustomStickers(this).forEach { asset ->
