@@ -826,6 +826,12 @@ class UiScreenshotTest {
             assertTrue("Sticker import must be clickable", button.isClickable)
         }
         screenshot("touch-inventory-sticker-import")
+        subtool(resource("markup_custom_stickers"))
+        instrumentation.runOnMainSync {
+            val root = activity!!.findViewById<ViewGroup>(R.id.markupOptionsContent)
+            val id = context.resources.getIdentifier("markup_add_sticker", "id", context.packageName)
+            assertTrue("Sticker import must not appear on the custom subpage", root.findViewById<View>(id) == null)
+        }
 
         tool(R.string.editor_markup_mosaic)
         subtool(R.string.markup_effect_section)
