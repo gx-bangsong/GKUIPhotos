@@ -9,6 +9,7 @@ import android.app.Activity
 import android.content.ContentValues
 import android.content.Intent
 import android.content.res.ColorStateList
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
@@ -23,10 +24,12 @@ import android.os.Environment
 import android.provider.MediaStore
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.addCallback
@@ -68,6 +71,9 @@ import org.lineageos.glimpse.models.CustomEditorAssetManager
 import org.lineageos.glimpse.models.CustomShape
 import org.lineageos.glimpse.models.MarkupFonts
 import org.lineageos.glimpse.models.CustomShapeParseResult
+import org.lineageos.glimpse.ui.EditorLayoutSwitcher
+import org.lineageos.glimpse.ui.LargeScreenLayout
+import org.lineageos.glimpse.ui.applyWideScreenCap
 import org.lineageos.glimpse.ui.views.AngleRulerView
 import org.lineageos.glimpse.ui.views.AnnotationItem
 import org.lineageos.glimpse.ui.views.AnnotationOverlayView
@@ -120,11 +126,12 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
 
     // Bottom Deck & Strips
     private val editorBottomDeck by lazy { findViewById<View>(R.id.editorBottomDeck) }
-    private val stripCrop by lazy { findViewById<View>(R.id.stripCrop) }
+    private val stripCrop by lazy { findViewById<LinearLayout>(R.id.stripCrop) }
     private val stripAdjust by lazy { findViewById<View>(R.id.stripAdjust) }
     private val stripFilters by lazy { findViewById<View>(R.id.stripFilters) }
     private val stripMarkup by lazy { findViewById<View>(R.id.stripMarkup) }
-    private val stripTools by lazy { findViewById<View>(R.id.stripTools) }
+    private val stripTools by lazy { findViewById<LinearLayout>(R.id.stripTools) }
+    private val contextualStripContainer by lazy { findViewById<FrameLayout>(R.id.contextualStripContainer) }
 
     // Strip Controls: Crop
     private val cropAngleText by lazy { findViewById<TextView>(R.id.cropAngleText) }
@@ -177,6 +184,19 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
     private val categoryTabsTopDivider by lazy { findViewById<View>(R.id.categoryTabsTopDivider) }
     private val categoryTabsBottomDivider by lazy { findViewById<View>(R.id.categoryTabsBottomDivider) }
     private val categoryTabsContainer by lazy { findViewById<LinearLayout>(R.id.categoryTabsContainer) }
+
+    // Deck: two-column right panel (ruling ⑥ round 2)
+    private val iconTabBar by lazy { findViewById<LinearLayout>(R.id.iconTabBar) }
+    private val cropToolsScroll by lazy { findViewById<View>(R.id.cropToolsScroll) }
+    private val adjustVerticalScroll by lazy { findViewById<View>(R.id.adjustVerticalScroll) }
+    private val adjustVerticalList by lazy { findViewById<LinearLayout>(R.id.adjustVerticalList) }
+    private val filtersScroll by lazy { findViewById<View>(R.id.filtersScroll) }
+    private val filtersVerticalScroll by lazy { findViewById<View>(R.id.filtersVerticalScroll) }
+    private val filtersVerticalList by lazy { findViewById<LinearLayout>(R.id.filtersVerticalList) }
+    private val markupVerticalScroll by lazy { findViewById<ScrollView>(R.id.markupVerticalScroll) }
+
+    /** Last state handed to setCategoryTabsVisible; re-applied when the deck presentation changes. */
+    private var categoryTabsShown = true
     private val regularActionBar by lazy { findViewById<View>(R.id.regularActionBar) }
     private val cancelButton by lazy { findViewById<View>(R.id.cancelButton) }
     private val saveButton by lazy { findViewById<View>(R.id.saveButton) }
@@ -382,11 +402,127 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         super.onDestroy()
     }
 
+    /** Last applied editor split mode; guards against redundant constraint re-application. */
+    private var appliedEditorMode: LargeScreenLayout.EditorLayoutMode? = null
+
+    /**
+     * Apply the single/two-column editor split for the given available
+     * window size in dp (ruling ⑥). No-op while the mode is unchanged, so
+     * the root layout listener can call this on every layout pass.
+     */
+    private fun updateEditorLayoutMode(widthDp: Int, heightDp: Int) {
+        val mode = LargeScreenLayout.editorLayoutMode(widthDp, heightDp)
+        if (mode == appliedEditorMode) return
+        appliedEditorMode = mode
+        EditorLayoutSwitcher.apply(findViewById(R.id.editorRootLayout), mode)
+        applyDeckPresentation(mode)
+    }
+
+    /**
+     * Re-arrange the bottom deck for the current split mode (ruling ⑥ round 2).
+     *
+     * The activity handles configChanges itself, so one inflated view tree
+     * serves both single- and two-column layouts: the right column swaps the
+     * text pill tabs for icon tabs, switches Adjust/Filters to their vertical
+     * presentations, stacks markup/tools rows, moves the 0° ruler below the
+     * free/rotate/flip row, and lets the strip container flex between the tab
+     * row and the fixed Cancel/Save bar. Edit state lives in
+     * [adjustParameters] / `currentFilter` / CropImageView /
+     * AnnotationOverlayView, so nothing is lost across the switch.
+     */
+    private fun applyDeckPresentation(mode: LargeScreenLayout.EditorLayoutMode) {
+        val twoColumn = mode == LargeScreenLayout.EditorLayoutMode.TWO_COLUMN
+
+        // Crop: the tool row sits above the embedded 0° ruler in the right column.
+        if (twoColumn) {
+            if (stripCrop.indexOfChild(cropToolsScroll) != 0) {
+                stripCrop.removeView(cropToolsScroll)
+                stripCrop.addView(cropToolsScroll, 0)
+            }
+        } else {
+            val rulerIndex = stripCrop.indexOfChild(cropAngleRuler)
+            if (rulerIndex >= 0 && stripCrop.indexOfChild(cropToolsScroll) != rulerIndex + 1) {
+                stripCrop.removeView(cropToolsScroll)
+                stripCrop.addView(cropToolsScroll, rulerIndex + 1)
+            }
+        }
+
+        // Adjust: a vertical slider list replaces the carousel + dial sub-edit.
+        if (twoColumn) {
+            if (activeAdjustParam != null) closeAdjustSlider()
+            adjustCarouselScroll.isVisible = false
+            adjustSliderLayout.isVisible = false
+            adjustVerticalScroll.isVisible = true
+            buildAdjustVerticalList()
+        } else {
+            adjustVerticalScroll.isVisible = false
+            adjustCarouselScroll.isVisible = activeAdjustParam == null
+            adjustSliderLayout.isVisible = activeAdjustParam != null
+        }
+
+        // Filters: vertical preview + name chip list in the right column.
+        filtersScroll.isVisible = !twoColumn
+        filtersVerticalScroll.isVisible = twoColumn
+        setupFilterCards()
+
+        // Markup tools flow vertically inside a scrollable list in the right
+        // column; single-column keeps the original horizontal row.
+        if (twoColumn) {
+            if (markupToolsRow.parent !== markupVerticalScroll) {
+                (markupToolsRow.parent as? ViewGroup)?.removeView(markupToolsRow)
+                markupVerticalScroll.addView(markupToolsRow)
+            }
+            markupToolsScroll.isVisible = false
+            markupVerticalScroll.isVisible = true
+        } else {
+            if (markupToolsRow.parent === markupVerticalScroll) {
+                markupVerticalScroll.removeView(markupToolsRow)
+                markupToolsScroll.addView(markupToolsRow)
+            }
+            markupToolsScroll.isVisible = true
+            markupVerticalScroll.isVisible = false
+        }
+        markupToolsRow.orientation =
+            if (twoColumn) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
+
+        // Tools strip stacks vertically in the right column.
+        stripTools.orientation =
+            if (twoColumn) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
+
+        // The strip container flexes between the tab row and the fixed action
+        // bar; single-column keeps its original wrap_content behavior.
+        val containerLp = contextualStripContainer.layoutParams as LinearLayout.LayoutParams
+        if (twoColumn) {
+            containerLp.height = 0
+            containerLp.weight = 1f
+        } else {
+            containerLp.height = LinearLayout.LayoutParams.WRAP_CONTENT
+            containerLp.weight = 0f
+        }
+        contextualStripContainer.layoutParams = containerLp
+
+        // Strips fill the flexed container so their lists can scroll.
+        listOf(stripCrop, stripAdjust, stripFilters, stripMarkup, stripTools).forEach { strip ->
+            val lp = strip.layoutParams as FrameLayout.LayoutParams
+            lp.height = if (twoColumn) {
+                FrameLayout.LayoutParams.MATCH_PARENT
+            } else {
+                FrameLayout.LayoutParams.WRAP_CONTENT
+            }
+            strip.layoutParams = lp
+        }
+
+        applyCategoryTabBars()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         MarkupFonts.initialize(this)
         swapMarkupToolbarGroups()
+
+        val configuration = resources.configuration
+        updateEditorLayoutMode(configuration.screenWidthDp, configuration.screenHeightDp)
 
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.editorRootLayout)) { _, insets ->
             val status = insets.getInsets(WindowInsetsCompat.Type.statusBars())
@@ -394,7 +530,14 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             annotationOverlayView.updatePadding(top = status.top)
             insets
         }
-        findViewById<View>(R.id.editorRootLayout).addOnLayoutChangeListener { _, _, top, _, bottom, _, oldTop, _, oldBottom ->
+        findViewById<View>(R.id.editorRootLayout).addOnLayoutChangeListener { rootView, _, top, _, bottom, _, oldTop, _, oldBottom ->
+            // Re-evaluate the split whenever the root is laid out; the view
+            // width is the authoritative available width for the mode.
+            val density = rootView.resources.displayMetrics.density
+            updateEditorLayoutMode(
+                (rootView.width / density).roundToInt(),
+                (rootView.height / density).roundToInt(),
+            )
             if (bottom - top != oldBottom - oldTop && activeCategory == EditorCategory.MARKUP) {
                 updateMarkupPanelHeight()
             }
@@ -546,6 +689,11 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         }
     }
 
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        updateEditorLayoutMode(newConfig.screenWidthDp, newConfig.screenHeightDp)
+    }
+
     private fun setupCategoryTabs() {
         categoryTabsContainer.removeAllViews()
         val density = resources.displayMetrics.density
@@ -580,12 +728,155 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             }
             categoryTabsContainer.addView(tv, lp)
         }
+        setupIconTabBar()
+    }
+
+    /**
+     * Icon-only tab row shown at the top of the two-column right panel
+     * (ruling ⑥ round 2); the text pills stay for single-column layouts.
+     */
+    private fun setupIconTabBar() {
+        iconTabBar.removeAllViews()
+        val density = resources.displayMetrics.density
+
+        EditorCategory.values().forEach { category ->
+            val selected = category == activeCategory
+            val item = FrameLayout(this).apply {
+                val touch = (48 * density).toInt()
+                layoutParams = LinearLayout.LayoutParams(touch, touch).apply {
+                    setMargins((2 * density).toInt(), 0, (2 * density).toInt(), 0)
+                }
+                isClickable = true
+                isFocusable = true
+                if (selected) setBackgroundResource(R.drawable.bg_circle_tool_selected)
+                contentDescription = getString(category.titleRes)
+                setOnClickListener { switchCategory(category) }
+
+                addView(ImageView(this@ImageEditorActivity).apply {
+                    layoutParams = FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT,
+                        FrameLayout.LayoutParams.MATCH_PARENT,
+                    )
+                    setPadding(
+                        (12 * density).toInt(),
+                        (12 * density).toInt(),
+                        (12 * density).toInt(),
+                        (12 * density).toInt(),
+                    )
+                    scaleType = ImageView.ScaleType.FIT_CENTER
+                    setImageResource(categoryTabIcon(category))
+                    imageTintList = ColorStateList.valueOf(
+                        if (selected) Color.WHITE else Color.parseColor("#A0A0A0"),
+                    )
+                    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                })
+            }
+            iconTabBar.addView(item)
+        }
+    }
+
+    private fun categoryTabIcon(category: EditorCategory): Int = when (category) {
+        EditorCategory.CROP -> R.drawable.ic_crop_ratio
+        EditorCategory.ADJUST -> R.drawable.ic_tune
+        EditorCategory.FILTERS -> R.drawable.ic_filters
+        EditorCategory.MARKUP -> R.drawable.ic_markup_brush
+        EditorCategory.TOOLS -> R.drawable.ic_toolbox
     }
 
     private fun setCategoryTabsVisible(visible: Boolean) {
-        categoryTabsScroll.isVisible = visible
-        categoryTabsTopDivider.isVisible = visible
-        categoryTabsBottomDivider.isVisible = visible
+        categoryTabsShown = visible
+        applyCategoryTabBars()
+    }
+
+    /**
+     * Show either the text pill tabs (single-column) or the icon tab bar
+     * (two-column right panel); both are hidden during sub-editing.
+     */
+    private fun applyCategoryTabBars() {
+        val twoColumn =
+            appliedEditorMode == LargeScreenLayout.EditorLayoutMode.TWO_COLUMN
+        val showPills = categoryTabsShown && !twoColumn
+        categoryTabsScroll.isVisible = showPills
+        categoryTabsTopDivider.isVisible = showPills
+        categoryTabsBottomDivider.isVisible = showPills
+        iconTabBar.isVisible = categoryTabsShown && twoColumn
+    }
+
+    /**
+     * Two-column Adjust tab: one row per parameter with icon, name and a
+     * live slider (ruling ⑥ round 2). Rows read and write the shared
+     * [adjustParameters], so values survive split and tab switches.
+     */
+    private fun buildAdjustVerticalList() {
+        adjustVerticalList.removeAllViews()
+        val density = resources.displayMetrics.density
+        val nameWidth = (76 * density).toInt()
+
+        AdjustParam.values().forEach { param ->
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                )
+                minimumHeight = resources.getDimensionPixelSize(R.dimen.editor_tool_touch_size)
+                setPadding(0, (4 * density).toInt(), 0, (4 * density).toInt())
+            }
+
+            val icon = ImageView(this).apply {
+                val size = (32 * density).toInt()
+                layoutParams = LinearLayout.LayoutParams(size, size).apply {
+                    marginEnd = (8 * density).toInt()
+                }
+                setImageResource(param.iconRes)
+                scaleType = ImageView.ScaleType.FIT_CENTER
+                imageTintList = ColorStateList.valueOf(Color.WHITE)
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            }
+
+            val name = TextView(this).apply {
+                text = getString(param.labelRes)
+                textSize = 12f
+                setTextColor(Color.parseColor("#E0E0E0"))
+                layoutParams = LinearLayout.LayoutParams(
+                    nameWidth, LinearLayout.LayoutParams.WRAP_CONTENT,
+                )
+                gravity = Gravity.CENTER_VERTICAL
+                isSingleLine = true
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            }
+
+            val slider = Slider(this).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f,
+                )
+                if (param.isBipolar) {
+                    valueFrom = -100f
+                    valueTo = 100f
+                } else {
+                    valueFrom = 0f
+                    valueTo = 100f
+                }
+                stepSize = 1f
+                value = getAdjustParamValue(param).toFloat()
+                // Match the single-column dial slider chrome (activity XML attrs).
+                thumbTintList = ColorStateList.valueOf(Color.parseColor("#A8C7FA"))
+                setTrackActiveTintList(ColorStateList.valueOf(Color.parseColor("#A8C7FA")))
+                setTrackInactiveTintList(ColorStateList.valueOf(Color.parseColor("#383838")))
+                addOnChangeListener { _, v, fromUser ->
+                    if (!fromUser) return@addOnChangeListener
+                    setAdjustParamValue(param, v.toInt())
+                    refreshBaseBitmap(debounceMs = 32)
+                }
+            }
+
+            row.addView(icon)
+            row.addView(name)
+            row.addView(slider)
+            adjustVerticalList.addView(row)
+        }
     }
 
     private fun switchCategory(category: EditorCategory) {
@@ -787,6 +1078,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
 
         scrollView.addView(list)
         dialog.setContentView(scrollView)
+        dialog.applyWideScreenCap()
         dialog.show()
     }
 
@@ -1085,6 +1377,10 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
 
     private fun setupFilterCards() {
         filtersContainer.removeAllViews()
+        filtersVerticalList.removeAllViews()
+        // Chips are built into whichever presentation is active (ruling ⑥ round 2).
+        val vertical = filtersVerticalScroll.isVisible
+        val target = if (vertical) filtersVerticalList else filtersContainer
         val density = resources.displayMetrics.density
 
         val filters = listOf(
@@ -1102,7 +1398,10 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             val itemLayout = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER
-                layoutParams = LinearLayout.LayoutParams(itemWidth, LinearLayout.LayoutParams.WRAP_CONTENT)
+                layoutParams = LinearLayout.LayoutParams(
+                    if (vertical) LinearLayout.LayoutParams.MATCH_PARENT else itemWidth,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                )
                 minimumHeight = resources.getDimensionPixelSize(R.dimen.editor_tool_touch_size)
                 isClickable = true
                 isFocusable = true
@@ -1166,7 +1465,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
 
             itemLayout.addView(card)
             itemLayout.addView(label)
-            filtersContainer.addView(itemLayout)
+            target.addView(itemLayout)
         }
     }
 
@@ -2534,6 +2833,7 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
     private fun showPrivacyWatermarkDialog() {
         val dialog = BottomSheetDialog(this)
         dialog.setContentView(R.layout.dialog_privacy_watermark)
+        dialog.applyWideScreenCap()
 
         val editText = dialog.findViewById<TextInputEditText>(R.id.watermarkEditText)!!
         val chipGroup = dialog.findViewById<ChipGroup>(R.id.watermarkShortcutChipGroup)!!
