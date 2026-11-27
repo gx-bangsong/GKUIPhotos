@@ -73,6 +73,7 @@ import org.lineageos.glimpse.models.AlbumType
 import org.lineageos.glimpse.models.Media
 import org.lineageos.glimpse.models.MediaType
 import org.lineageos.glimpse.models.RequestStatus
+import org.lineageos.glimpse.ui.applyWideScreenCap
 import org.lineageos.glimpse.ui.dialogs.ImageToolboxBottomSheet
 import org.lineageos.glimpse.ui.dialogs.PrivacyPinDialog
 import org.lineageos.glimpse.ui.recyclerview.ThumbnailAdapter
@@ -214,7 +215,7 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
                                 imageMedias,
                             ) {
                                 selectionTracker?.clearSelection()
-                            }.show()
+                            }.also { it.applyWideScreenCap() }.show()
                         }
 
                         true
@@ -466,6 +467,7 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
             if (selectionActive) updateSelectionGridPadding()
             true
         }.also { view.viewTreeObserver.addOnPreDrawListener(it) }
+        selectionSheet.applyWideScreenCap(sheetBehavior)
         sheetBehavior.addBottomSheetCallback(object : BottomSheetBehavior.BottomSheetCallback() {
             override fun onSlide(bottomSheet: View, slideOffset: Float) = updateSelectionGridPadding()
             override fun onStateChanged(bottomSheet: View, newState: Int) {
@@ -534,6 +536,11 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
         recyclerView.layoutManager = ThumbnailLayoutManager(
             requireContext(), thumbnailAdapter
         )
+        recyclerView.addOnLayoutChangeListener { view, _, _, _, _, _, _, _, _ ->
+            val grid = view as RecyclerView
+            (grid.layoutManager as? ThumbnailLayoutManager)
+                ?.updateSpanForAvailableWidth(grid.width)
+        }
         recyclerView.adapter = thumbnailAdapter
         (recyclerView as SelectionGestureRecyclerView).onGestureFinished = {
             if (pendingSelectionStart) {
@@ -655,9 +662,12 @@ class AlbumFragment : Fragment(R.layout.fragment_album) {
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
 
-        recyclerView.layoutManager = ThumbnailLayoutManager(
-            requireContext(), thumbnailAdapter
-        )
+        // The width here may still be the pre-relayout one; the layout
+        // listener re-runs with the final width. Also re-apply the
+        // wide-window sheet cap for the new window size.
+        (recyclerView.layoutManager as? ThumbnailLayoutManager)
+            ?.updateSpanForAvailableWidth(recyclerView.width)
+        selectionSheet.applyWideScreenCap(sheetBehavior)
     }
 
     private suspend fun loadData() {
