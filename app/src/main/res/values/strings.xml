@@ -206,6 +206,7 @@
     <string name="editor_filter_invert">Invert</string>
     <string name="editor_filter_warm">Warm</string>
     <string name="editor_filter_cool">Cool</string>
+    <string name="editor_filter_intensity">Intensity</string>
 
     <!-- Generic dialog actions -->
     <string name="close">Close</string>

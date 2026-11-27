@@ -733,5 +733,22 @@
             </LinearLayout>
         </FrameLayout>
     </LinearLayout>
+    <!-- Angle ruler pinned directly under the photo display area (ruling ⑥
+         round 3); cropAngleText/cropAngleRuler are moved here at runtime in
+         two-column mode, and the anchor stays empty/hidden in single-column. -->
+    <LinearLayout
+        android:id="@+id/cropRulerAnchor"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="16dp"
+        android:background="#66000000"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:paddingTop="4dp"
+        android:paddingBottom="4dp"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="@id/cropImageView"
+        app:layout_constraintEnd_toEndOf="@id/cropImageView"
+        app:layout_constraintStart_toStartOf="@id/cropImageView" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

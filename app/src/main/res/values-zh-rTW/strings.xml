@@ -136,6 +136,7 @@
     <string name="editor_filter_invert">反相</string>
     <string name="editor_filter_warm">暖色</string>
     <string name="editor_filter_cool">冷色</string>
+    <string name="editor_filter_intensity">強度</string>
 
     <!-- Generic dialog actions -->
     <string name="close">關閉</string>
