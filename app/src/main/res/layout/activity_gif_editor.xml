@@ -5,6 +5,7 @@
 -->
 <androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/gifRootLayout"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@android:color/black">
@@ -29,6 +30,7 @@
     </com.google.android.material.appbar.AppBarLayout>
 
     <FrameLayout
+        android:id="@+id/gifPreviewFrame"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:layout_marginBottom="300dp"
@@ -51,6 +53,7 @@
     </FrameLayout>
 
     <LinearLayout
+        android:id="@+id/gifControlPanel"
         android:layout_width="match_parent"
         android:layout_height="300dp"
         android:layout_gravity="bottom"
