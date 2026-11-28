@@ -66,9 +66,9 @@ class ToolSidePanelSplitTest {
             )
         )
 
-        assertEquals(1120, preview.layoutParams.width)
+        assertEquals(1200, preview.layoutParams.width)
         assertEquals(0, (preview.layoutParams as ViewGroup.MarginLayoutParams).bottomMargin)
-        assertEquals(480, panel.layoutParams.width)
+        assertEquals(400, panel.layoutParams.width)
         assertEquals(ViewGroup.LayoutParams.MATCH_PARENT, panel.layoutParams.height)
         assertEquals(
             Gravity.END,
