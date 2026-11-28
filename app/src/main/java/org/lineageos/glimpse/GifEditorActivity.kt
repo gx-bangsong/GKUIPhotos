@@ -18,6 +18,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.MenuItem
+import android.view.View
 import android.widget.ImageView
 import android.widget.SeekBar
 import android.widget.TextView
@@ -31,9 +32,12 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.lineageos.glimpse.ui.LargeScreenLayout
+import org.lineageos.glimpse.ui.ToolSidePanelSplit
 import org.lineageos.glimpse.utils.media.GifCodec
 import org.lineageos.glimpse.utils.media.ImageFilter
 import org.lineageos.glimpse.utils.media.PendingMediaStoreWrite
+import kotlin.math.roundToInt
 import java.io.ByteArrayOutputStream
 
 /**
@@ -52,6 +56,10 @@ import java.io.ByteArrayOutputStream
 class GifEditorActivity : AppCompatActivity(R.layout.activity_gif_editor) {
 
     private val toolbar by lazy { findViewById<MaterialToolbar>(R.id.toolbar) }
+    private val appBarLayout by lazy { findViewById<View>(R.id.appBarLayout) }
+    private val gifRootLayout by lazy { findViewById<android.view.ViewGroup>(R.id.gifRootLayout) }
+    private val gifPreviewFrame by lazy { findViewById<View>(R.id.gifPreviewFrame) }
+    private val gifControlPanel by lazy { findViewById<View>(R.id.gifControlPanel) }
     private val preview by lazy { findViewById<ImageView>(R.id.gifPreview) }
     private val loadingIndicator by lazy { findViewById<CircularProgressIndicator>(R.id.loadingIndicator) }
     private val frameSeekBar by lazy { findViewById<SeekBar>(R.id.frameSeekBar) }
@@ -64,6 +72,11 @@ class GifEditorActivity : AppCompatActivity(R.layout.activity_gif_editor) {
     private val filterButton by lazy { findViewById<android.widget.Button>(R.id.filterButton) }
 
     private var sourceUri: Uri? = null
+
+    /** Original single-column geometry captured from the inflated layout. */
+    private var gifSinglePreviewBottomMargin = 0
+    private var gifSinglePanelHeight = 0
+    private var appliedSplitMode: LargeScreenLayout.EditorLayoutMode? = null
 
     private var frames: List<GifCodec.GifFrame> = emptyList()
     private var speedMultiplier = 1.0f
@@ -96,6 +109,21 @@ class GifEditorActivity : AppCompatActivity(R.layout.activity_gif_editor) {
 
         toolbar.setNavigationOnClickListener { finish() }
         toolbar.setOnMenuItemClickListener(::onMenuItemSelected)
+
+        // Capture the single-column geometry before any split is applied.
+        gifSinglePreviewBottomMargin =
+            (gifPreviewFrame.layoutParams as android.view.ViewGroup.MarginLayoutParams).bottomMargin
+        gifSinglePanelHeight = gifControlPanel.layoutParams.height
+
+        // configChanges: rotation re-arranges the inflated tree in place.
+        gifRootLayout.addOnLayoutChangeListener { v, _, _, _, _, _, _, _, _ ->
+            val density = v.resources.displayMetrics.density
+            updateSplitMode(
+                (v.width / density).roundToInt(),
+                (v.height / density).roundToInt(),
+            )
+            applyPanelTopInset()
+        }
 
         speedSlowerButton.setOnClickListener { changeSpeed(0.5f) }
         speedFasterButton.setOnClickListener { changeSpeed(2.0f) }
@@ -169,6 +197,39 @@ class GifEditorActivity : AppCompatActivity(R.layout.activity_gif_editor) {
                 applyStaticTransform()
             }
             .show()
+    }
+
+    /**
+     * Landscape/large-screen split (ruling ⑥ round 3): preview left ~70%,
+     * control panel as a full-height right column; restores the original
+     * bottom panel in single-column. configChanges means orientation never
+     * re-inflates, so this runs from the root layout listener.
+     */
+    private fun updateSplitMode(widthDp: Int, heightDp: Int) {
+        val mode = LargeScreenLayout.editorLayoutMode(widthDp, heightDp)
+        if (mode == appliedSplitMode) return
+        // Not measured yet: keep the mode unmarked so the first real layout
+        // pass still applies it.
+        if (gifRootLayout.width <= 0) return
+        val applied = ToolSidePanelSplit.apply(
+            gifRootLayout, gifPreviewFrame, gifControlPanel, mode,
+            gifSinglePreviewBottomMargin, gifSinglePanelHeight,
+        )
+        if (applied) appliedSplitMode = mode
+    }
+
+    /** Keep the right-column panel below the toolbar (ruling ⑥ round 3). */
+    private fun applyPanelTopInset() {
+        val lp = gifControlPanel.layoutParams as android.view.ViewGroup.MarginLayoutParams
+        val top = if (appliedSplitMode == LargeScreenLayout.EditorLayoutMode.TWO_COLUMN) {
+            appBarLayout.height
+        } else {
+            0
+        }
+        if (lp.topMargin != top) {
+            lp.topMargin = top
+            gifControlPanel.layoutParams = lp
+        }
     }
 
     private fun applyStaticTransform() {

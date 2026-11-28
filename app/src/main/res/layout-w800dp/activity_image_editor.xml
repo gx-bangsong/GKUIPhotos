@@ -1,0 +1,757 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+     SPDX-FileCopyrightText: The LineageOS Project
+     SPDX-License-Identifier: Apache-2.0
+-->
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/editorRootLayout"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/black">
+
+    <androidx.constraintlayout.widget.Guideline
+        android:id="@+id/editorSplitGuide"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        app:layout_constraintGuide_percent="0.7" />
+
+    <!-- Center Preview: maximal, centered, edge-to-edge under status bar -->
+    <org.lineageos.glimpse.ui.views.CropImageView
+        android:id="@+id/cropImageView"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="@id/editorSplitGuide"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <!-- Annotation / Markup Overlay Layer -->
+    <org.lineageos.glimpse.ui.views.AnnotationOverlayView
+        android:id="@+id/annotationOverlayView"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="@id/editorSplitGuide"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <!-- Saving Indicator Overlay -->
+    <FrameLayout
+        android:id="@+id/savingOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#99000000"
+        android:clickable="true"
+        android:elevation="20dp"
+        android:focusable="true"
+        android:visibility="gone">
+
+        <com.google.android.material.progressindicator.CircularProgressIndicator
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:indeterminate="true"
+            app:indicatorColor="#A8C7FA" />
+    </FrameLayout>
+
+    <!-- Bottom Deck: Contextual Strip + Category Tabs + Action Bar -->
+    <LinearLayout
+        android:id="@+id/editorBottomDeck"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:background="@android:color/black"
+        android:orientation="vertical"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="@id/editorSplitGuide"
+        app:layout_constraintTop_toTopOf="parent">
+
+        <!-- Tier 1: Contextual Strip for the active category -->
+        <!-- Two-column icon tab row; hidden in single-column layouts (ruling ⑥ round 2). -->
+        <LinearLayout
+            android:id="@+id/iconTabBar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingHorizontal="8dp"
+            android:paddingVertical="4dp"
+            android:visibility="gone" />
+
+        <FrameLayout
+            android:id="@+id/contextualStripContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="96dp"
+            android:paddingHorizontal="16dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp">
+
+            <!-- Strip: 裁剪 (Crop) -->
+            <LinearLayout
+                android:id="@+id/stripCrop"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:orientation="vertical">
+
+                <TextView
+                    android:id="@+id/cropAngleText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="4dp"
+                    android:text="0°"
+                    android:textColor="#E0E0E0"
+                    android:textSize="13sp" />
+
+                <org.lineageos.glimpse.ui.views.AngleRulerView
+                    android:id="@+id/cropAngleRuler"
+                    android:layout_width="match_parent"
+                    android:layout_height="@dimen/editor_tool_icon_size"
+                    android:layout_marginHorizontal="24dp"
+                    android:layout_marginBottom="12dp" />
+
+                <HorizontalScrollView
+                    android:id="@+id/cropToolsScroll"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:fillViewport="true"
+                    android:scrollbars="none">
+
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:gravity="center"
+                        android:orientation="horizontal">
+
+                        <!-- Crop Ratio Item -->
+                        <LinearLayout
+                            android:id="@+id/cropRatioItem"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginHorizontal="14dp"
+                            android:minWidth="@dimen/editor_tool_item_min_width"
+                            android:minHeight="@dimen/editor_tool_touch_size"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:gravity="center"
+                            android:orientation="vertical">
+
+                            <FrameLayout
+                                android:layout_width="@dimen/editor_tool_touch_size"
+                                android:layout_height="@dimen/editor_tool_touch_size"
+                                android:background="@drawable/bg_circle_tool">
+
+                                <ImageView
+                                    android:layout_width="@dimen/editor_tool_icon_size"
+                                    android:layout_height="@dimen/editor_tool_icon_size"
+                                    android:layout_gravity="center"
+                                    android:src="@drawable/ic_crop_ratio"
+                                    app:tint="@android:color/white" />
+                            </FrameLayout>
+
+                            <TextView
+                                android:id="@+id/cropRatioLabel"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="@dimen/editor_tool_label_gap"
+                                android:text="@string/editor_crop_free"
+                                android:textColor="#B0B0B0"
+                                android:textSize="@dimen/editor_tool_label_size" />
+                        </LinearLayout>
+
+                        <!-- Rotate Item -->
+                        <LinearLayout
+                            android:id="@+id/cropRotateItem"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginHorizontal="14dp"
+                            android:minWidth="@dimen/editor_tool_item_min_width"
+                            android:minHeight="@dimen/editor_tool_touch_size"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:gravity="center"
+                            android:orientation="vertical">
+
+                            <FrameLayout
+                                android:layout_width="@dimen/editor_tool_touch_size"
+                                android:layout_height="@dimen/editor_tool_touch_size"
+                                android:background="@drawable/bg_circle_tool">
+
+                                <ImageView
+                                    android:layout_width="@dimen/editor_tool_icon_size"
+                                    android:layout_height="@dimen/editor_tool_icon_size"
+                                    android:layout_gravity="center"
+                                    android:src="@drawable/ic_rotate"
+                                    app:tint="@android:color/white" />
+                            </FrameLayout>
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="@dimen/editor_tool_label_gap"
+                                android:text="@string/editor_rotate"
+                                android:textColor="#B0B0B0"
+                                android:textSize="@dimen/editor_tool_label_size" />
+                        </LinearLayout>
+
+                        <!-- Flip Item -->
+                        <LinearLayout
+                            android:id="@+id/cropFlipItem"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginHorizontal="14dp"
+                            android:minWidth="@dimen/editor_tool_item_min_width"
+                            android:minHeight="@dimen/editor_tool_touch_size"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:gravity="center"
+                            android:orientation="vertical">
+
+                            <FrameLayout
+                                android:layout_width="@dimen/editor_tool_touch_size"
+                                android:layout_height="@dimen/editor_tool_touch_size"
+                                android:background="@drawable/bg_circle_tool">
+
+                                <ImageView
+                                    android:id="@+id/cropFlipIcon"
+                                    android:layout_width="@dimen/editor_tool_icon_size"
+                                    android:layout_height="@dimen/editor_tool_icon_size"
+                                    android:layout_gravity="center"
+                                    android:src="@drawable/ic_flip"
+                                    app:tint="@android:color/white" />
+                            </FrameLayout>
+
+                            <TextView
+                                android:id="@+id/cropFlipLabel"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="@dimen/editor_tool_label_gap"
+                                android:text="@string/editor_flip"
+                                android:textColor="#B0B0B0"
+                                android:textSize="@dimen/editor_tool_label_size" />
+                        </LinearLayout>
+
+                        <!-- Reset Crop Item -->
+                        <TextView
+                            android:id="@+id/cropResetButton"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="14dp"
+                            android:minHeight="@dimen/editor_tool_touch_size"
+                            android:gravity="center"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:padding="8dp"
+                            android:text="@string/editor_adjust_reset"
+                            android:textColor="#A8C7FA"
+                            android:textSize="12sp" />
+                    </LinearLayout>
+                </HorizontalScrollView>
+            </LinearLayout>
+
+            <!-- Strip: 调整 (Adjust) -->
+            <FrameLayout
+                android:id="@+id/stripAdjust"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:visibility="gone">
+
+                <!-- Adjust Tool Carousel (use-adjust-tools.jpg) -->
+                <HorizontalScrollView
+                    android:id="@+id/adjustCarouselScroll"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:scrollbars="none">
+
+                    <LinearLayout
+                        android:id="@+id/adjustToolItemsLayout"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:paddingHorizontal="8dp" />
+                </HorizontalScrollView>
+
+                <!-- Adjust Slider Dial Mode (adjust-google-photos.jpg) -->
+                <LinearLayout
+                    android:id="@+id/adjustSliderLayout"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:id="@+id/adjustActiveParamTitle"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textColor="#FFFFFF"
+                        android:textSize="12sp" />
+
+                    <TextView
+                        android:id="@+id/adjustValueText"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="0"
+                        android:textColor="#A8C7FA"
+                        android:textSize="13sp"
+                        android:textStyle="bold" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <com.google.android.material.slider.Slider
+                            android:id="@+id/adjustSlider"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:stepSize="1"
+                            android:valueFrom="-100"
+                            android:valueTo="100"
+                            app:thumbColor="#A8C7FA"
+                            app:trackColorActive="#A8C7FA"
+                            app:trackColorInactive="#383838" />
+
+                        <TextView
+                            android:id="@+id/adjustResetButton"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:padding="8dp"
+                            android:text="@string/editor_adjust_reset"
+                            android:textColor="#B0B0B0"
+                            android:textSize="12sp" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <!-- Two-column vertical slider list: one row per parameter (ruling ⑥ round 2). -->
+                <ScrollView
+                    android:id="@+id/adjustVerticalScroll"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:fillViewport="true"
+                    android:scrollbars="none"
+                    android:visibility="gone">
+
+                    <LinearLayout
+                        android:id="@+id/adjustVerticalList"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:paddingVertical="4dp" />
+                </ScrollView>
+            </FrameLayout>
+
+            <!-- Strip: 滤镜 (Filters - use-filters.jpg) -->
+            <FrameLayout
+                android:id="@+id/stripFilters"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:visibility="gone">
+
+                <!-- Single-column: horizontal chip row. -->
+                <HorizontalScrollView
+                    android:id="@+id/filtersScroll"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:scrollbars="none">
+
+                    <LinearLayout
+                        android:id="@+id/filtersContainer"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:paddingHorizontal="8dp" />
+                </HorizontalScrollView>
+
+                <!-- Two-column: vertical preview + name chip list (ruling ⑥ round 2). -->
+                <ScrollView
+                    android:id="@+id/filtersVerticalScroll"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:fillViewport="true"
+                    android:scrollbars="none"
+                    android:visibility="gone">
+
+                    <LinearLayout
+                        android:id="@+id/filtersVerticalList"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:paddingVertical="4dp" />
+                </ScrollView>
+            </FrameLayout>
+
+            <!-- Strip: 标注 (Markup - google-photos-markup.jpg & use-arrow-tool.jpg) -->
+            <LinearLayout
+                android:id="@+id/stripMarkup"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <!-- Markup Tools Row (Pen, Shapes, Text, Mosaic, Sticker) -->
+                <HorizontalScrollView
+                    android:id="@+id/markupToolsScroll"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:fillViewport="true"
+                    android:requiresFadingEdge="horizontal"
+                    android:fadingEdgeLength="20dp"
+                    android:scrollbars="none">
+
+                    <LinearLayout
+                        android:id="@+id/markupToolsRow"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:clipChildren="false"
+                        android:clipToPadding="false"
+                        android:gravity="center"
+                        android:orientation="horizontal" />
+                </HorizontalScrollView>
+
+                <!-- Two-column: markup tools flow vertically in a scrollable
+                     list; markupToolsRow is moved here at runtime (ruling ⑥ round 2). -->
+                <ScrollView
+                    android:id="@+id/markupVerticalScroll"
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1"
+                    android:fillViewport="true"
+                    android:scrollbars="none"
+                    android:visibility="gone" />
+
+                <!-- Independently grouped controls; only chip/palette rows scroll horizontally. -->
+                <ScrollView
+                    android:id="@+id/markupOptionsScroll"
+                    android:layout_width="match_parent"
+                    android:layout_height="96dp"
+                    android:fillViewport="true"
+                    android:scrollbars="none"
+                    android:visibility="gone">
+                    <LinearLayout
+                        android:id="@+id/markupOptionsContent"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:gravity="center_vertical"
+                        android:background="@android:color/black"
+                        android:paddingHorizontal="12dp"
+                        android:paddingVertical="8dp" />
+                </ScrollView>
+            </LinearLayout>
+
+            <!-- Strip: 工具 (Tools) -->
+            <LinearLayout
+                android:id="@+id/stripTools"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:orientation="horizontal"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:id="@+id/toolIdPhotoItem"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginHorizontal="24dp"
+                    android:minWidth="@dimen/editor_tool_item_min_width"
+                    android:minHeight="@dimen/editor_tool_touch_size"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:gravity="center"
+                    android:orientation="vertical">
+
+                    <FrameLayout
+                        android:layout_width="@dimen/editor_tool_touch_size"
+                        android:layout_height="@dimen/editor_tool_touch_size"
+                        android:background="@drawable/bg_circle_tool">
+
+                        <ImageView
+                            android:layout_width="@dimen/editor_tool_icon_size"
+                            android:layout_height="@dimen/editor_tool_icon_size"
+                            android:layout_gravity="center"
+                            android:src="@drawable/ic_id_photo"
+                            app:tint="@android:color/white" />
+                    </FrameLayout>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/editor_tool_label_gap"
+                        android:text="@string/id_photo_title"
+                        android:textColor="#B0B0B0"
+                        android:textSize="@dimen/editor_tool_label_size" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/toolWatermarkItem"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginHorizontal="24dp"
+                    android:minWidth="@dimen/editor_tool_item_min_width"
+                    android:minHeight="@dimen/editor_tool_touch_size"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:gravity="center"
+                    android:orientation="vertical">
+
+                    <FrameLayout
+                        android:layout_width="@dimen/editor_tool_touch_size"
+                        android:layout_height="@dimen/editor_tool_touch_size"
+                        android:background="@drawable/bg_circle_tool">
+
+                        <ImageView
+                            android:id="@+id/watermarkIcon"
+                            android:layout_width="@dimen/editor_tool_icon_size"
+                            android:layout_height="@dimen/editor_tool_icon_size"
+                            android:layout_gravity="center"
+                            android:src="@drawable/ic_privacy_watermark"
+                            app:tint="@android:color/white" />
+                    </FrameLayout>
+
+                    <TextView
+                        android:id="@+id/watermarkLabel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/editor_tool_label_gap"
+                        android:text="@string/editor_watermark"
+                        android:textColor="#B0B0B0"
+                        android:textSize="@dimen/editor_tool_label_size" />
+                </LinearLayout>
+            </LinearLayout>
+        </FrameLayout>
+
+        <!-- Top Divider line for Category Tabs -->
+        <View
+            android:id="@+id/categoryTabsTopDivider"
+            android:layout_width="match_parent"
+            android:layout_height="0.5dp"
+            android:background="#2A2A2A" />
+
+        <!-- Tier 2: Category Tabs (Pills style) -->
+        <HorizontalScrollView
+            android:id="@+id/categoryTabsScroll"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingHorizontal="12dp"
+            android:paddingVertical="8dp"
+            android:scrollbars="none">
+
+            <LinearLayout
+                android:id="@+id/categoryTabsContainer"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal" />
+        </HorizontalScrollView>
+
+        <!-- Bottom Divider line for Category Tabs -->
+        <View
+            android:id="@+id/categoryTabsBottomDivider"
+            android:layout_width="match_parent"
+            android:layout_height="0.5dp"
+            android:background="#2A2A2A" />
+
+        <!-- Fixed Markup history controls, separate from the icon-only subtool row. -->
+        <LinearLayout
+            android:id="@+id/markupHistoryBar"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:gravity="center"
+            android:orientation="horizontal"
+            android:visibility="gone">
+                <ImageView
+                    android:id="@+id/subEditUndoButton"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:padding="12dp"
+                    android:src="@drawable/ic_undo"
+                    android:contentDescription="@string/editor_markup_undo"
+                    app:tint="@android:color/white" />
+
+                <ImageView
+                    android:id="@+id/subEditRedoButton"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:padding="12dp"
+                    android:scaleX="-1"
+                    android:src="@drawable/ic_undo"
+                    android:contentDescription="@string/editor_redo"
+                    android:visibility="gone"
+                    app:tint="@android:color/white" />
+
+                <ImageView
+                    android:id="@+id/subEditClearButton"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:padding="12dp"
+                    android:src="@drawable/ic_delete_sweep"
+                    android:contentDescription="@string/markup_clear_annotations"
+                    android:visibility="gone"
+                    app:tint="@android:color/white" />
+
+        </LinearLayout>
+
+        <!-- Tier 3: Bottom Action Bar -->
+        <FrameLayout
+            android:id="@+id/actionBarContainer"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:paddingHorizontal="16dp">
+
+            <!-- Regular Action Bar: Cancel (text) | Save copy (pill) -->
+            <LinearLayout
+                android:id="@+id/regularActionBar"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/cancelButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:minWidth="48dp"
+                    android:minHeight="48dp"
+                    android:gravity="center"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:padding="8dp"
+                    android:text="@string/cancel"
+                    android:textColor="@android:color/white"
+                    android:textSize="14sp" />
+
+                <View
+                    android:layout_width="0dp"
+                    android:layout_height="1dp"
+                    android:layout_weight="1" />
+
+                <TextView
+                    android:id="@+id/saveButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:minWidth="48dp"
+                    android:minHeight="48dp"
+                    android:gravity="center"
+                    android:background="@drawable/bg_google_photos_save_button"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:paddingHorizontal="24dp"
+                    android:paddingVertical="10dp"
+                    android:text="@string/editor_save"
+                    android:textColor="#001D35"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <!-- Sub-edit Action Bar: Clear | Undo | Done -->
+            <LinearLayout
+                android:id="@+id/subEditActionBar"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/subEditCancelButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:minWidth="48dp"
+                    android:minHeight="48dp"
+                    android:gravity="center"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:padding="8dp"
+                    android:text="@string/cancel"
+                    android:textColor="@android:color/white"
+                    android:textSize="14sp" />
+
+                <View
+                    android:id="@+id/subEditSpacer"
+                    android:layout_width="0dp"
+                    android:layout_height="1dp"
+                    android:layout_weight="1" />
+
+                <!-- Fixed middle switcher; its content scrolls only on very narrow windows. -->
+                <HorizontalScrollView
+                    android:id="@+id/markupSubtoolsScroll"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:fillViewport="true"
+                    android:scrollbars="none"
+                    android:visibility="gone">
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:gravity="center"
+                        android:orientation="horizontal">
+                        <LinearLayout
+                            android:id="@+id/markupSubtoolsRow"
+                            android:layout_width="wrap_content"
+                            android:layout_height="48dp"
+                            android:gravity="center"
+                            android:orientation="horizontal" />
+                    </LinearLayout>
+                </HorizontalScrollView>
+
+                <TextView
+                    android:id="@+id/subEditDoneButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:minWidth="48dp"
+                    android:minHeight="48dp"
+                    android:gravity="center"
+                    android:background="@drawable/bg_google_photos_save_button"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:paddingHorizontal="8dp"
+                    android:paddingVertical="10dp"
+                    android:text="@string/editor_done"
+                    android:contentDescription="@string/editor_done"
+                    android:textColor="#001D35"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+        </FrameLayout>
+    </LinearLayout>
+    <!-- Angle ruler pinned directly under the photo display area (ruling ⑥
+         round 3); cropAngleText/cropAngleRuler are moved here at runtime in
+         two-column mode, and the anchor stays empty/hidden in single-column. -->
+    <LinearLayout
+        android:id="@+id/cropRulerAnchor"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="16dp"
+        android:background="#66000000"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:paddingTop="4dp"
+        android:paddingBottom="4dp"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="@id/cropImageView"
+        app:layout_constraintEnd_toEndOf="@id/cropImageView"
+        app:layout_constraintStart_toStartOf="@id/cropImageView" />
+
+</androidx.constraintlayout.widget.ConstraintLayout>

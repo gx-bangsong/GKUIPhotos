@@ -45,6 +45,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.progressindicator.CircularProgressIndicator
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
+import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -53,6 +54,8 @@ import org.lineageos.glimpse.models.idphoto.IdPhotoCatalog
 import org.lineageos.glimpse.models.idphoto.IdPhotoCustomPresetManager
 import org.lineageos.glimpse.models.idphoto.IdPhotoPreset
 import org.lineageos.glimpse.models.idphoto.PresetGroup
+import org.lineageos.glimpse.ui.LargeScreenLayout
+import org.lineageos.glimpse.ui.ToolSidePanelSplit
 import org.lineageos.glimpse.ui.views.CropImageView
 import org.lineageos.glimpse.utils.media.IdPhotoGenerator
 import org.lineageos.glimpse.utils.media.IdPhotoPrintSheetComposer
@@ -79,6 +82,15 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
     private val specBadgeText by lazy { findViewById<TextView>(R.id.specBadgeText) }
     private val loadingIndicator by lazy { findViewById<CircularProgressIndicator>(R.id.loadingIndicator) }
     private val bottomControls by lazy { findViewById<View>(R.id.bottomControls) }
+    private val previewContainer by lazy { findViewById<View>(R.id.previewContainer) }
+
+    /** Two-column split state (ruling ⑥ round 3); configChanges never re-inflates. */
+    private var appliedSplitMode: LargeScreenLayout.EditorLayoutMode? = null
+    private var storedStatusTop = 0
+    private var storedNavPad = 0
+    private var idBasePanelTopPadding = 0
+    private var idSinglePreviewBottomMargin = 0
+    private var idSinglePanelHeight = 0
 
     // Specs mode views
     private val specsContainer by lazy { findViewById<View>(R.id.specsContainer) }
@@ -196,7 +208,19 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
 
         val rootLayout = findViewById<View>(R.id.idPhotoRootLayout)
         val preview = findViewById<View>(R.id.previewContainer)
+
+        // Capture the single-column geometry before any split is applied
+        // (ruling ⑥ round 3).
+        idSinglePreviewBottomMargin =
+            (preview.layoutParams as androidx.coordinatorlayout.widget.CoordinatorLayout.LayoutParams).bottomMargin
+        idSinglePanelHeight = bottomControls.layoutParams.height
+        idBasePanelTopPadding = bottomControls.paddingTop
         bottomControls.addOnLayoutChangeListener { _, _, top, _, bottom, _, _, _, _ ->
+            // Two-column: the preview is the left column, not stacked above
+            // the panel — syncing from the panel's height would collapse it.
+            if (appliedSplitMode == LargeScreenLayout.EditorLayoutMode.TWO_COLUMN) {
+                return@addOnLayoutChangeListener
+            }
             val params = preview.layoutParams as androidx.coordinatorlayout.widget.CoordinatorLayout.LayoutParams
             val bottomMargin = bottom - top
             if (params.bottomMargin != bottomMargin) {
@@ -211,12 +235,26 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
             val bottomInset = maxOf(navBars.bottom, ime.bottom)
 
             preview.updatePadding(top = statusBars.top)
-            bottomControls.updatePadding(bottom = navBars.bottom + 8)
+            storedStatusTop = statusBars.top
+            storedNavPad = navBars.bottom + 8
+            applyControlInsets()
             catalogPickerOverlay.updatePadding(
                 top = statusBars.top,
                 bottom = bottomInset + 16,
             )
             insets
+        }
+
+        // Landscape/large-screen split (ruling ⑥ round 3): preview left ~70%,
+        // bottom controls as a full-height right column. configChanges means
+        // orientation never re-inflates, so this runs from the root layout.
+        rootLayout.addOnLayoutChangeListener { v, _, _, _, _, _, _, _, _ ->
+            val density = v.resources.displayMetrics.density
+            updateSplitMode(
+                (v.width / density).roundToInt(),
+                (v.height / density).roundToInt(),
+            )
+            applyControlInsets()
         }
 
         if (viewModel.sourceUri == null) {
@@ -255,6 +293,34 @@ class IdPhotoActivity : AppCompatActivity(R.layout.activity_id_photo) {
         }
 
         observeViewModelState()
+    }
+
+    /**
+     * Landscape/large-screen split (ruling ⑥ round 3): preview left ~70%,
+     * bottom controls as a full-height right column; restores the original
+     * stacked layout in single-column.
+     */
+    private fun updateSplitMode(widthDp: Int, heightDp: Int) {
+        val mode = LargeScreenLayout.editorLayoutMode(widthDp, heightDp)
+        if (mode == appliedSplitMode) return
+        val root = findViewById<android.view.ViewGroup>(R.id.idPhotoRootLayout)
+        // Not measured yet: keep the mode unmarked so the first real layout
+        // pass still applies it.
+        if (root.width <= 0) return
+        val applied = ToolSidePanelSplit.apply(
+            root, previewContainer, bottomControls, mode,
+            idSinglePreviewBottomMargin, idSinglePanelHeight,
+        )
+        if (applied) appliedSplitMode = mode
+    }
+
+    /** Panel insets: XML padding + status/nav insets; status only when columned. */
+    private fun applyControlInsets() {
+        val two = appliedSplitMode == LargeScreenLayout.EditorLayoutMode.TWO_COLUMN
+        bottomControls.updatePadding(
+            top = idBasePanelTopPadding + if (two) storedStatusTop else 0,
+            bottom = storedNavPad,
+        )
     }
 
     private fun setupCropView() {

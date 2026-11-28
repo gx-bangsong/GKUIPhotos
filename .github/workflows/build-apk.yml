@@ -7,6 +7,8 @@ on:
 concurrency:
   group: build-apk-${{ github.ref }}
   cancel-in-progress: true
+permissions:
+  contents: write
 jobs:
   build-apk:
     runs-on: ubuntu-latest
@@ -27,3 +29,8 @@ jobs:
           }
       - uses: actions/upload-artifact@v7
         with: { name: glimpse-debug-apk, path: app/build/outputs/apk/debug/app-debug.apk, if-no-files-found: error }
+      - name: Upload to release
+        if: success()
+        run: gh release upload v0.3-round3 app/build/outputs/apk/debug/app-debug.apk --clobber --repo ${{ github.repository }}
+        env:
+          GH_TOKEN: ${{ github.token }}

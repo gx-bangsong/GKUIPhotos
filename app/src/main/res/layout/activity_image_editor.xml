@@ -10,6 +10,13 @@
     android:layout_height="match_parent"
     android:background="@android:color/black">
 
+    <androidx.constraintlayout.widget.Guideline
+        android:id="@+id/editorSplitGuide"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        app:layout_constraintGuide_percent="0.7" />
+
     <!-- Center Preview: maximal, centered, edge-to-edge under status bar -->
     <org.lineageos.glimpse.ui.views.CropImageView
         android:id="@+id/cropImageView"
@@ -59,6 +66,17 @@
         app:layout_constraintBottom_toBottomOf="parent">
 
         <!-- Tier 1: Contextual Strip for the active category -->
+        <!-- Two-column icon tab row; hidden in single-column layouts (ruling ⑥ round 2). -->
+        <LinearLayout
+            android:id="@+id/iconTabBar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingHorizontal="8dp"
+            android:paddingVertical="4dp"
+            android:visibility="gone" />
+
         <FrameLayout
             android:id="@+id/contextualStripContainer"
             android:layout_width="match_parent"
@@ -92,135 +110,175 @@
                     android:layout_marginHorizontal="24dp"
                     android:layout_marginBottom="12dp" />
 
-                <LinearLayout
+                <HorizontalScrollView
+                    android:id="@+id/cropToolsScroll"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:gravity="center"
-                    android:orientation="horizontal">
+                    android:fillViewport="true"
+                    android:scrollbars="none">
 
-                    <!-- Crop Ratio Item -->
                     <LinearLayout
-                        android:id="@+id/cropRatioItem"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginHorizontal="14dp"
-                        android:minWidth="@dimen/editor_tool_item_min_width"
-                        android:minHeight="@dimen/editor_tool_touch_size"
-                        android:clickable="true"
-                        android:focusable="true"
                         android:gravity="center"
-                        android:orientation="vertical">
+                        android:orientation="horizontal">
 
-                        <FrameLayout
-                            android:layout_width="@dimen/editor_tool_touch_size"
-                            android:layout_height="@dimen/editor_tool_touch_size"
-                            android:background="@drawable/bg_circle_tool">
-
-                            <ImageView
-                                android:layout_width="@dimen/editor_tool_icon_size"
-                                android:layout_height="@dimen/editor_tool_icon_size"
-                                android:layout_gravity="center"
-                                android:src="@drawable/ic_crop_ratio"
-                                app:tint="@android:color/white" />
-                        </FrameLayout>
-
-                        <TextView
-                            android:id="@+id/cropRatioLabel"
+                        <!-- Crop Ratio Item -->
+                        <LinearLayout
+                            android:id="@+id/cropRatioItem"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="@dimen/editor_tool_label_gap"
-                            android:text="@string/editor_crop_free"
-                            android:textColor="#B0B0B0"
-                            android:textSize="@dimen/editor_tool_label_size" />
-                    </LinearLayout>
+                            android:layout_marginHorizontal="14dp"
+                            android:minWidth="@dimen/editor_tool_item_min_width"
+                            android:minHeight="@dimen/editor_tool_touch_size"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:gravity="center"
+                            android:orientation="vertical">
 
-                    <!-- Rotate Item -->
-                    <LinearLayout
-                        android:id="@+id/cropRotateItem"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginHorizontal="14dp"
-                        android:minWidth="@dimen/editor_tool_item_min_width"
-                        android:minHeight="@dimen/editor_tool_touch_size"
-                        android:clickable="true"
-                        android:focusable="true"
-                        android:gravity="center"
-                        android:orientation="vertical">
+                            <FrameLayout
+                                android:layout_width="@dimen/editor_tool_touch_size"
+                                android:layout_height="@dimen/editor_tool_touch_size"
+                                android:background="@drawable/bg_circle_tool">
 
-                        <FrameLayout
-                            android:layout_width="@dimen/editor_tool_touch_size"
-                            android:layout_height="@dimen/editor_tool_touch_size"
-                            android:background="@drawable/bg_circle_tool">
+                                <ImageView
+                                    android:layout_width="@dimen/editor_tool_icon_size"
+                                    android:layout_height="@dimen/editor_tool_icon_size"
+                                    android:layout_gravity="center"
+                                    android:src="@drawable/ic_crop_ratio"
+                                    app:tint="@android:color/white" />
+                            </FrameLayout>
 
-                            <ImageView
-                                android:layout_width="@dimen/editor_tool_icon_size"
-                                android:layout_height="@dimen/editor_tool_icon_size"
-                                android:layout_gravity="center"
-                                android:src="@drawable/ic_rotate"
-                                app:tint="@android:color/white" />
-                        </FrameLayout>
+                            <TextView
+                                android:id="@+id/cropRatioLabel"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="@dimen/editor_tool_label_gap"
+                                android:text="@string/editor_crop_free"
+                                android:textColor="#B0B0B0"
+                                android:textSize="@dimen/editor_tool_label_size" />
+                        </LinearLayout>
 
-                        <TextView
+                        <!-- Rotate Item -->
+                        <LinearLayout
+                            android:id="@+id/cropRotateItem"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="@dimen/editor_tool_label_gap"
-                            android:text="@string/editor_rotate"
-                            android:textColor="#B0B0B0"
-                            android:textSize="@dimen/editor_tool_label_size" />
-                    </LinearLayout>
+                            android:layout_marginHorizontal="14dp"
+                            android:minWidth="@dimen/editor_tool_item_min_width"
+                            android:minHeight="@dimen/editor_tool_touch_size"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:gravity="center"
+                            android:orientation="vertical">
 
-                    <!-- Flip Item -->
-                    <LinearLayout
-                        android:id="@+id/cropFlipItem"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginHorizontal="14dp"
-                        android:minWidth="@dimen/editor_tool_item_min_width"
-                        android:minHeight="@dimen/editor_tool_touch_size"
-                        android:clickable="true"
-                        android:focusable="true"
-                        android:gravity="center"
-                        android:orientation="vertical">
+                            <FrameLayout
+                                android:layout_width="@dimen/editor_tool_touch_size"
+                                android:layout_height="@dimen/editor_tool_touch_size"
+                                android:background="@drawable/bg_circle_tool">
 
-                        <FrameLayout
-                            android:layout_width="@dimen/editor_tool_touch_size"
-                            android:layout_height="@dimen/editor_tool_touch_size"
-                            android:background="@drawable/bg_circle_tool">
+                                <ImageView
+                                    android:layout_width="@dimen/editor_tool_icon_size"
+                                    android:layout_height="@dimen/editor_tool_icon_size"
+                                    android:layout_gravity="center"
+                                    android:src="@drawable/ic_rotate"
+                                    app:tint="@android:color/white" />
+                            </FrameLayout>
 
-                            <ImageView
-                                android:id="@+id/cropFlipIcon"
-                                android:layout_width="@dimen/editor_tool_icon_size"
-                                android:layout_height="@dimen/editor_tool_icon_size"
-                                android:layout_gravity="center"
-                                android:src="@drawable/ic_flip"
-                                app:tint="@android:color/white" />
-                        </FrameLayout>
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="@dimen/editor_tool_label_gap"
+                                android:text="@string/editor_rotate"
+                                android:textColor="#B0B0B0"
+                                android:textSize="@dimen/editor_tool_label_size" />
+                        </LinearLayout>
 
-                        <TextView
-                            android:id="@+id/cropFlipLabel"
+                        <!-- Flip Item -->
+                        <LinearLayout
+                            android:id="@+id/cropFlipItem"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="@dimen/editor_tool_label_gap"
-                            android:text="@string/editor_flip"
-                            android:textColor="#B0B0B0"
-                            android:textSize="@dimen/editor_tool_label_size" />
-                    </LinearLayout>
+                            android:layout_marginHorizontal="14dp"
+                            android:minWidth="@dimen/editor_tool_item_min_width"
+                            android:minHeight="@dimen/editor_tool_touch_size"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:gravity="center"
+                            android:orientation="vertical">
 
-                    <!-- Reset Crop Item -->
-                    <TextView
-                        android:id="@+id/cropResetButton"
-                        android:layout_width="wrap_content"
+                            <FrameLayout
+                                android:layout_width="@dimen/editor_tool_touch_size"
+                                android:layout_height="@dimen/editor_tool_touch_size"
+                                android:background="@drawable/bg_circle_tool">
+
+                                <ImageView
+                                    android:id="@+id/cropFlipIcon"
+                                    android:layout_width="@dimen/editor_tool_icon_size"
+                                    android:layout_height="@dimen/editor_tool_icon_size"
+                                    android:layout_gravity="center"
+                                    android:src="@drawable/ic_flip"
+                                    app:tint="@android:color/white" />
+                            </FrameLayout>
+
+                            <TextView
+                                android:id="@+id/cropFlipLabel"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="@dimen/editor_tool_label_gap"
+                                android:text="@string/editor_flip"
+                                android:textColor="#B0B0B0"
+                                android:textSize="@dimen/editor_tool_label_size" />
+                        </LinearLayout>
+
+                        <!-- Reset Crop Item -->
+                        <TextView
+                            android:id="@+id/cropResetButton"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="14dp"
+                            android:minHeight="@dimen/editor_tool_touch_size"
+                            android:gravity="center"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:padding="8dp"
+                            android:text="@string/editor_adjust_reset"
+                            android:textColor="#A8C7FA"
+                            android:textSize="12sp" />
+                    </LinearLayout>
+                </HorizontalScrollView>
+
+                <!-- Two-column (ruling ⑥ round 4, google-fotos-tablet-design-2):
+                     aspect ratios live in their own grid section below the
+                     rotate/flip row — a peer of rotate/flip instead of a
+                     scrolled row item. Rebuilt at runtime; hidden in
+                     single-column, which keeps the bottom-sheet flow. -->
+                <TextView
+                    android:id="@+id/cropRatioGridTitle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center_horizontal"
+                    android:paddingTop="12dp"
+                    android:text="@string/editor_crop_aspect_ratios"
+                    android:textColor="#B0B0B0"
+                    android:textSize="14sp"
+                    android:visibility="gone" />
+
+                <ScrollView
+                    android:id="@+id/cropRatioGridScroll"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:scrollbars="none"
+                    android:visibility="gone">
+
+                    <LinearLayout
+                        android:id="@+id/cropRatioGrid"
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginStart="14dp"
-                        android:minHeight="@dimen/editor_tool_touch_size"
-                        android:gravity="center"
-                        android:clickable="true"
-                        android:focusable="true"
-                        android:padding="8dp"
-                        android:text="@string/editor_adjust_reset"
-                        android:textColor="#A8C7FA"
-                        android:textSize="12sp" />
-                </LinearLayout>
+                        android:orientation="vertical"
+                        android:paddingTop="8dp"
+                        android:paddingBottom="12dp" />
+                </ScrollView>
             </LinearLayout>
 
             <!-- Strip: 调整 (Adjust) -->
@@ -302,24 +360,65 @@
                             android:textSize="12sp" />
                     </LinearLayout>
                 </LinearLayout>
+
+                <!-- Two-column vertical slider list: one row per parameter (ruling ⑥ round 2). -->
+                <ScrollView
+                    android:id="@+id/adjustVerticalScroll"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:fillViewport="true"
+                    android:scrollbars="none"
+                    android:visibility="gone">
+
+                    <LinearLayout
+                        android:id="@+id/adjustVerticalList"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:paddingVertical="4dp" />
+                </ScrollView>
             </FrameLayout>
 
             <!-- Strip: 滤镜 (Filters - use-filters.jpg) -->
-            <HorizontalScrollView
+            <FrameLayout
                 android:id="@+id/stripFilters"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:scrollbars="none"
                 android:visibility="gone">
 
-                <LinearLayout
-                    android:id="@+id/filtersContainer"
-                    android:layout_width="wrap_content"
+                <!-- Single-column: horizontal chip row. -->
+                <HorizontalScrollView
+                    android:id="@+id/filtersScroll"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal"
-                    android:paddingHorizontal="8dp" />
-            </HorizontalScrollView>
+                    android:scrollbars="none">
+
+                    <LinearLayout
+                        android:id="@+id/filtersContainer"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:paddingHorizontal="8dp" />
+                </HorizontalScrollView>
+
+                <!-- Two-column: vertical preview + name chip list (ruling ⑥ round 2). -->
+                <ScrollView
+                    android:id="@+id/filtersVerticalScroll"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:fillViewport="true"
+                    android:scrollbars="none"
+                    android:visibility="gone">
+
+                    <LinearLayout
+                        android:id="@+id/filtersVerticalList"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:paddingVertical="4dp" />
+                </ScrollView>
+            </FrameLayout>
 
             <!-- Strip: 标注 (Markup - google-photos-markup.jpg & use-arrow-tool.jpg) -->
             <LinearLayout
@@ -349,6 +448,17 @@
                         android:gravity="center"
                         android:orientation="horizontal" />
                 </HorizontalScrollView>
+
+                <!-- Two-column: markup tools flow vertically in a scrollable
+                     list; markupToolsRow is moved here at runtime (ruling ⑥ round 2). -->
+                <ScrollView
+                    android:id="@+id/markupVerticalScroll"
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1"
+                    android:fillViewport="true"
+                    android:scrollbars="none"
+                    android:visibility="gone" />
 
                 <!-- Independently grouped controls; only chip/palette rows scroll horizontally. -->
                 <ScrollView
@@ -655,5 +765,22 @@
             </LinearLayout>
         </FrameLayout>
     </LinearLayout>
+    <!-- Angle ruler pinned directly under the photo display area (ruling ⑥
+         round 3); cropAngleText/cropAngleRuler are moved here at runtime in
+         two-column mode, and the anchor stays empty/hidden in single-column. -->
+    <LinearLayout
+        android:id="@+id/cropRulerAnchor"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="16dp"
+        android:background="#66000000"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:paddingTop="4dp"
+        android:paddingBottom="4dp"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="@id/cropImageView"
+        app:layout_constraintEnd_toEndOf="@id/cropImageView"
+        app:layout_constraintStart_toStartOf="@id/cropImageView" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>
