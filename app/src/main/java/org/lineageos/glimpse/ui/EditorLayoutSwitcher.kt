@@ -21,8 +21,8 @@ import org.lineageos.glimpse.R
  * at runtime (resize, rotation, fold) without re-inflating, which keeps
  * markup content, undo history, selection and edit parameters intact.
  *
- * Two-column mode pins the canvas and overlay to the left ~70% of the
- * window (right edge at the 0.7 `editorSplitGuide`) and the bottom deck to
+ * Two-column mode pins the canvas and overlay to the left ~75% of the
+ * window (right edge at the 0.75 `editorSplitGuide`) and the bottom deck to
  * the right ~30%, full height. Single-column mode restores the original
  * full-width canvas sitting on top of a wrap-content bottom deck.
  *
@@ -32,7 +32,7 @@ import org.lineageos.glimpse.R
  */
 object EditorLayoutSwitcher {
     /** Canvas/tools split point as a fraction of the window width. */
-    private const val GUIDE_PERCENT = 0.7f
+    private const val GUIDE_PERCENT = 0.75f
 
     fun apply(root: ConstraintLayout, mode: LargeScreenLayout.EditorLayoutMode) {
         val crop = R.id.cropImageView

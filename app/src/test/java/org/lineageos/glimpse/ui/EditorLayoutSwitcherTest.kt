@@ -114,9 +114,9 @@ class EditorLayoutSwitcherTest {
         assertEquals(0, crop.top)
         assertEquals(360, crop.height)
         assertEquals(360, crop.bottom)
-        assertEquals(560, crop.width)
+        assertEquals(600, crop.width)
         assertEquals(crop.right, deck.left)
-        assertEquals(240, deck.width)
+        assertEquals(200, deck.width)
         assertEquals(360, deck.height)
         assertEquals(360 - deckChildHeight, deck.getChildAt(0).top)
 
@@ -124,9 +124,9 @@ class EditorLayoutSwitcherTest {
         assertEquals(0, crop.top)
         assertEquals(384, crop.height)
         assertEquals(384, crop.bottom)
-        assertEquals(582, crop.width)
+        assertEquals(624, crop.width)
         assertEquals(crop.right, deck.left)
-        assertEquals(250, deck.width)
+        assertEquals(208, deck.width)
         assertEquals(384, deck.height)
         assertEquals(384 - deckChildHeight, deck.getChildAt(0).top)
     }
@@ -136,7 +136,7 @@ class EditorLayoutSwitcherTest {
         EditorLayoutSwitcher.apply(root, EditorLayoutMode.TWO_COLUMN)
         layout()
 
-        // Canvas occupies the left 70%, tools the right 30%, both full height.
+        // Canvas occupies the left 75%, tools the right 25%, both full height.
         assertEquals(0, crop.left)
         assertEquals(0, crop.top)
         assertEquals(height, crop.bottom)
@@ -144,9 +144,9 @@ class EditorLayoutSwitcherTest {
         assertEquals(0, deck.top)
         assertEquals(height, deck.bottom)
         assertEquals(crop.right, deck.left)
-        assertEquals(1120, crop.width)
-        assertEquals(480, deck.width)
-        assertEquals(1120, overlay.right)
+        assertEquals(1200, crop.width)
+        assertEquals(400, deck.width)
+        assertEquals(1200, overlay.right)
         assertEquals(height, overlay.height)
 
         // Tools column stacks its children at the bottom.
@@ -203,8 +203,8 @@ class EditorLayoutSwitcherTest {
         assertEquals(4, root.childCount)
         assertSame(root, deck.parent)
         // Still split correctly after the round trip.
-        assertEquals(1120, crop.width)
-        assertEquals(480, deck.width)
+        assertEquals(1200, crop.width)
+        assertEquals(400, deck.width)
         assertEquals(height - deckChildHeight, deck.getChildAt(0).top)
     }
 }

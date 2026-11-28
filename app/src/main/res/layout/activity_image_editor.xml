@@ -247,6 +247,38 @@
                             android:textSize="12sp" />
                     </LinearLayout>
                 </HorizontalScrollView>
+
+                <!-- Two-column (ruling ⑥ round 4, google-fotos-tablet-design-2):
+                     aspect ratios live in their own grid section below the
+                     rotate/flip row — a peer of rotate/flip instead of a
+                     scrolled row item. Rebuilt at runtime; hidden in
+                     single-column, which keeps the bottom-sheet flow. -->
+                <TextView
+                    android:id="@+id/cropRatioGridTitle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center_horizontal"
+                    android:paddingTop="12dp"
+                    android:text="@string/editor_crop_aspect_ratios"
+                    android:textColor="#B0B0B0"
+                    android:textSize="14sp"
+                    android:visibility="gone" />
+
+                <ScrollView
+                    android:id="@+id/cropRatioGridScroll"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:scrollbars="none"
+                    android:visibility="gone">
+
+                    <LinearLayout
+                        android:id="@+id/cropRatioGrid"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:paddingTop="8dp"
+                        android:paddingBottom="12dp" />
+                </ScrollView>
             </LinearLayout>
 
             <!-- Strip: 调整 (Adjust) -->

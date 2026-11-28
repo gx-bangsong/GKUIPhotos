@@ -18,6 +18,7 @@ import android.graphics.Matrix
 import android.graphics.RectF
 import android.graphics.Paint
 import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
@@ -139,6 +140,9 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
     private val cropAngleRuler by lazy { findViewById<AngleRulerView>(R.id.cropAngleRuler) }
     private val cropRatioItem by lazy { findViewById<View>(R.id.cropRatioItem) }
     private val cropRatioLabel by lazy { findViewById<TextView>(R.id.cropRatioLabel) }
+    private val cropRatioGrid by lazy { findViewById<LinearLayout>(R.id.cropRatioGrid) }
+    private val cropRatioGridScroll by lazy { findViewById<ScrollView>(R.id.cropRatioGridScroll) }
+    private val cropRatioGridTitle by lazy { findViewById<TextView>(R.id.cropRatioGridTitle) }
     private val cropRotateItem by lazy { findViewById<View>(R.id.cropRotateItem) }
     private val cropFlipItem by lazy { findViewById<View>(R.id.cropFlipItem) }
     private val cropFlipIcon by lazy { findViewById<ImageView>(R.id.cropFlipIcon) }
@@ -460,6 +464,15 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         )
         cropRulerAnchor.isVisible = twoColumn
 
+        // Aspect-ratio grid (ruling ⑥ round 4, google-fotos-tablet-design-2):
+        // ratios are a peer section of rotate/flip in the right column —
+        // never a horizontally scrolled row item. Single-column keeps the
+        // row item + bottom-sheet flow.
+        cropRatioItem.isVisible = !twoColumn
+        cropRatioGridTitle.isVisible = twoColumn
+        cropRatioGridScroll.isVisible = twoColumn
+        if (twoColumn) buildCropRatioGrid()
+
         // Adjust: a vertical slider list replaces the carousel + dial sub-edit.
         if (twoColumn) {
             if (activeAdjustParam != null) closeAdjustSlider()
@@ -486,6 +499,9 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
         markupVerticalScroll.isVisible = twoColumn
         markupToolsRow.orientation =
             if (twoColumn) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
+        // Rebuild so the two-column 3-per-row sub-tool grid (ruling ⑥ round 4)
+        // applies right away when rotating mid-session.
+        if (activeCategory == EditorCategory.MARKUP) updateMarkupToolButtons()
 
         // Tools strip stacks vertically in the right column.
         stripTools.orientation =
@@ -823,12 +839,28 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
     }
 
     /**
-     * Two-column Adjust tab: one row per parameter with icon, name and a
-     * live slider (ruling ⑥ round 2). Rows read and write the shared
-     * [adjustParameters], so values survive split and tab switches.
+     * Two-column Adjust tab, matching the Google Photos tablet reference
+     * (google-fotos-tablet-design-4): one stacked row per parameter with the
+     * icon chip on the left and a label-over-slider column that eats the
+     * rest of the row width; every parameter stays visible and live at once.
+     * The last-touched row's label turns yellow. Rows read and write the
+     * shared [adjustParameters], so values survive split and tab switches.
      */
+    private val adjustRowLabels = mutableMapOf<AdjustParam, TextView>()
+    private var selectedAdjustRow: AdjustParam? = null
+
+    private fun refreshAdjustRowSelection() {
+        adjustRowLabels.forEach { (param, label) ->
+            label.setTextColor(
+                if (param == selectedAdjustRow) Color.parseColor("#FDD663")
+                else Color.parseColor("#E0E0E0")
+            )
+        }
+    }
+
     private fun buildAdjustVerticalList() {
         adjustVerticalList.removeAllViews()
+        adjustRowLabels.clear()
         val density = resources.displayMetrics.density
 
         AdjustParam.values().forEach { param ->
@@ -843,40 +875,48 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                 setPadding(0, (4 * density).toInt(), 0, (4 * density).toInt())
             }
 
+            // Icon chip with the circular background, as in design-4.
             val icon = ImageView(this).apply {
-                val size = (32 * density).toInt()
+                val size = (36 * density).toInt()
                 layoutParams = LinearLayout.LayoutParams(size, size).apply {
-                    marginEnd = (8 * density).toInt()
+                    marginEnd = (12 * density).toInt()
                 }
+                setBackgroundResource(R.drawable.bg_circle_tool)
+                val pad = (8 * density).toInt()
+                setPadding(pad, pad, pad, pad)
                 setImageResource(param.iconRes)
                 scaleType = ImageView.ScaleType.FIT_CENTER
                 imageTintList = ColorStateList.valueOf(Color.WHITE)
                 importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
             }
 
+            // Label sits above the slider; the column takes all the width the
+            // icon leaves over so the slider eats every remaining pixel.
+            val column = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(
+                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f,
+                )
+            }
+
             val name = TextView(this).apply {
                 text = getString(param.labelRes)
-                textSize = 12f
+                textSize = 13f
                 setTextColor(Color.parseColor("#E0E0E0"))
-                // Only as wide as the label needs, so the slider below can eat
-                // the rest of the row (ruling ⑥ round 3).
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                 )
-                maxWidth = (64 * density).toInt()
-                gravity = Gravity.CENTER_VERTICAL
+                gravity = Gravity.START
                 isSingleLine = true
-                ellipsize = android.text.TextUtils.TruncateAt.END
                 importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
             }
 
             val slider = Slider(this).apply {
-                // 0dp + weight: the slider fills every pixel of row width the
-                // icon and name leave over (ruling ⑥ round 3).
                 layoutParams = LinearLayout.LayoutParams(
-                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f,
-                ).apply { marginStart = (4 * density).toInt() }
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                )
                 if (param.isBipolar) {
                     valueFrom = -100f
                     valueTo = 100f
@@ -893,15 +933,22 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
                 addOnChangeListener { _, v, fromUser ->
                     if (!fromUser) return@addOnChangeListener
                     setAdjustParamValue(param, v.toInt())
+                    if (selectedAdjustRow != param) {
+                        selectedAdjustRow = param
+                        refreshAdjustRowSelection()
+                    }
                     refreshBaseBitmap(debounceMs = 32)
                 }
             }
 
+            column.addView(name)
+            column.addView(slider)
             row.addView(icon)
-            row.addView(name)
-            row.addView(slider)
+            row.addView(column)
+            adjustRowLabels[param] = name
             adjustVerticalList.addView(row)
         }
+        refreshAdjustRowSelection()
     }
 
     private fun switchCategory(category: EditorCategory) {
@@ -993,6 +1040,123 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             .setPositiveButton(R.string.editor_discard_confirm) { _, _ -> finish() }
             .setNegativeButton(R.string.cancel, null)
             .show()
+    }
+
+    private class RatioEntry(val label: String, val ratio: Float)
+
+    private fun ratioEntries(): List<RatioEntry> {
+        val entries = mutableListOf<RatioEntry>()
+        entries.add(RatioEntry(getString(R.string.editor_crop_free), 0f))
+        val originalRatio = baseBitmap?.let { bmp ->
+            if (bmp.height > 0) bmp.width.toFloat() / bmp.height.toFloat() else null
+        }
+        if (originalRatio != null && originalRatio > 0.01f) {
+            entries.add(RatioEntry(getString(R.string.ratio_original), originalRatio))
+        }
+        entries.add(RatioEntry(getString(R.string.ratio_square), 1f))
+        entries.add(RatioEntry(getString(R.string.ratio_4_3), 4f / 3f))
+        entries.add(RatioEntry(getString(R.string.ratio_3_4), 3f / 4f))
+        entries.add(RatioEntry(getString(R.string.ratio_16_9), 16f / 9f))
+        entries.add(RatioEntry(getString(R.string.ratio_9_16), 9f / 16f))
+        entries.add(RatioEntry(getString(R.string.ratio_3_2), 3f / 2f))
+        entries.add(RatioEntry(getString(R.string.ratio_2_3), 2f / 3f))
+        entries.add(RatioEntry(getString(R.string.ratio_5_7), 5f / 7f))
+        return entries
+    }
+
+    private fun applyRatioEntry(label: String, ratio: Float) {
+        val old = cropImageView.aspectRatio
+        if (ratio == 0f) {
+            cropImageView.aspectRatio = 0f
+            cropImageView.computeCropRect()
+            cropImageView.invalidate()
+            // Choosing Free must never hide or swap the angle
+            // ruler (ruling ⑥ round 3) — it lives in
+            // cropRulerAnchor under the photo display area.
+            cropAngleText.isVisible = true
+            cropAngleRuler.isVisible = true
+        } else {
+            cropImageView.applyPresetRatio(ratio, old)
+        }
+        cropRatioLabel.text = label
+    }
+
+    /**
+     * Two-column aspect-ratio grid (ruling ⑥ round 4, design-2): three
+     * chips per row, selected chip in the yellow pill. Row 1 mirrors the
+     * reference (Free / Original / Square), presets and custom entries
+     * follow; the "+ custom" chip opens the same custom-ratio dialog as the
+     * single-column bottom sheet.
+     */
+    private fun buildCropRatioGrid() {
+        cropRatioGrid.removeAllViews()
+        val density = resources.displayMetrics.density
+        val chipHeight = (48 * density).toInt()
+        val cornerRadius = 12 * density
+
+        val entries = mutableListOf<RatioEntry>()
+        entries.addAll(ratioEntries())
+        CustomCropRatioManager.getSavedRatios(this).forEach { custom ->
+            entries.add(RatioEntry(custom.label, custom.ratio))
+        }
+        entries.add(RatioEntry("+ " + getString(R.string.ratio_custom), -1f))
+
+        entries.chunked(3).forEach { chunk ->
+            val rowLayout = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                )
+            }
+            chunk.forEach { item ->
+                val selected = when {
+                    item.ratio == -1f -> false
+                    item.ratio == 0f -> cropImageView.aspectRatio == 0f
+                    else -> abs(cropImageView.aspectRatio - item.ratio) < 0.01f
+                }
+                val chip = TextView(this).apply {
+                    text = item.label
+                    textSize = 13f
+                    gravity = Gravity.CENTER
+                    maxLines = 1
+                    setTextColor(
+                        if (selected) Color.parseColor("#1C1B1F")
+                        else Color.parseColor("#B0B0B0")
+                    )
+                    background = if (selected) {
+                        GradientDrawable().apply {
+                            setColor(Color.parseColor("#FDD663"))
+                            this.cornerRadius = cornerRadius
+                        }
+                    } else {
+                        GradientDrawable().apply {
+                            setColor(Color.TRANSPARENT)
+                            this.cornerRadius = cornerRadius
+                        }
+                    }
+                    layoutParams = LinearLayout.LayoutParams(
+                        0, chipHeight, 1f,
+                    ).apply {
+                        setMargins(
+                            (4 * density).toInt(), (4 * density).toInt(),
+                            (4 * density).toInt(), (4 * density).toInt(),
+                        )
+                    }
+                    setOnClickListener {
+                        if (item.ratio == -1f) {
+                            showCustomRatioDialog()
+                        } else {
+                            applyRatioEntry(item.label, item.ratio)
+                            buildCropRatioGrid()
+                        }
+                    }
+                }
+                rowLayout.addView(chip)
+            }
+            cropRatioGrid.addView(rowLayout)
+        }
     }
 
     private fun showRatioBottomSheet() {
@@ -1619,6 +1783,12 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
             kotlin.math.ceil(tools.maxOf { measuringLabel.paint.measureText(getString(it.second.first)) }).toInt() +
                 2 * resources.getDimensionPixelSize(R.dimen.editor_tool_horizontal_padding))
 
+        // Two-column (ruling ⑥ round 4, google-fotos-tablet-design-6): the
+        // sub-tools flow as a grid, three per row (Pen/Highlighter/Text…);
+        // the option rows below (mosaic strength, palettes) are untouched.
+        val twoColumn = appliedEditorMode == LargeScreenLayout.EditorLayoutMode.TWO_COLUMN
+        val builtItems = mutableListOf<LinearLayout>()
+
         tools.forEach { (tool, pair) ->
             val (labelRes, iconRes) = pair
             val selected = annotationOverlayView.activeTool == tool
@@ -1676,10 +1846,34 @@ class ImageEditorActivity : AppCompatActivity(R.layout.activity_image_editor) {
 
             if (!compact) itemLayout.addView(circle)
             itemLayout.addView(label)
-            markupToolsRow.addView(itemLayout)
-            if (selected) markupToolsScroll.post {
+            builtItems += itemLayout
+        }
+
+        if (twoColumn) {
+            builtItems.chunked(3).forEach { chunk ->
+                val rowLayout = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                    )
+                }
+                chunk.forEach { item ->
+                    // Equal thirds per row: every cell spans the panel width.
+                    item.layoutParams = LinearLayout.LayoutParams(
+                        0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f,
+                    )
+                    rowLayout.addView(item)
+                }
+                markupToolsRow.addView(rowLayout)
+            }
+        } else {
+            builtItems.forEach { markupToolsRow.addView(it) }
+            val selectedItem = builtItems.firstOrNull { it.isSelected }
+            if (selectedItem != null) markupToolsScroll.post {
                 markupToolsScroll.smoothScrollTo(
-                    itemLayout.left - (markupToolsScroll.width - itemLayout.width) / 2, 0
+                    selectedItem.left - (markupToolsScroll.width - selectedItem.width) / 2, 0
                 )
             }
         }

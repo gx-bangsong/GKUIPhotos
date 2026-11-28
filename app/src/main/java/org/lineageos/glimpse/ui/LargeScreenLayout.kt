@@ -12,7 +12,7 @@ package org.lineageos.glimpse.ui
  * - < 600dp: keep the existing single-column behavior.
  * - 600–799dp: the editor stays single-column; only the album grid gains
  *   columns from the available content width.
- * - >= 800dp: the editor splits canvas (~70%) and tools (~30%).
+ * - >= 800dp: the editor splits canvas (~75%) and tools (~25%).
  *
  * Height matters for the split: a short window falls back to a single
  * column instead of forcing a cramped two-column layout.

@@ -19,7 +19,7 @@ import kotlin.math.roundToInt
  * never re-inflate: the preview and its control panel are re-arranged on the
  * inflated tree, mirroring [EditorLayoutSwitcher] for the image editor.
  *
- * Two-column pins the preview to the left ~70% and turns the control panel
+ * Two-column pins the preview to the left ~75% and turns the control panel
  * into a full-height column on the right; single-column restores the
  * original bottom-panel geometry (full-width preview above a fixed-height or
  * wrap-content panel). Callers pass the original single-column dimensions
@@ -30,7 +30,7 @@ import kotlin.math.roundToInt
  */
 object ToolSidePanelSplit {
     /** Mirrors [EditorLayoutSwitcher]'s canvas/tools split fraction. */
-    private const val GUIDE_PERCENT = 0.7f
+    private const val GUIDE_PERCENT = 0.75f
 
     fun apply(
         root: ViewGroup,
